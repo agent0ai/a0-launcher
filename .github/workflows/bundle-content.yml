@@ -1,0 +1,81 @@
+name: Bundle Content
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to bundle (leave empty for latest)'
+        required: false
+        type: string
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name || 'main' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bundle app content to JSON
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const APP_DIR = './app';
+          const OUTPUT_FILE = './content.json';
+
+          function getAllFiles(dir, baseDir = dir) {
+            const files = {};
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              const relativePath = path.relative(baseDir, fullPath);
+
+              if (entry.isDirectory()) {
+                Object.assign(files, getAllFiles(fullPath, baseDir));
+              } else {
+                // Read file content as string (works for text files)
+                files[relativePath] = fs.readFileSync(fullPath, 'utf8');
+              }
+            }
+
+            return files;
+          }
+
+          const files = getAllFiles(APP_DIR);
+          const bundle = {
+            bundled_at: new Date().toISOString(),
+            file_count: Object.keys(files).length,
+            files: files
+          };
+
+          fs.writeFileSync(OUTPUT_FILE, JSON.stringify(bundle, null, 2));
+          console.log(`Bundled ${bundle.file_count} files into ${OUTPUT_FILE}`);
+          EOF
+
+      - name: Upload content.json to release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" content.json --clobber
+
+      - name: Upload artifact (for manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-bundle
+          path: content.json
