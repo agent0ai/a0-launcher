@@ -24,6 +24,12 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting version to $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       - name: Install dependencies
         run: npm ci
 
@@ -53,6 +59,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting version to $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       - name: Install dependencies
         run: npm ci
 
@@ -77,6 +90,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting version to $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Install dependencies
         run: npm ci
@@ -116,6 +135,30 @@ jobs:
       - name: List all files recursively
         run: find artifacts -type f
 
+      - name: Rename artifacts for consistent naming
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "Renaming artifacts for version: $VERSION"
+
+          mkdir -p release-files
+
+          # macOS files
+          find artifacts/macos-build -name "*.dmg" -exec cp {} "release-files/a0-launcher-${VERSION}-macos-arm64.dmg" \;
+          find artifacts/macos-build -name "*.zip" -exec cp {} "release-files/a0-launcher-${VERSION}-macos-arm64.zip" \;
+
+          # Windows files
+          find artifacts/windows-build -name "*.exe" -exec cp {} "release-files/a0-launcher-${VERSION}-windows-x64-setup.exe" \;
+          find artifacts/windows-build -name "*.nupkg" -exec cp {} "release-files/a0-launcher-${VERSION}-windows-x64.nupkg" \;
+          find artifacts/windows-build -name "RELEASES" -exec cp {} "release-files/RELEASES" \;
+
+          # Linux files
+          find artifacts/linux-build -name "*.deb" -exec cp {} "release-files/a0-launcher-${VERSION}-linux-x64.deb" \;
+          find artifacts/linux-build -name "*.rpm" -exec cp {} "release-files/a0-launcher-${VERSION}-linux-x64.rpm" \;
+
+          echo "Release files:"
+          ls -la release-files/
+
       - name: Upload executables to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -129,8 +172,8 @@ jobs:
             gh release create "$TAG" --title "$TAG" --generate-notes --repo "$GITHUB_REPOSITORY"
           fi
 
-          # Upload all artifacts to the release (handles spaces in filenames)
-          find artifacts -type f -print0 | while IFS= read -r -d '' file; do
+          # Upload renamed files to the release
+          for file in release-files/*; do
             echo "Uploading: $file"
             gh release upload "$TAG" "$file" --clobber --repo "$GITHUB_REPOSITORY"
           done

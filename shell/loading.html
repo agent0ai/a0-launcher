@@ -54,6 +54,7 @@
             border-top-color: #4dabf7;
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            margin: 0 auto;
         }
         @keyframes spin {
             to { transform: rotate(360deg); }
@@ -69,12 +70,7 @@
 </head>
 <body>
     <div class="container">
-        <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="50" cy="50" r="45" stroke="#4dabf7" stroke-width="2" fill="none"/>
-            <circle cx="50" cy="50" r="30" stroke="#4dabf7" stroke-width="2" fill="none" opacity="0.6"/>
-            <circle cx="50" cy="50" r="15" fill="#4dabf7"/>
-            <text x="50" y="56" text-anchor="middle" fill="#1a1a2e" font-size="14" font-weight="bold">A0</text>
-        </svg>
+        <img class="logo" src="assets/icon.png" alt="A0 Launcher">
         <h1>A0 Launcher</h1>
         <p class="status" id="status">Checking for updates...</p>
         <div class="spinner" id="spinner"></div>
