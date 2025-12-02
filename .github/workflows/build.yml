@@ -122,8 +122,6 @@ jobs:
       - name: List all files recursively
         run: find artifacts -type f
 
-<<<<<<< Updated upstream
-=======
       - name: Rename artifacts for consistent naming
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
@@ -153,7 +151,6 @@ jobs:
           echo "Release files:"
           ls -la release-files/
 
->>>>>>> Stashed changes
       - name: Upload executables to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
