@@ -123,8 +123,14 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           echo "Uploading to release: $TAG"
 
-          # Upload all artifacts to the release
-          for file in $(find artifacts -type f); do
+          # Create release if it doesn't exist
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Creating release $TAG"
+            gh release create "$TAG" --title "$TAG" --generate-notes --repo "$GITHUB_REPOSITORY"
+          fi
+
+          # Upload all artifacts to the release (handles spaces in filenames)
+          find artifacts -type f -print0 | while IFS= read -r -d '' file; do
             echo "Uploading: $file"
             gh release upload "$TAG" "$file" --clobber --repo "$GITHUB_REPOSITORY"
           done
