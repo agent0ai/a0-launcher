@@ -17,6 +17,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     outputs:
       major_changed: ${{ steps.compare-majors.outputs.major_changed }}
+      previous_tag: ${{ steps.tags.outputs.previous_tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -202,25 +203,29 @@ jobs:
           path: out/make/**/*
 
   upload-to-release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [check-major-change, build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.check-major-change.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     permissions:
       contents: write
 
     steps:
       - name: Download all artifacts
+        if: needs.check-major-change.outputs.major_changed == 'true'
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
       - name: Display structure of downloaded files
+        if: needs.check-major-change.outputs.major_changed == 'true'
         run: ls -la artifacts/
 
       - name: List all files recursively
+        if: needs.check-major-change.outputs.major_changed == 'true'
         run: find artifacts -type f
 
       - name: Rename artifacts for consistent naming
+        if: needs.check-major-change.outputs.major_changed == 'true'
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG#v}"
@@ -276,30 +281,17 @@ jobs:
       - name: Upload executables to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS_TAG: ${{ needs.check-major-change.outputs.previous_tag }}
+          MAJOR_CHANGED: ${{ needs.check-major-change.outputs.major_changed }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           echo "Uploading to release: $TAG"
 
-          # Determine current and previous majors
-          CURRENT_TAG="$TAG"
-          PREV_TAG="$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || true)"
-          echo "Current tag: $CURRENT_TAG"
-          echo "Previous tag: $PREV_TAG"
-
-          CUR_MAJOR="${CURRENT_TAG#v}"
-          CUR_MAJOR="${CUR_MAJOR%%.*}"
-
-          PREV_MAJOR="${PREV_TAG#v}"
-          PREV_MAJOR="${PREV_MAJOR%%.*}"
-
-          echo "Current major: $CUR_MAJOR"
-          echo "Previous major: $PREV_MAJOR"
-
-          if [ -n "$PREV_TAG" ] && [ "$CUR_MAJOR" = "$PREV_MAJOR" ]; then
-            echo "Minor version change detected (same major). Reusing assets from previous release $PREV_TAG."
+          if [ "$MAJOR_CHANGED" = "false" ] && [ -n "$PREVIOUS_TAG" ]; then
+            echo "Minor version change detected (same major). Reusing assets from previous release $PREVIOUS_TAG."
 
             mkdir -p prev-assets
-            gh release download "$PREV_TAG" --repo "$GITHUB_REPOSITORY" --dir prev-assets --clobber
+            gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --dir prev-assets --clobber
 
             # Re-upload only files starting with a0-launcher-
             shopt -s nullglob
