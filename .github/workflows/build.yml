@@ -33,8 +33,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build macOS (DMG and ZIP)
-        run: npm run make:mac
+      - name: Build macOS (DMG and ZIP for arm64 and x64)
+        run: |
+          npm run make:mac -- --arch=arm64
+          npm run make:mac -- --arch=x64
         env:
           # Add these secrets for code signing in production
           # APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -69,8 +71,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows (Squirrel)
-        run: npm run make:win
+      - name: Build Windows (Squirrel for x64 and arm64)
+        run: |
+          npm run make:win -- --arch=x64
+          npm run make:win -- --arch=arm64
         env:
           DEBUG: electron-forge:*
 
@@ -105,8 +109,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rpm
 
-      - name: Build Linux (DEB and RPM)
-        run: npm run make:linux
+      - name: Build Linux (DEB and RPM for x64 and arm64)
+        run: |
+          npm run make:linux -- --arch=x64
+          npm run make:linux -- --arch=arm64
         env:
           DEBUG: electron-forge:*
 
