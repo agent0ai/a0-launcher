@@ -1,8 +1,9 @@
 const path = require("node:path");
 
-const shouldNotarize = ["true", "1"].includes(
-  (process.env.NOTARIZE || "").toLowerCase()
-);
+const shouldNotarize = true;
+//  ["true", "1"].includes(
+//   (process.env.NOTARIZE || "").toLowerCase()
+// );
 
 module.exports = {
   packagerConfig: {
