@@ -340,12 +340,23 @@ function createWindow() {
   // Load loading screen first
   mainWindow.loadFile(path.join(__dirname, 'loading.html'));
 
-  // With a tray present, closing the window hides it (Quit is explicit via tray menu).
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+  });
+
+  // With a tray present, closing the window hides it on desktop tray platforms.
+  // On macOS, allow the window to close so the app can quit cleanly and avoid
+  // idle Electron helper processes.
   mainWindow.on('close', (e) => {
     if (isQuitting) return;
-    if (!tray) return;
+    if (!tray || process.platform === 'darwin') return;
     e.preventDefault();
     mainWindow.hide();
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    if (tray) scheduleTrayMenuUpdate();
   });
 
   const updateTrayForWindow = () => {
@@ -893,10 +904,6 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
-
   // Wait a moment for loading screen to render
   await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -916,9 +923,7 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on('activate', async () => {
@@ -927,29 +932,22 @@ app.on('activate', async () => {
 
     if (contentInitialized) {
       // Content already initialized - load directly without update check
-      mainWindow.once('ready-to-show', async () => {
-        mainWindow.show();
-        // Verify content still exists before loading
-        const hasContent = await checkExistingContent();
-        if (hasContent) {
+      // Verify content still exists before loading
+      const hasContent = await checkExistingContent();
+      if (hasContent) {
+        await loadAppContent();
+      } else {
+        // Content was deleted - reinitialize
+        contentInitialized = false;
+        const success = await initializeAppContent();
+        if (success) {
+          contentInitialized = true;
+          await new Promise(resolve => setTimeout(resolve, 800));
           await loadAppContent();
-        } else {
-          // Content was deleted - reinitialize
-          contentInitialized = false;
-          const success = await initializeAppContent();
-          if (success) {
-            contentInitialized = true;
-            await new Promise(resolve => setTimeout(resolve, 800));
-            await loadAppContent();
-          }
         }
-      });
+      }
     } else {
       // First activation or previous init failed - run full initialization
-      mainWindow.once('ready-to-show', () => {
-        mainWindow.show();
-      });
-
       await new Promise(resolve => setTimeout(resolve, 500));
       const success = await initializeAppContent();
 
