@@ -1,8 +1,10 @@
-const { app, BrowserWindow, net, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, net, ipcMain, shell, Tray, Menu, nativeImage, protocol } = require('electron');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
-const serviceVersions = require('./service_versions');
+const childProcess = require('node:child_process');
+const dockerManager = require('./docker_manager');
 
 // Handle Squirrel.Windows startup events
 if (require('electron-squirrel-startup')) {
@@ -99,7 +101,7 @@ let mainWindow;
 let contentInitialized = false;
 let tray = null;
 let isQuitting = false;
-let lastServiceVersionsState = null;
+let lastDockerManagerState = null;
 let trayMenuUpdateTimer = null;
 
 /**
@@ -295,14 +297,16 @@ async function checkExistingContent() {
 }
 
 /**
- * Load the app content into the window
+ * Load the app content into the window.
+ * Uses the a0app:// custom protocol so that fetch(), URL resolution, and
+ * ES module imports inside the content work exactly like a real web server.
  */
 async function loadAppContent() {
   const indexPath = USING_LOCAL_CONTENT ? LOCAL_INDEX_FILE : path.join(CONTENT_DIR, 'index.html');
 
   try {
     await fs.access(indexPath);
-    mainWindow.loadFile(indexPath);
+    mainWindow.loadURL('a0app://content/index.html');
   } catch {
     // Fallback: show error in loading page
     if (USING_LOCAL_CONTENT) {
@@ -410,8 +414,8 @@ function activeRunningFromState(state) {
 function updateTrayMenu() {
   if (!tray) return;
 
-  const { hasActive, isRunning } = activeRunningFromState(lastServiceVersionsState);
-  const op = typeof serviceVersions.getCurrentOperation === 'function' ? serviceVersions.getCurrentOperation() : null;
+  const { hasActive, isRunning } = activeRunningFromState(lastDockerManagerState);
+  const op = typeof dockerManager.getCurrentOperation === 'function' ? dockerManager.getCurrentOperation() : null;
   const opRunning = !!op && typeof op === 'object' && op.status === 'running';
 
   const canStart = !!hasActive && !opRunning && !isRunning;
@@ -427,7 +431,7 @@ function updateTrayMenu() {
       click: async () => {
         try {
           sendStatus('Starting Agent Zero...');
-          await serviceVersions.startActiveInstance();
+          await dockerManager.startActiveInstance();
         } catch (error) {
           sendError(error && error.message ? error.message : 'Failed to start Agent Zero');
         }
@@ -439,7 +443,7 @@ function updateTrayMenu() {
       click: async () => {
         try {
           sendStatus('Stopping Agent Zero...');
-          await serviceVersions.stopActiveInstance();
+          await dockerManager.stopActiveInstance();
         } catch (error) {
           sendError(error && error.message ? error.message : 'Failed to stop Agent Zero');
         }
@@ -531,9 +535,151 @@ function isAllowedLocalUrl(value) {
   }
 }
 
-function sanitizeServiceVersionsState(state) {
+function isAllowedHttpUrl(value) {
+  try {
+    const u = new URL(String(value));
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    if (u.username || u.password) return false;
+    return !!u.hostname;
+  } catch {
+    return false;
+  }
+}
+
+function openAgentZeroUiWindow(url, title = 'Agent Zero') {
+  const iconPath = path.join(__dirname, 'assets',
+    process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+  );
+  const uiWindow = new BrowserWindow({
+    width: 1280,
+    height: 900,
+    title,
+    icon: iconPath,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  uiWindow.loadURL(url);
+  return uiWindow;
+}
+
+function shellSingleQuote(value) {
+  return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
+}
+
+function findA0CliBinary() {
+  const local = '/home/eclypso/a0/a0-connector/.venv/bin/a0';
+  if (fsSync.existsSync(local)) return local;
+  return 'a0';
+}
+
+function openA0CliTerminal(host) {
+  const h = String(host || '').trim();
+  if (!isAllowedLocalUrl(h)) {
+    const err = new Error('Start an instance before opening the A0 CLI terminal.');
+    err.code = 'UI_UNAVAILABLE';
+    throw err;
+  }
+
+  const cli = findA0CliBinary();
+  const command = `AGENT_ZERO_HOST=${shellSingleQuote(h)} ${shellSingleQuote(cli)} --host ${shellSingleQuote(h)}; exec bash`;
+
+  if (process.platform === 'linux') {
+    const candidates = [
+      ['x-terminal-emulator', ['-e', 'bash', '-lc', command]],
+      ['gnome-terminal', ['--', 'bash', '-lc', command]],
+      ['konsole', ['-e', 'bash', '-lc', command]],
+      ['xfce4-terminal', ['-e', `bash -lc ${shellSingleQuote(command)}`]],
+      ['xterm', ['-e', 'bash', '-lc', command]]
+    ];
+
+    let lastError = null;
+    for (const [cmd, args] of candidates) {
+      try {
+        const found = childProcess.spawnSync('bash', ['-lc', `command -v ${shellSingleQuote(cmd)}`], {
+          encoding: 'utf8'
+        });
+        if (found.status !== 0) continue;
+        const child = childProcess.spawn(cmd, args, {
+          detached: true,
+          stdio: 'ignore',
+          env: { ...process.env, AGENT_ZERO_HOST: h }
+        });
+        child.unref();
+        return { opened: true, command: cmd };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    const err = new Error(lastError?.message || 'No terminal emulator was found.');
+    err.code = 'TERMINAL_UNAVAILABLE';
+    throw err;
+  }
+
+  const err = new Error('Opening the A0 CLI terminal is currently configured for Linux.');
+  err.code = 'TERMINAL_UNAVAILABLE';
+  throw err;
+}
+
+function getDockerDesktopInstallerConfig() {
+  if (process.platform === 'win32') {
+    return {
+      url: 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe',
+      fileName: 'Docker-Desktop-Installer.exe'
+    };
+  }
+  if (process.platform === 'darwin') {
+    const isArm = process.arch === 'arm64';
+    return {
+      url: isArm
+        ? 'https://desktop.docker.com/mac/main/arm64/Docker.dmg'
+        : 'https://desktop.docker.com/mac/main/amd64/Docker.dmg',
+      fileName: 'Docker.dmg'
+    };
+  }
+  return null;
+}
+
+async function installDockerDesktop() {
+  const cfg = getDockerDesktopInstallerConfig();
+  if (!cfg) {
+    await shell.openExternal('https://docs.docker.com/engine/install/');
+    return { started: true, openedDocs: true };
+  }
+
+  const response = await net.fetch(cfg.url, {
+    headers: {
+      'Accept': 'application/octet-stream',
+      'User-Agent': 'A0-Launcher'
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`Docker download failed: ${response.status} ${response.statusText}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const targetPath = path.join(app.getPath('downloads'), cfg.fileName);
+  await fs.writeFile(targetPath, buffer);
+
+  if (process.platform === 'darwin') {
+    await shell.openPath(targetPath);
+    return { started: true, installerPath: targetPath, installerType: 'dmg' };
+  }
+
+  const opened = await shell.openPath(targetPath);
+  if (opened) {
+    throw new Error(`Failed to open Docker installer: ${opened}`);
+  }
+  return { started: true, installerPath: targetPath, installerType: 'exe' };
+}
+
+function sanitizeDockerManagerState(state) {
   const versionsIn = Array.isArray(state?.versions) ? state.versions : [];
   const retainedIn = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
+  const remoteIn = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
   const policyIn = isPlainObject(state?.retentionPolicy) ? state.retentionPolicy : {};
   const portsIn = isPlainObject(state?.portPreferences) ? state.portPreferences : {};
 
@@ -626,9 +772,23 @@ function sanitizeServiceVersionsState(state) {
   const keepCount = Number.isFinite(Number(policyIn.keepCount)) ? Number(policyIn.keepCount) : 1;
   const retentionPolicy = { keepCount: Math.max(0, Math.min(20, Math.floor(keepCount))) };
 
+  const remoteInstances = [];
+  for (const r of remoteIn) {
+    if (!isPlainObject(r)) continue;
+    const id = typeof r.id === 'string' ? r.id : '';
+    const name = typeof r.name === 'string' ? r.name : '';
+    const url = typeof r.url === 'string' ? r.url : '';
+    if (!id || !name || !isAllowedHttpUrl(url)) continue;
+    const out = { id, name, url };
+    if (typeof r.createdAt === 'string') out.createdAt = r.createdAt;
+    if (typeof r.updatedAt === 'string') out.updatedAt = r.updatedAt;
+    remoteInstances.push(out);
+  }
+
   const outState = {
     versions,
     retainedInstances,
+    remoteInstances,
     retentionPolicy
   };
 
@@ -681,7 +841,7 @@ function sanitizeServiceVersionsState(state) {
   return outState;
 }
 
-function sanitizeServiceVersionsProgress(progress) {
+function sanitizeDockerManagerProgress(progress) {
   if (!isPlainObject(progress)) return null;
   const out = {};
 
@@ -690,7 +850,7 @@ function sanitizeServiceVersionsProgress(progress) {
   if (typeof progress.status === 'string') out.status = progress.status;
   if (typeof progress.startedAt === 'string') out.startedAt = progress.startedAt;
   if (typeof progress.finishedAt === 'string') out.finishedAt = progress.finishedAt;
-  if (typeof progress.targetVersionTag === 'string') out.targetVersionTag = progress.targetVersionTag;
+  if (typeof progress.targetTag === 'string') out.targetTag = progress.targetTag;
 
   if (Number.isFinite(Number(progress.progress))) out.progress = Number(progress.progress);
   if (Number.isFinite(Number(progress.downloadProgress))) out.downloadProgress = Number(progress.downloadProgress);
@@ -701,208 +861,386 @@ function sanitizeServiceVersionsProgress(progress) {
   return out.opId ? out : null;
 }
 
-function sendServiceVersionsEvent(channel, payload) {
+function sendDockerManagerEvent(channel, payload) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const wc = mainWindow.webContents;
   if (!wc || wc.isDestroyed()) return;
   wc.send(channel, payload);
 }
 
-serviceVersions.events.on('state', (state) => {
-  lastServiceVersionsState = state;
+dockerManager.events.on('state', (state) => {
+  lastDockerManagerState = state;
   if (tray) scheduleTrayMenuUpdate();
   try {
-    sendServiceVersionsEvent('service-versions:state', sanitizeServiceVersionsState(state));
+    sendDockerManagerEvent('docker-manager:state', sanitizeDockerManagerState(state));
   } catch {
     // ignore
   }
 });
 
-serviceVersions.events.on('progress', (progress) => {
+dockerManager.events.on('progress', (progress) => {
   if (tray) scheduleTrayMenuUpdate();
-  const sanitized = sanitizeServiceVersionsProgress(progress);
-  if (sanitized) sendServiceVersionsEvent('service-versions:progress', sanitized);
+  const sanitized = sanitizeDockerManagerProgress(progress);
+  if (sanitized) sendDockerManagerEvent('docker-manager:progress', sanitized);
 });
 
-ipcMain.handle('service-versions:getState', async () => {
+ipcMain.handle('docker-manager:getState', async () => {
   try {
-    const state = await serviceVersions.getServiceVersionsState();
-    return sanitizeServiceVersionsState(state);
+    const state = await dockerManager.getDockerManagerState();
+    return sanitizeDockerManagerState(state);
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:refresh', async () => {
+ipcMain.handle('docker-manager:refresh', async () => {
   try {
-    const state = await serviceVersions.refreshServiceVersions({ forceRefresh: true });
-    return sanitizeServiceVersionsState(state);
+    const state = await dockerManager.refreshDockerManager({ forceRefresh: true });
+    return sanitizeDockerManagerState(state);
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:install', async (_event, body) => {
+ipcMain.handle('docker-manager:install', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const tag = typeof body.tag === 'string' ? body.tag : '';
-    const accepted = await serviceVersions.installOrSync(tag);
+    const accepted = await dockerManager.installOrSync(tag);
     if (!accepted || typeof accepted.opId !== 'string') {
-      return serviceVersions.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Install did not return an opId' });
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Install did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:startActive', async () => {
+ipcMain.handle('docker-manager:startActive', async () => {
   try {
-    const accepted = await serviceVersions.startActiveInstance();
+    const accepted = await dockerManager.startActiveInstance();
     if (!accepted || typeof accepted.opId !== 'string') {
-      return serviceVersions.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Start did not return an opId' });
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Start did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:stopActive', async () => {
+ipcMain.handle('docker-manager:stopActive', async () => {
   try {
-    const accepted = await serviceVersions.stopActiveInstance();
+    const accepted = await dockerManager.stopActiveInstance();
     if (!accepted || typeof accepted.opId !== 'string') {
-      return serviceVersions.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Stop did not return an opId' });
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Stop did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:setRetentionPolicy', async (_event, body) => {
+ipcMain.handle('docker-manager:setRetentionPolicy', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const keepCount = body.keepCount;
-    const policy = await serviceVersions.setRetentionPolicy(keepCount);
+    const policy = await dockerManager.setRetentionPolicy(keepCount);
     return { keepCount: policy.keepCount };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:setPortPreferences', async (_event, body) => {
+ipcMain.handle('docker-manager:setPortPreferences', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const ui = body.ui;
     const ssh = body.ssh;
-    const prefs = await serviceVersions.setPortPreferences({ ui, ssh });
+    const prefs = await dockerManager.setPortPreferences({ ui, ssh });
     return { ui: prefs.ui, ssh: prefs.ssh };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:deleteRetainedInstance', async (_event, body) => {
+ipcMain.handle('docker-manager:addRemoteInstance', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const name = typeof body.name === 'string' ? body.name : '';
+    const url = typeof body.url === 'string' ? body.url : '';
+    const saved = await dockerManager.addRemoteInstance({ name, url });
+    const sanitized = sanitizeDockerManagerState({ remoteInstances: [saved] }).remoteInstances?.[0];
+    return sanitized || dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:deleteRemoteInstance', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const id = typeof body.id === 'string' ? body.id : '';
+    return await dockerManager.deleteRemoteInstance(id);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:deleteRetainedInstance', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const containerId = typeof body.containerId === 'string' ? body.containerId : '';
-    const accepted = await serviceVersions.deleteRetainedInstance(containerId);
+    const accepted = await dockerManager.deleteRetainedInstance(containerId);
     if (!accepted || typeof accepted.opId !== 'string') {
-      return serviceVersions.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Delete did not return an opId' });
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Delete did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:updateToLatest', async (_event, body) => {
+ipcMain.handle('docker-manager:updateToLatest', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const dataLossAck = typeof body.dataLossAck === 'string' ? body.dataLossAck : '';
-    const accepted = await serviceVersions.updateToLatest(dataLossAck);
+    const accepted = await dockerManager.updateToLatest(dataLossAck);
     if (!accepted || typeof accepted.opId !== 'string') {
-      return serviceVersions.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Update did not return an opId' });
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Update did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:activate', async (_event, body) => {
+ipcMain.handle('docker-manager:activate', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const tag = typeof body.tag === 'string' ? body.tag : '';
     const dataLossAck = typeof body.dataLossAck === 'string' ? body.dataLossAck : '';
-    const accepted = await serviceVersions.activateVersion(tag, dataLossAck);
+    const options = {
+      instanceName: typeof body.instanceName === 'string' ? body.instanceName : '',
+      portMappings: typeof body.portMappings === 'string' ? body.portMappings : '',
+      envText: typeof body.envText === 'string' ? body.envText : ''
+    };
+    const accepted = await dockerManager.activateTag(tag, dataLossAck, options);
     if (!accepted || typeof accepted.opId !== 'string') {
-      return serviceVersions.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Activate did not return an opId' });
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Activate did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:activateRetainedInstance', async (_event, body) => {
+ipcMain.handle('docker-manager:activateRetainedInstance', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const containerId = typeof body.containerId === 'string' ? body.containerId : '';
     const dataLossAck = typeof body.dataLossAck === 'string' ? body.dataLossAck : '';
-    const accepted = await serviceVersions.activateRetainedInstance(containerId, dataLossAck);
+    const accepted = await dockerManager.activateRetainedInstance(containerId, dataLossAck);
     if (!accepted || typeof accepted.opId !== 'string') {
-      return serviceVersions.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Rollback did not return an opId' });
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Rollback did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:cancel', async (_event, body) => {
+ipcMain.handle('docker-manager:cancel', async (_event, body) => {
   try {
-    if (!isPlainObject(body)) return serviceVersions.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const opId = typeof body.opId === 'string' ? body.opId : '';
-    const result = await serviceVersions.cancelOperation(opId);
+    const result = await dockerManager.cancelOperation(opId);
     return { canceled: !!result?.canceled };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:openUi', async () => {
+ipcMain.handle('docker-manager:getInventory', async () => {
+  try {
+    return await dockerManager.getDockerInventory();
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:removeVolume', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const volumeName = typeof body.volumeName === 'string' ? body.volumeName : '';
+    return await dockerManager.removeVolume(volumeName);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:pruneVolumes', async () => {
+  try {
+    const result = await dockerManager.pruneVolumes();
+    return { pruned: true, result };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:installDocker', async () => {
+  try {
+    return await installDockerDesktop();
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:openUi', async () => {
   try {
     // Refresh state to compute a best-effort UI URL from the currently active container.
-    const state = await serviceVersions.refreshServiceVersions({ forceRefresh: false });
+    const state = await dockerManager.refreshDockerManager({ forceRefresh: false });
     const url = typeof state?.uiUrl === 'string' ? state.uiUrl : '';
     if (!url) {
-      return serviceVersions.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI is not available. Start a version first.' });
+      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI is not available. Start a version first.' });
     }
     if (!isAllowedLocalUrl(url)) {
-      return serviceVersions.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI URL is not available.' });
+      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI URL is not available.' });
     }
-    await shell.openExternal(url);
+
+    // Open the A0 UI inside a new Electron window (not the system browser).
+    const iconPath = path.join(__dirname, 'assets',
+      process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+    );
+    const uiWindow = new BrowserWindow({
+      width: 1280,
+      height: 900,
+      title: 'Agent Zero',
+      icon: iconPath,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
+    });
+    uiWindow.loadURL(url);
     return { opened: true };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
 
-ipcMain.handle('service-versions:openHomepage', async () => {
+ipcMain.handle('docker-manager:openContainerUi', async (_event, body) => {
   try {
-    await shell.openExternal('https://agent-zero.ai/');
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const url = await dockerManager.getContainerUiUrl(containerId);
+    if (!url) {
+      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI is not reachable for this instance yet.' });
+    }
+    if (!isAllowedLocalUrl(url)) {
+      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI URL is not available.' });
+    }
+
+    const iconPath = path.join(__dirname, 'assets',
+      process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+    );
+    const uiWindow = new BrowserWindow({
+      width: 1280,
+      height: 900,
+      title: 'Agent Zero',
+      icon: iconPath,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
+    });
+    uiWindow.loadURL(url);
     return { opened: true };
   } catch (error) {
-    return serviceVersions.toErrorResponse(error);
+    return dockerManager.toErrorResponse(error);
   }
 });
+
+ipcMain.handle('docker-manager:openRemoteInstance', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const id = typeof body.id === 'string' ? body.id : '';
+    const remote = await dockerManager.getRemoteInstance(id);
+    const url = typeof remote?.url === 'string' ? remote.url : '';
+    if (!isAllowedHttpUrl(url)) {
+      return dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
+    }
+    openAgentZeroUiWindow(url, remote?.name || 'Agent Zero');
+    return { opened: true };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:openHomepage', async () => {
+  try {
+    await shell.openExternal('https://www.agent-zero.ai/p/community/api-dashboard/');
+    return { opened: true };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:openCliTerminal', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const host = typeof body.host === 'string' ? body.host : '';
+    return openA0CliTerminal(host);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Custom protocol: a0app://
+// Serves app content from disk so that fetch(), new URL(), and module imports
+// work naturally (as if served by a web server). This stays in the shell layer
+// and is NOT part of the A0 UI core.
+// ---------------------------------------------------------------------------
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'a0app',
+  privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
+}]);
 
 // App lifecycle
 app.whenReady().then(async () => {
+  // Register the a0app:// protocol handler (must be inside whenReady).
+  protocol.handle('a0app', (request) => {
+    const url = new URL(request.url);
+    const contentRoot = USING_LOCAL_CONTENT
+      ? path.join(LOCAL_REPO_DIR, 'app')
+      : CONTENT_DIR;
+    const relativePath = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    const filePath = path.join(contentRoot, relativePath);
+
+    // Path traversal protection
+    const normalizedRoot = path.resolve(contentRoot);
+    const normalizedFile = path.resolve(filePath);
+    if (!normalizedFile.startsWith(normalizedRoot)) {
+      console.log(`[a0app] BLOCKED (traversal): ${request.url} -> ${normalizedFile}`);
+      return new Response('Forbidden', { status: 403 });
+    }
+
+    const fileUrl = pathToFileURL(normalizedFile).toString();
+    console.log(`[a0app] ${request.url} -> ${fileUrl}`);
+    return net.fetch(fileUrl);
+  });
   createWindow();
   createTray();
+
+  // DEBUG: capture renderer-side errors in terminal
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.log(`[did-fail-load] code=${code} desc=${desc} url=${url}`);
+  });
+  mainWindow.webContents.on('console-message', (_e, level, message) => {
+    if (level >= 2) console.log(`[renderer-error] ${message}`);
+  });
 
   // Wait a moment for loading screen to render
   await new Promise(resolve => setTimeout(resolve, 500));

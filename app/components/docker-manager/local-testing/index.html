@@ -1,0 +1,16 @@
+<body>
+  <section class="section sv-card">
+    <div class="sv-card-head sv-card-head-row">
+      <div>
+        <h2 class="section-title sv-section-heading">Instances</h2>
+        <div id="sessionsSubtitle" class="sv-subtitle">Detected from Docker daemon</div>
+      </div>
+      <button id="addRemoteInstanceBtn" class="button confirm" type="button">
+        <span class="material-symbols-outlined" aria-hidden="true">add_link</span>
+        <span>Add remote instance</span>
+      </button>
+    </div>
+    <div id="localList" class="dm-cards-grid"></div>
+  </section>
+  <script type="module" src="components/docker-manager/local-testing/local-testing.js"></script>
+</body>

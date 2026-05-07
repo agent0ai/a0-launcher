@@ -1,0 +1,13 @@
+<body>
+  <section class="section sv-card">
+    <div class="sv-card-head sv-card-head-row">
+      <div>
+        <h2 class="section-title sv-section-heading">Storage volumes</h2>
+        <div class="sv-subtitle">Manage Docker volumes</div>
+      </div>
+      <button id="pruneVolumesBtn" class="button cancel" type="button">Clear unused volumes</button>
+    </div>
+    <div id="retainedList" class="sv-list"></div>
+  </section>
+  <script type="module" src="components/docker-manager/retained-instances/retained-instances.js"></script>
+</body>

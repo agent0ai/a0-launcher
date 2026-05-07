@@ -36,6 +36,21 @@ jobs:
           const APP_DIR = './app';
           const OUTPUT_FILE = './content.json';
 
+          const TEXT_EXTENSIONS = new Set([
+            '.html', '.htm',
+            '.css',
+            '.js', '.mjs', '.cjs',
+            '.json', '.map',
+            '.svg', '.xml',
+            '.md', '.txt',
+            '.yml', '.yaml',
+          ]);
+
+          function isTextFile(relativePath) {
+            const ext = path.extname(relativePath).toLowerCase();
+            return TEXT_EXTENSIONS.has(ext);
+          }
+
           function getAllFiles(dir, baseDir = dir) {
             const files = {};
             const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -47,8 +62,12 @@ jobs:
               if (entry.isDirectory()) {
                 Object.assign(files, getAllFiles(fullPath, baseDir));
               } else {
-                // Read file content as string (works for text files)
-                files[relativePath] = fs.readFileSync(fullPath, 'utf8');
+                const buffer = fs.readFileSync(fullPath);
+                if (isTextFile(relativePath)) {
+                  files[relativePath] = { encoding: 'utf8', data: buffer.toString('utf8') };
+                } else {
+                  files[relativePath] = { encoding: 'base64', data: buffer.toString('base64') };
+                }
               }
             }
 
@@ -62,7 +81,7 @@ jobs:
             files: files
           };
 
-          fs.writeFileSync(OUTPUT_FILE, JSON.stringify(bundle, null, 2));
+          fs.writeFileSync(OUTPUT_FILE, JSON.stringify(bundle, null, 2), 'utf8');
           console.log(`Bundled ${bundle.file_count} files into ${OUTPUT_FILE}`);
           EOF
 

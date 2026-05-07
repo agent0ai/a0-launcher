@@ -1,0 +1,23 @@
+<body>
+  <section class="section sv-card">
+    <div class="sv-card-head">
+      <h2 class="section-title sv-section-heading">Storage overview</h2>
+      <div class="sv-subtitle">Best-effort summary</div>
+    </div>
+    <div class="sv-storage-grid">
+      <div class="sv-storage-item">
+        <div class="sv-storage-label">Installs</div>
+        <div id="storageUsed" class="sv-storage-value"></div>
+      </div>
+      <div class="sv-storage-item">
+        <div class="sv-storage-label">Instances</div>
+        <div id="storageFree" class="sv-storage-value"></div>
+      </div>
+      <div class="sv-storage-item">
+        <div class="sv-storage-label">Volumes</div>
+        <div id="storageEstimate" class="sv-storage-value"></div>
+      </div>
+    </div>
+  </section>
+  <script type="module" src="components/docker-manager/storage-summary/storage-summary.js"></script>
+</body>

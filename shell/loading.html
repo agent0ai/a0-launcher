@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:">
     <title>A0 Launcher</title>
     <style>
         * {
@@ -70,7 +70,7 @@
 </head>
 <body>
     <div class="container">
-        <img class="logo" src="assets/icon.png" alt="A0 Launcher">
+        <img class="logo" src="assets/icon.png" alt="A0 Launcher" onerror="this.style.display='none'">
         <h1>A0 Launcher</h1>
         <p class="status" id="status">Checking for updates...</p>
         <div class="spinner" id="spinner"></div>
