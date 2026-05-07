@@ -2,73 +2,147 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
-    <title>A0 Launcher</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            color: #e4e4e4;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .container {
-            text-align: center;
-            padding: 40px;
-        }
-
-        h1 {
-            font-size: 48px;
-            font-weight: 700;
-            margin-bottom: 16px;
-            background: linear-gradient(90deg, #4dabf7, #748ffc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        p {
-            font-size: 18px;
-            color: #a0a0a0;
-            margin-bottom: 8px;
-        }
-
-        .version {
-            font-size: 14px;
-            color: #666;
-            margin-top: 24px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+    <title>Agent Zero</title>
+  <link rel="stylesheet" href="./service_versions.css">
 </head>
 
 <body>
-    <div class="container">
-        <h1>Hello World!</h1>
-        <p>A0 Launcher is running successfully.</p>
-        <p>This content was downloaded from GitHub.</p>
-        <p class="version" id="version"></p>
-    </div>
-    <script>
-        (async () => {
-            const version = await window.electronAPI?.getContentVersion?.();
-            if (version) {
-                document.getElementById('version').textContent = `Content version: ${version}`;
-            }
-        })();
-    </script>
+  <div class="app">
+    <header class="app-header">
+      <div class="title">
+        <div class="brand">
+          <img id="headerLogo" class="header-logo hidden" alt="">
+          <h1>Agent Zero</h1>
+        </div>
+        <div class="meta">
+          <span id="contentVersion" class="meta-item"></span>
+          <span id="appVersion" class="meta-item"></span>
+        </div>
+      </div>
+      <div id="banner" class="banner hidden"></div>
+      <div class="header-controls">
+        <div class="actions">
+          <button id="openUiBtn" class="btn" type="button" disabled>Open UI</button>
+          <button id="homepageBtn" class="btn" type="button">Homepage</button>
+          <button id="refreshBtn" class="btn btn-primary" type="button">Refresh</button>
+        </div>
+        <div class="ports">
+          <div class="port-field">
+            <label class="retention-label" for="portUiInput">UI</label>
+            <input id="portUiInput" class="input input-port" type="number" inputmode="numeric" min="1" max="65535" step="1">
+          </div>
+          <div class="port-field">
+            <label class="retention-label" for="portSshInput">SSH</label>
+            <input id="portSshInput" class="input input-port" type="number" inputmode="numeric" min="1" max="65535" step="1">
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="progressPanel" class="card hidden">
+        <div class="card-header">
+          <h2>Progress</h2>
+        </div>
+        <div class="progress-row">
+          <div id="progressTitle" class="progress-title"></div>
+        </div>
+        <div class="progress-stack">
+          <div class="progress-block">
+            <div class="progress-row progress-row-compact">
+              <div id="progressDownloadLabel" class="progress-label">Download</div>
+              <div id="progressPercent" class="progress-percent"></div>
+            </div>
+            <div class="progress-bar">
+              <div id="progressFill" class="progress-fill"></div>
+            </div>
+          </div>
+
+          <div class="progress-block">
+            <div class="progress-row progress-row-compact">
+              <div id="progressExtractLabel" class="progress-label">Extract</div>
+              <div id="progressExtractPercent" class="progress-percent"></div>
+            </div>
+            <div class="progress-bar">
+              <div id="progressExtractFill" class="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+        <div id="progressMessage" class="progress-message"></div>
+        <div class="progress-actions">
+          <button id="cancelBtn" class="btn btn-small" type="button">Cancel</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Official Versions</h2>
+          <div id="officialSubtitle" class="subtitle"></div>
+        </div>
+        <div id="officialList" class="list list-scroll"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Local and Testing Builds</h2>
+          <div class="subtitle">For development and testing</div>
+        </div>
+        <div id="localList" class="list list-scroll list-scroll-compact"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-header row">
+          <div>
+            <h2>Retained Instances</h2>
+            <div class="subtitle">Kept for quick rollback</div>
+          </div>
+          <div class="retention">
+            <label class="retention-label" for="keepCountSelect">Keep</label>
+            <select id="keepCountSelect" class="select"></select>
+          </div>
+        </div>
+        <div id="retainedList" class="list"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Storage</h2>
+          <div class="subtitle">Best-effort estimate</div>
+        </div>
+        <div class="storage-grid">
+          <div class="storage-item">
+            <div class="storage-label">Installed size</div>
+            <div id="storageUsed" class="storage-value"></div>
+          </div>
+          <div class="storage-item">
+            <div class="storage-label">Free space</div>
+            <div id="storageFree" class="storage-value"></div>
+          </div>
+          <div class="storage-item">
+            <div class="storage-label">Estimated free after update</div>
+            <div id="storageEstimate" class="storage-value"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <details class="help">
+          <summary>Help and troubleshooting</summary>
+          <div class="help-body">
+            <p>This feature uses Docker to run Agent Zero. If you see a runtime error, install and start Docker Desktop (macOS/Windows) or Docker Engine (Linux).</p>
+            <p>Installing and updating versions requires an internet connection.</p>
+            <p>If updates are temporarily unavailable, try again later or sign in to Docker Desktop/Engine to reduce rate limits.</p>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <script src="./service_versions.js" defer></script>
 </body>
 
 </html>

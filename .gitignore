@@ -138,3 +138,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 App.zip
+
+# Generated build metadata (lets forks default to their own releases)
+shell/build-info.json

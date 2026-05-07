@@ -4,11 +4,17 @@
   "description": "Agent Zero Launcher - Desktop application shell",
   "main": "shell/main.js",
   "scripts": {
+    "prestart": "node scripts/write-build-info.js",
     "start": "electron-forge start",
+    "prepackage": "node scripts/write-build-info.js",
     "package": "electron-forge package",
+    "premake": "node scripts/write-build-info.js",
     "make": "electron-forge make",
+    "premake:mac": "node scripts/write-build-info.js",
     "make:mac": "electron-forge make --platform darwin",
+    "premake:win": "node scripts/write-build-info.js",
     "make:win": "electron-forge make --platform win32",
+    "premake:linux": "node scripts/write-build-info.js",
     "make:linux": "electron-forge make --platform linux"
   },
   "author": "Agent Zero Team",
@@ -23,7 +29,9 @@
     "electron": "^33.2.0"
   },
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.1"
+    "dockerode": "^4.0.9",
+    "electron-squirrel-startup": "^1.0.1",
+    "semver": "^7.7.3"
   },
   "build": {
     "mac": {

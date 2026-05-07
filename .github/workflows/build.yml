@@ -1,5 +1,5 @@
 name: Build Executables
-run-name: ${{ github.ref_name }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
 
 on:
   release:
@@ -14,8 +14,9 @@ on:
 jobs:
   check-major-change:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     outputs:
+      current_tag: ${{ steps.tags.outputs.current_tag }}
+      version: ${{ steps.tags.outputs.version }}
       major_changed: ${{ steps.compare-majors.outputs.major_changed }}
       previous_tag: ${{ steps.tags.outputs.previous_tag }}
     steps:
@@ -24,17 +25,41 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get current and previous tags
+      - name: Determine tag and version
         id: tags
+        shell: bash
         run: |
-          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
-          echo "current_tag=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CURRENT_TAG="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            CURRENT_TAG="${{ github.event.release.tag_name }}"
+          else
+            CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          fi
 
-          PREV_TAG="$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || true)"
+          if [[ ! "$CURRENT_TAG" =~ ^v ]]; then
+            CURRENT_TAG="v$CURRENT_TAG"
+          fi
+
+          VERSION="${CURRENT_TAG#v}"
+          if [[ $VERSION =~ ^[0-9]+\.[0-9]+$ ]]; then
+            VERSION="${VERSION}.0"
+          fi
+
+          echo "current_tag=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          PREV_TAG=""
+          if [ "${{ github.event_name }}" = "release" ]; then
+            if git rev-parse --verify "$CURRENT_TAG" >/dev/null 2>&1; then
+              PREV_TAG="$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || true)"
+            fi
+          fi
           echo "previous_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Compare major versions
         id: compare-majors
+        shell: bash
         run: |
           CURRENT_TAG="${{ steps.tags.outputs.current_tag }}"
           PREV_TAG="${{ steps.tags.outputs.previous_tag }}"
@@ -43,7 +68,9 @@ jobs:
 
           MAJOR_CHANGED="false"
 
-          if [ -n "$PREV_TAG" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MAJOR_CHANGED="true"
+          elif [ -n "$PREV_TAG" ]; then
             CUR_MAJOR="${CURRENT_TAG#v}"
             CUR_MAJOR="${CUR_MAJOR%%.*}"
 
@@ -60,6 +87,24 @@ jobs:
             MAJOR_CHANGED="true"
           fi
 
+          # If this is a minor/patch release (same major), we attempt to reuse assets from the previous tag's release.
+          # In forks or fresh repos, the previous tag may exist without a corresponding GitHub Release. In that case,
+          # fall back to building fresh artifacts by treating it as a "major change".
+          if [ "$MAJOR_CHANGED" = "false" ] && [ -n "$PREV_TAG" ]; then
+            echo "Checking for previous release assets on tag: $PREV_TAG"
+            status="$(
+              curl -sS -o /dev/null -w "%{http_code}" \
+                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${PREV_TAG}"
+            )"
+
+            if [ "$status" != "200" ]; then
+              echo "Previous release not found for $PREV_TAG (HTTP $status). Treating as major change."
+              MAJOR_CHANGED="true"
+            fi
+          fi
+
           echo "Major changed: $MAJOR_CHANGED"
           echo "major_changed=$MAJOR_CHANGED" >> "$GITHUB_OUTPUT"
 
@@ -67,6 +112,8 @@ jobs:
     needs: check-major-change
     if: needs.check-major-change.outputs.major_changed == 'true'
     runs-on: macos-latest
+    env:
+      HAS_MACOS_SIGNING_CERT: ${{ (secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSPHRASE != '') && '1' || '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,6 +124,7 @@ jobs:
           node-version: '20'
 
       - name: Import macOS code signing certificate
+        if: ${{ env.HAS_MACOS_SIGNING_CERT == '1' }}
         run: |
           echo "$MACOS_CERT_P12" | base64 --decode > cert.p12
           security create-keychain -p "" build.keychain
@@ -92,10 +140,7 @@ jobs:
 
       - name: Set version from tag
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ $VERSION =~ ^[0-9]+\.[0-9]+$ ]]; then
-            VERSION="${VERSION}.0"
-          fi
+          VERSION="${{ needs.check-major-change.outputs.version }}"
           echo "Setting version to $VERSION"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -106,17 +151,18 @@ jobs:
       - name: Build macOS
         run: |
           mkdir -p dist
-          
+
           # ARM64 -> arm
           npm run make:mac -- --arch=arm64
           mv "out/make/A0 Launcher.dmg" "dist/a0-launcher-${{ env.VERSION }}-macos-arm.dmg"
           mv "out/make/zip/darwin/arm64/"*.zip "dist/a0-launcher-${{ env.VERSION }}-macos-arm.zip"
-          
+
           # x64 -> x86
           npm run make:mac -- --arch=x64
           mv "out/make/A0 Launcher.dmg" "dist/a0-launcher-${{ env.VERSION }}-macos-x86.dmg"
           mv "out/make/zip/darwin/x64/"*.zip "dist/a0-launcher-${{ env.VERSION }}-macos-x86.zip"
         env:
+          SKIP_SIGNING: ${{ (secrets.MACOS_CERT_P12 == '' || secrets.MACOS_CERT_PASSPHRASE == '') && '1' || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -145,10 +191,7 @@ jobs:
       - name: Set version from tag
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ $VERSION =~ ^[0-9]+\.[0-9]+$ ]]; then
-            VERSION="${VERSION}.0"
-          fi
+          VERSION="${{ needs.check-major-change.outputs.version }}"
           echo "Setting version to $VERSION"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -160,12 +203,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          
+
           # x64 -> x86
           npm run make:win -- --arch=x64
           mv "out/make/squirrel.windows/x64/A0 Launcher-${{ env.VERSION }} Setup.exe" "dist/a0-launcher-${{ env.VERSION }}-windows-x86-setup.exe"
           mv "out/make/squirrel.windows/x64/A0Launcher-${{ env.VERSION }}-full.nupkg" "dist/a0-launcher-${{ env.VERSION }}-windows-x86.nupkg"
-          
+
           # arm64 -> arm
           npm run make:win -- --arch=arm64
           mv "out/make/squirrel.windows/arm64/A0 Launcher-${{ env.VERSION }} Setup.exe" "dist/a0-launcher-${{ env.VERSION }}-windows-arm-setup.exe"
@@ -194,10 +237,7 @@ jobs:
 
       - name: Set version from tag
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ $VERSION =~ ^[0-9]+\.[0-9]+$ ]]; then
-            VERSION="${VERSION}.0"
-          fi
+          VERSION="${{ needs.check-major-change.outputs.version }}"
           echo "Setting version to $VERSION"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -213,12 +253,12 @@ jobs:
       - name: Build Linux
         run: |
           mkdir -p dist
-          
+
           # x64 -> x86
           npm run make:linux -- --arch=x64
           mv "out/make/deb/x64/"*.deb "dist/a0-launcher-${{ env.VERSION }}-linux-x86.deb"
           mv "out/make/rpm/x64/"*.rpm "dist/a0-launcher-${{ env.VERSION }}-linux-x86.rpm"
-          
+
           # arm64 -> arm
           npm run make:linux -- --arch=arm64
           mv "out/make/deb/arm64/"*.deb "dist/a0-launcher-${{ env.VERSION }}-linux-arm.deb"
@@ -255,10 +295,10 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG#v}"
           echo "Processing version: $VERSION"
-          
+
           if [ "$MAJOR_CHANGED" = "false" ] && [ -n "$PREVIOUS_TAG" ]; then
             echo "Minor version change detected (same major). Reusing assets from previous release $PREVIOUS_TAG."
-            
+
             PREV_VERSION="${PREVIOUS_TAG#v}"
             echo "Previous version: $PREV_VERSION"
 
@@ -271,10 +311,10 @@ jobs:
               filename=$(basename "$file")
               # Replace previous version with current version in filename
               new_filename="${filename//$PREV_VERSION/$VERSION}"
-              
+
               echo "Copying $filename -> $new_filename"
               cp "$file" "$new_filename"
-              
+
               echo "Uploading: $new_filename"
               gh release upload "$TAG" "$new_filename" --clobber --repo "$GITHUB_REPOSITORY"
             done
