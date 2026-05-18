@@ -151,6 +151,27 @@ async function writeLocalMeta(data) {
   await fs.writeFile(META_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
+function parseTimestamp(value) {
+  const timestamp = new Date(value || '').getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getLocalContentTimestamp(localMeta) {
+  if (localMeta?.version === 'dev-local') {
+    console.log('Ignoring legacy dev-local content metadata for release updates');
+    return 0;
+  }
+
+  return parseTimestamp(localMeta?.published_at);
+}
+
+function getRemoteContentTimestamp(latestRelease, contentAsset) {
+  return Math.max(
+    parseTimestamp(latestRelease?.published_at),
+    parseTimestamp(contentAsset?.updated_at)
+  );
+}
+
 function resolveContentBundlePath(filePath) {
   if (typeof filePath !== 'string' || !filePath || filePath.includes('\0')) {
     throw new Error(`Invalid bundled content path: ${filePath}`);
@@ -287,27 +308,27 @@ async function initializeAppContent() {
     return true;
   }
 
+  const contentAsset = latestRelease.assets?.find(
+    asset => asset.name === CONTENT_ASSET_NAME
+  );
+
+  if (!contentAsset) {
+    console.error(`No ${CONTENT_ASSET_NAME} asset found in release`);
+    const hasContent = await checkExistingContent();
+    if (!hasContent) {
+      sendError('Release does not contain required content bundle.');
+      return false;
+    }
+    return true;
+  }
+
   const localMeta = await readLocalMeta();
-  const remoteTimestamp = new Date(latestRelease.published_at).getTime();
-  const localTimestamp = localMeta ? new Date(localMeta.published_at).getTime() : 0;
+  const remoteTimestamp = getRemoteContentTimestamp(latestRelease, contentAsset);
+  const localTimestamp = getLocalContentTimestamp(localMeta);
 
   if (remoteTimestamp > localTimestamp) {
-    console.log(`Update available: ${latestRelease.tag_name} (${latestRelease.published_at})`);
-
-    // Find the content.json asset
-    const contentAsset = latestRelease.assets.find(
-      asset => asset.name === CONTENT_ASSET_NAME
-    );
-
-    if (!contentAsset) {
-      console.error(`No ${CONTENT_ASSET_NAME} asset found in release`);
-      const hasContent = await checkExistingContent();
-      if (!hasContent) {
-        sendError('Release does not contain required content bundle.');
-        return false;
-      }
-      return true;
-    }
+    const remotePublishedAt = new Date(remoteTimestamp).toISOString();
+    console.log(`Update available: ${latestRelease.tag_name} (${remotePublishedAt})`);
 
     try {
       await downloadContent(contentAsset.browser_download_url);
@@ -315,7 +336,9 @@ async function initializeAppContent() {
       // Save metadata
       await writeLocalMeta({
         version: latestRelease.tag_name,
-        published_at: latestRelease.published_at,
+        published_at: remotePublishedAt,
+        release_published_at: latestRelease.published_at,
+        asset_updated_at: contentAsset.updated_at,
         downloaded_at: new Date().toISOString()
       });
 

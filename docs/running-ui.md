@@ -72,36 +72,31 @@ These are intended to become a **git submodule** shared with the main Agent Zero
 
 ```bash
 npm install
+A0_LAUNCHER_LOCAL_REPO=/home/eclypso/a0/a0-launcher npm start
+```
+
+This loads `app/index.html` directly from the working tree and is the right
+path for UI iteration.
+
+### Release content smoke test
+
+Plain `npm start` exercises the GitHub Release content path. It checks the
+configured repository's latest release, downloads `content.json` when the remote
+bundle is newer, and serves the unpacked cache from Electron `userData`.
+
+```bash
 npm start
 ```
 
-### Local content iteration (skip GitHub download)
+If you need to force a fresh release-content download on Linux:
 
 ```bash
-A0_LAUNCHER_USE_LOCAL_CONTENT=1 npm start
+rm -rf /home/eclypso/.config/a0-launcher/app_content \
+  /home/eclypso/.config/a0-launcher/content_meta.json
 ```
 
-This tells the shell to load `app/index.html` from the repo root instead of from the cached download directory.
-
-### Cache seeding (Windows PowerShell)
-
-For fast iteration without GitHub Releases:
-
-```powershell
-$userData = Join-Path $env:APPDATA 'a0-launcher'
-$contentDir = Join-Path $userData 'app_content'
-New-Item -ItemType Directory -Force -Path $contentDir | Out-Null
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $contentDir '*')
-Copy-Item -Recurse -Force -Path 'app\*' -Destination $contentDir
-
-$meta = @{ version='dev-local'; published_at='2999-01-01T00:00:00.000Z'; downloaded_at=(Get-Date).ToString('o') }
-$json = $meta | ConvertTo-Json -Depth 4
-$metaPath = Join-Path $userData 'content_meta.json'
-$enc = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($metaPath, $json, $enc)
-```
-
-Re-run after editing `app/` files.
+Do not seed cache metadata with future-dated timestamps. Local development
+should use `A0_LAUNCHER_LOCAL_REPO` or `A0_LAUNCHER_USE_LOCAL_CONTENT=1`.
 
 ## UI smoke tests
 

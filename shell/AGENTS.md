@@ -55,6 +55,9 @@ This scope owns:
 - Release bundles may contain legacy string file entries or structured
   `{ encoding, data }` entries. The loader must preserve `utf8` text and decode
   `base64` binary assets while rejecting unsafe paths.
+- Legacy cache metadata with `version: "dev-local"` must never block release
+  updates. Use explicit local-content mode for development instead of
+  future-dated sentinel timestamps.
 - The `a0app://` custom protocol is the renderer content origin; keep URL
   resolution, fetch, and CSP compatible with that scheme.
 - `content_meta.json` owns the downloaded content version shown as `Content:`.
