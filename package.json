@@ -1,6 +1,6 @@
 {
   "name": "a0-launcher",
-  "version": "1.2.2",
+  "version": "0.1.0",
   "description": "Agent Zero Launcher - Desktop application shell",
   "main": "shell/main.js",
   "scripts": {
