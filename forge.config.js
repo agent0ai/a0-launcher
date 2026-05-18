@@ -97,18 +97,5 @@ module.exports = {
         },
       },
     },
-    {
-      name: "@electron-forge/maker-rpm",
-      platforms: ["linux"],
-      config: {
-        options: {
-          name: "a0-launcher",
-          productName: "A0 Launcher",
-          homepage: "https://github.com/agent0ai/a0-launcher",
-          icon: path.join(__dirname, "shell", "assets", "icon.png"),
-          categories: ["Development", "Utility"],
-        },
-      },
-    },
   ],
 };

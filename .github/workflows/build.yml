@@ -57,56 +57,12 @@ jobs:
           fi
           echo "previous_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Compare major versions
+      - name: Select build strategy
         id: compare-majors
         shell: bash
         run: |
-          CURRENT_TAG="${{ steps.tags.outputs.current_tag }}"
-          PREV_TAG="${{ steps.tags.outputs.previous_tag }}"
-          echo "Current tag: $CURRENT_TAG"
-          echo "Previous tag: $PREV_TAG"
-
-          MAJOR_CHANGED="false"
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            MAJOR_CHANGED="true"
-          elif [ -n "$PREV_TAG" ]; then
-            CUR_MAJOR="${CURRENT_TAG#v}"
-            CUR_MAJOR="${CUR_MAJOR%%.*}"
-
-            PREV_MAJOR="${PREV_TAG#v}"
-            PREV_MAJOR="${PREV_MAJOR%%.*}"
-
-            echo "Current major: $CUR_MAJOR"
-            echo "Previous major: $PREV_MAJOR"
-
-            if [ "$CUR_MAJOR" != "$PREV_MAJOR" ]; then
-              MAJOR_CHANGED="true"
-            fi
-          else
-            MAJOR_CHANGED="true"
-          fi
-
-          # If this is a minor/patch release (same major), we attempt to reuse assets from the previous tag's release.
-          # In forks or fresh repos, the previous tag may exist without a corresponding GitHub Release. In that case,
-          # fall back to building fresh artifacts by treating it as a "major change".
-          if [ "$MAJOR_CHANGED" = "false" ] && [ -n "$PREV_TAG" ]; then
-            echo "Checking for previous release assets on tag: $PREV_TAG"
-            status="$(
-              curl -sS -o /dev/null -w "%{http_code}" \
-                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${PREV_TAG}"
-            )"
-
-            if [ "$status" != "200" ]; then
-              echo "Previous release not found for $PREV_TAG (HTTP $status). Treating as major change."
-              MAJOR_CHANGED="true"
-            fi
-          fi
-
-          echo "Major changed: $MAJOR_CHANGED"
-          echo "major_changed=$MAJOR_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Building fresh artifacts for ${{ steps.tags.outputs.current_tag }}"
+          echo "major_changed=true" >> "$GITHUB_OUTPUT"
 
   build-macos:
     needs: check-major-change
@@ -208,11 +164,6 @@ jobs:
           npm run make:win -- --arch=x64
           mv "out/make/squirrel.windows/x64/A0 Launcher-${{ env.VERSION }} Setup.exe" "dist/a0-launcher-${{ env.VERSION }}-windows-x86-setup.exe"
           mv "out/make/squirrel.windows/x64/A0Launcher-${{ env.VERSION }}-full.nupkg" "dist/a0-launcher-${{ env.VERSION }}-windows-x86.nupkg"
-
-          # arm64 -> arm
-          npm run make:win -- --arch=arm64
-          mv "out/make/squirrel.windows/arm64/A0 Launcher-${{ env.VERSION }} Setup.exe" "dist/a0-launcher-${{ env.VERSION }}-windows-arm-setup.exe"
-          mv "out/make/squirrel.windows/arm64/A0Launcher-${{ env.VERSION }}-full.nupkg" "dist/a0-launcher-${{ env.VERSION }}-windows-arm.nupkg"
         env:
           DEBUG: electron-forge:*
 
@@ -245,11 +196,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm
-
       - name: Build Linux
         run: |
           mkdir -p dist
@@ -257,12 +203,10 @@ jobs:
           # x64 -> x86
           npm run make:linux -- --arch=x64
           mv "out/make/deb/x64/"*.deb "dist/a0-launcher-${{ env.VERSION }}-linux-x86.deb"
-          mv "out/make/rpm/x64/"*.rpm "dist/a0-launcher-${{ env.VERSION }}-linux-x86.rpm"
 
           # arm64 -> arm
           npm run make:linux -- --arch=arm64
           mv "out/make/deb/arm64/"*.deb "dist/a0-launcher-${{ env.VERSION }}-linux-arm.deb"
-          mv "out/make/rpm/arm64/"*.rpm "dist/a0-launcher-${{ env.VERSION }}-linux-arm.rpm"
         env:
           DEBUG: electron-forge:*
 
@@ -289,41 +233,14 @@ jobs:
       - name: Upload executables to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PREVIOUS_TAG: ${{ needs.check-major-change.outputs.previous_tag }}
-          MAJOR_CHANGED: ${{ needs.check-major-change.outputs.major_changed }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG#v}"
           echo "Processing version: $VERSION"
+          echo "Uploading freshly built artifacts."
 
-          if [ "$MAJOR_CHANGED" = "false" ] && [ -n "$PREVIOUS_TAG" ]; then
-            echo "Minor version change detected (same major). Reusing assets from previous release $PREVIOUS_TAG."
-
-            PREV_VERSION="${PREVIOUS_TAG#v}"
-            echo "Previous version: $PREV_VERSION"
-
-            mkdir -p prev-assets
-            gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --dir prev-assets --clobber
-
-            # Re-upload files with renamed version
-            shopt -s nullglob
-            for file in prev-assets/a0-launcher-*; do
-              filename=$(basename "$file")
-              # Replace previous version with current version in filename
-              new_filename="${filename//$PREV_VERSION/$VERSION}"
-
-              echo "Copying $filename -> $new_filename"
-              cp "$file" "$new_filename"
-
-              echo "Uploading: $new_filename"
-              gh release upload "$TAG" "$new_filename" --clobber --repo "$GITHUB_REPOSITORY"
-            done
-          else
-            echo "Major version change or no previous tag. Uploading freshly built artifacts."
-
-            # Upload all files found in artifacts dirs (flattened)
-            find artifacts -type f | while read -r file; do
-              echo "Uploading: $file"
-              gh release upload "$TAG" "$file" --clobber --repo "$GITHUB_REPOSITORY"
-            done
-          fi
+          # Upload all files found in artifacts dirs (flattened)
+          find artifacts -type f | while read -r file; do
+            echo "Uploading: $file"
+            gh release upload "$TAG" "$file" --clobber --repo "$GITHUB_REPOSITORY"
+          done

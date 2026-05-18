@@ -26,8 +26,13 @@ This scope owns:
   so generated Electron packages use the selected release version.
 - Keep the checked-in `package.json` version aligned with the current release
   line because local runs and fallback paths use it directly.
+- Build every release from the tagged source. Do not relabel or reuse executable
+  assets from older releases.
 - Executable artifact names should remain predictable:
   `a0-launcher-<version>-<platform>-<arch>...`.
+- Release artifacts are macOS DMG/ZIP for arm and x86, Windows x86 Squirrel
+  setup/NuGet packages, and Linux DEB packages for arm and x86. Do not publish
+  Linux RPMs unless the product decision changes.
 - Content bundling checks out the release tag, walks `app/`, and uploads
   `content.json` to the same release.
 - `content.json` file entries use `{ encoding, data }`, with `utf8` for text
