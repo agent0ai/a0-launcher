@@ -35,6 +35,15 @@ function normalizeHttpUrl(value) {
   return url ? url.href : '';
 }
 
+function hasAllowedLocalPort(url) {
+  if (!url.port) {
+    return true;
+  }
+
+  const port = Number(url.port);
+  return Number.isInteger(port) && port > 0 && port <= 65535;
+}
+
 function isAllowedLocalInstanceUrl(value) {
   const url = parseHttpUrl(value);
   if (!url) {
@@ -42,7 +51,12 @@ function isAllowedLocalInstanceUrl(value) {
   }
 
   const hostname = url.hostname.toLowerCase();
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+  const isLocalhost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]' ||
+    hostname === '::1';
+  return isLocalhost && hasAllowedLocalPort(url);
 }
 
 function isAllowedRemoteInstanceUrl(value) {

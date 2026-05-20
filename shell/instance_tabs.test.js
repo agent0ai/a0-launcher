@@ -12,6 +12,9 @@ const {
 test('local URLs allow only localhost-style HTTP URLs without credentials', () => {
   assert.equal(isAllowedLocalInstanceUrl('http://127.0.0.1:32080/'), true);
   assert.equal(isAllowedLocalInstanceUrl('http://localhost:8880/'), true);
+  assert.equal(isAllowedLocalInstanceUrl('http://localhost:65535/'), true);
+  assert.equal(isAllowedLocalInstanceUrl('http://localhost:0/'), false);
+  assert.equal(isAllowedLocalInstanceUrl('http://localhost:65536/'), false);
   assert.equal(isAllowedLocalInstanceUrl('https://[::1]:8880/'), true);
   assert.equal(isAllowedLocalInstanceUrl('https://example.com/'), false);
   assert.equal(isAllowedLocalInstanceUrl('http://user:pass@127.0.0.1:32080/'), false);
