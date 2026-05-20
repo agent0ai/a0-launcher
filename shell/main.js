@@ -1,10 +1,17 @@
-const { app, BrowserWindow, net, ipcMain, shell, Tray, Menu, nativeImage, protocol } = require('electron');
+const { app, BrowserWindow, WebContentsView, net, ipcMain, shell, Tray, Menu, nativeImage, protocol } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const childProcess = require('node:child_process');
 const dockerManager = require('./docker_manager');
+const {
+  normalizeHttpUrl,
+  isAllowedLocalInstanceUrl,
+  isAllowedRemoteInstanceUrl,
+  makeTabKey,
+  makeTabsSnapshot
+} = require('./instance_tabs');
 
 // Handle Squirrel.Windows startup events
 if (require('electron-squirrel-startup')) {
@@ -103,6 +110,10 @@ let tray = null;
 let isQuitting = false;
 let lastDockerManagerState = null;
 let trayMenuUpdateTimer = null;
+let instanceTabs = new Map();
+let activeInstanceTabId = '';
+let instanceTabBounds = null;
+let instanceTabSeq = 0;
 
 /**
  * Fetch the latest release info from GitHub
@@ -437,6 +448,7 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    cleanupInstanceTabs();
     mainWindow = null;
     if (tray) scheduleTrayMenuUpdate();
   });
@@ -598,31 +610,11 @@ function isPlainObject(value) {
 }
 
 function isAllowedLocalUrl(value) {
-  try {
-    const u = new URL(String(value));
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    if (u.username || u.password) return false;
-    const host = u.hostname;
-    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1' && host !== '[::1]') return false;
-    if (u.port) {
-      const p = Number(u.port);
-      if (!Number.isFinite(p) || p <= 0 || p > 65535) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
+  return isAllowedLocalInstanceUrl(value);
 }
 
 function isAllowedHttpUrl(value) {
-  try {
-    const u = new URL(String(value));
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    if (u.username || u.password) return false;
-    return !!u.hostname;
-  } catch {
-    return false;
-  }
+  return isAllowedRemoteInstanceUrl(value);
 }
 
 function openAgentZeroUiWindow(url, title = 'Agent Zero') {
@@ -642,6 +634,393 @@ function openAgentZeroUiWindow(url, title = 'Agent Zero') {
   });
   uiWindow.loadURL(url);
   return uiWindow;
+}
+
+function getInstanceTabsSnapshot() {
+  return makeTabsSnapshot(instanceTabs, activeInstanceTabId);
+}
+
+function sendInstanceTabsEvent() {
+  sendDockerManagerEvent('docker-manager:instanceTabs', getInstanceTabsSnapshot());
+}
+
+function nextInstanceTabId() {
+  instanceTabSeq += 1;
+  return `instance-tab-${instanceTabSeq}`;
+}
+
+function createInstanceWebPreferences() {
+  return {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true
+  };
+}
+
+function sanitizeInstanceTabBounds(body) {
+  const source = isPlainObject(body?.bounds) ? body.bounds : body;
+  if (!isPlainObject(source)) return null;
+
+  const readInt = (key) => {
+    const value = Number(source[key]);
+    if (!Number.isFinite(value)) return null;
+    return Math.floor(value);
+  };
+
+  const x = readInt('x');
+  const y = readInt('y');
+  const width = readInt('width');
+  const height = readInt('height');
+
+  if (x === null || y === null || width === null || height === null) return null;
+  if (x < 0 || y < 0 || width < 80 || height < 80) return null;
+  return { x, y, width, height };
+}
+
+function hideInstanceTabView(tab) {
+  try {
+    tab?.view?.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+  } catch {
+    // ignore
+  }
+}
+
+function applyActiveInstanceTabBounds() {
+  for (const tab of instanceTabs.values()) {
+    if (tab.id !== activeInstanceTabId || !instanceTabBounds) {
+      hideInstanceTabView(tab);
+      continue;
+    }
+    try {
+      tab.view.setBounds(instanceTabBounds);
+    } catch {
+      hideInstanceTabView(tab);
+    }
+  }
+}
+
+function destroyInstanceTab(tab) {
+  if (!tab) return;
+
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
+      mainWindow.contentView.removeChildView(tab.view);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const wc = tab.view?.webContents;
+    if (wc && !wc.isDestroyed()) wc.close();
+  } catch {
+    // ignore
+  }
+}
+
+function cleanupInstanceTabs() {
+  for (const tab of instanceTabs.values()) {
+    destroyInstanceTab(tab);
+  }
+  instanceTabs = new Map();
+  activeInstanceTabId = '';
+  instanceTabBounds = null;
+}
+
+function urlsShareOrigin(left, right) {
+  try {
+    const a = new URL(String(left || ''));
+    const b = new URL(String(right || ''));
+    return a.origin === b.origin;
+  } catch {
+    return false;
+  }
+}
+
+function isNavigationAllowedForTab(tab, url) {
+  if (!tab || typeof url !== 'string') return false;
+  const normalized = normalizeHttpUrl(url);
+  if (!normalized) return false;
+  const validator = tab.kind === 'remote' ? isAllowedRemoteInstanceUrl : isAllowedLocalInstanceUrl;
+  return validator(normalized) && urlsShareOrigin(tab.url, normalized);
+}
+
+async function openExternalIfSafe(url) {
+  const normalized = normalizeHttpUrl(url);
+  if (!normalized || !isAllowedRemoteInstanceUrl(normalized) || isAllowedLocalInstanceUrl(normalized)) {
+    return { opened: false };
+  }
+  await shell.openExternal(normalized);
+  return { opened: true };
+}
+
+function createTabTargetError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+async function resolveInstanceUiTarget(body) {
+  const request = isPlainObject(body) ? body : {};
+  const kind = typeof request.kind === 'string' && request.kind.trim() ? request.kind.trim() : 'local';
+
+  if (kind === 'remote') {
+    const instanceId = typeof request.instanceId === 'string' && request.instanceId.trim()
+      ? request.instanceId.trim()
+      : typeof request.id === 'string'
+        ? request.id.trim()
+        : '';
+    const remote = await dockerManager.getRemoteInstance(instanceId);
+    const url = normalizeHttpUrl(remote?.url);
+    if (!url || !isAllowedRemoteInstanceUrl(url)) {
+      throw createTabTargetError('INVALID_REMOTE_INSTANCE', 'Invalid remote instance');
+    }
+    const title = typeof remote?.name === 'string' && remote.name.trim() ? remote.name.trim() : 'Agent Zero';
+    const target = {
+      kind: 'remote',
+      instanceId: typeof remote?.id === 'string' && remote.id ? remote.id : instanceId,
+      containerId: '',
+      title,
+      url
+    };
+    target.key = makeTabKey(target);
+    return target;
+  }
+
+  if (kind !== 'local') {
+    throw createTabTargetError('INVALID_INPUT', 'Invalid request');
+  }
+
+  const containerId = typeof request.containerId === 'string' ? request.containerId.trim() : '';
+  if (containerId) {
+    const url = normalizeHttpUrl(await dockerManager.getContainerUiUrl(containerId));
+    if (!url || !isAllowedLocalInstanceUrl(url)) {
+      throw createTabTargetError('UI_UNAVAILABLE', 'Agent Zero UI is not reachable for this instance yet.');
+    }
+    const target = {
+      kind: 'local',
+      instanceId: '',
+      containerId,
+      title: 'Agent Zero',
+      url
+    };
+    target.key = makeTabKey(target);
+    return target;
+  }
+
+  const state = await dockerManager.refreshDockerManager({ forceRefresh: false });
+  const url = normalizeHttpUrl(state?.uiUrl);
+  if (!url) {
+    throw createTabTargetError('UI_UNAVAILABLE', 'Agent Zero UI is not available. Start a version first.');
+  }
+  if (!isAllowedLocalInstanceUrl(url)) {
+    throw createTabTargetError('UI_UNAVAILABLE', 'Agent Zero UI URL is not available.');
+  }
+
+  const target = {
+    kind: 'local',
+    instanceId: '',
+    containerId: '',
+    title: 'Agent Zero',
+    url
+  };
+  target.key = makeTabKey(target);
+  return target;
+}
+
+function findInstanceTabByKey(key) {
+  for (const tab of instanceTabs.values()) {
+    if (tab.key === key) return tab;
+  }
+  return null;
+}
+
+function setActiveInstanceTab(id) {
+  const tabId = typeof id === 'string' ? id : '';
+  if (!tabId || !instanceTabs.has(tabId)) {
+    throw createTabTargetError('INSTANCE_NOT_FOUND', 'Instance tab not found.');
+  }
+  activeInstanceTabId = tabId;
+  applyActiveInstanceTabBounds();
+  sendInstanceTabsEvent();
+  return getInstanceTabsSnapshot();
+}
+
+function getInstanceTabIdFromRequest(body) {
+  if (!isPlainObject(body)) return '';
+  if (typeof body.tabId === 'string') return body.tabId;
+  if (typeof body.id === 'string') return body.id;
+  return '';
+}
+
+function attachInstanceTabEvents(tab) {
+  const wc = tab.view.webContents;
+
+  const update = () => {
+    if (instanceTabs.has(tab.id)) sendInstanceTabsEvent();
+  };
+
+  const blockNavigation = (event, url) => {
+    if (isNavigationAllowedForTab(tab, url)) return;
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    void openExternalIfSafe(url);
+  };
+
+  wc.setWindowOpenHandler(({ url }) => {
+    if (!isNavigationAllowedForTab(tab, url)) {
+      void openExternalIfSafe(url);
+    }
+    return { action: 'deny' };
+  });
+
+  wc.on('will-navigate', blockNavigation);
+  wc.on('will-redirect', blockNavigation);
+  wc.on('did-start-loading', () => {
+    tab.loading = true;
+    update();
+  });
+  wc.on('did-stop-loading', () => {
+    tab.loading = false;
+    tab.canReload = true;
+    update();
+  });
+  wc.on('did-fail-load', () => {
+    tab.loading = false;
+    tab.canReload = true;
+    update();
+  });
+  wc.on('page-title-updated', (_event, title) => {
+    const cleanTitle = typeof title === 'string' ? title.trim() : '';
+    if (cleanTitle) {
+      tab.title = cleanTitle;
+      update();
+    }
+  });
+  wc.on('did-navigate', (_event, url) => {
+    const normalized = normalizeHttpUrl(url);
+    if (normalized && isNavigationAllowedForTab(tab, normalized)) {
+      tab.url = normalized;
+      update();
+    }
+  });
+  wc.on('did-navigate-in-page', (_event, url) => {
+    const normalized = normalizeHttpUrl(url);
+    if (normalized && isNavigationAllowedForTab(tab, normalized)) {
+      tab.url = normalized;
+      update();
+    }
+  });
+  wc.once('destroyed', () => {
+    if (!instanceTabs.has(tab.id)) return;
+    instanceTabs.delete(tab.id);
+    if (activeInstanceTabId === tab.id) {
+      activeInstanceTabId = instanceTabs.keys().next().value || '';
+    }
+    applyActiveInstanceTabBounds();
+    sendInstanceTabsEvent();
+  });
+}
+
+async function openInstanceTab(target) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw createTabTargetError('UI_UNAVAILABLE', 'Launcher window is not available.');
+  }
+
+  const existing = findInstanceTabByKey(target.key);
+  if (existing) {
+    setActiveInstanceTab(existing.id);
+    return { opened: true, tabId: existing.id, focusedExisting: true };
+  }
+
+  if (!mainWindow.contentView || typeof mainWindow.contentView.addChildView !== 'function') {
+    openAgentZeroUiWindow(target.url, target.title);
+    return { opened: true, detached: true };
+  }
+
+  const previousActiveTabId = activeInstanceTabId;
+  const view = new WebContentsView({ webPreferences: createInstanceWebPreferences() });
+  const tab = {
+    id: nextInstanceTabId(),
+    key: target.key,
+    kind: target.kind,
+    title: target.title,
+    url: target.url,
+    containerId: target.containerId || '',
+    instanceId: target.instanceId || '',
+    loading: true,
+    canReload: true,
+    view
+  };
+
+  instanceTabs.set(tab.id, tab);
+  mainWindow.contentView.addChildView(view);
+  attachInstanceTabEvents(tab);
+  activeInstanceTabId = tab.id;
+  applyActiveInstanceTabBounds();
+  sendInstanceTabsEvent();
+
+  try {
+    await view.webContents.loadURL(target.url);
+  } catch (error) {
+    instanceTabs.delete(tab.id);
+    destroyInstanceTab(tab);
+    if (activeInstanceTabId === tab.id) {
+      activeInstanceTabId = instanceTabs.has(previousActiveTabId)
+        ? previousActiveTabId
+        : instanceTabs.keys().next().value || '';
+    }
+    applyActiveInstanceTabBounds();
+    sendInstanceTabsEvent();
+    throw error;
+  }
+
+  return { opened: true, tabId: tab.id, focusedExisting: false };
+}
+
+function closeInstanceTab(id) {
+  const tabId = typeof id === 'string' ? id : '';
+  const tab = tabId ? instanceTabs.get(tabId) : null;
+  if (!tab) {
+    throw createTabTargetError('INSTANCE_NOT_FOUND', 'Instance tab not found.');
+  }
+
+  instanceTabs.delete(tabId);
+  destroyInstanceTab(tab);
+  if (activeInstanceTabId === tabId) {
+    activeInstanceTabId = instanceTabs.keys().next().value || '';
+  }
+  applyActiveInstanceTabBounds();
+  sendInstanceTabsEvent();
+  return getInstanceTabsSnapshot();
+}
+
+function reloadInstanceTab(id) {
+  const tabId = typeof id === 'string' ? id : '';
+  const tab = tabId ? instanceTabs.get(tabId) : null;
+  if (!tab) {
+    throw createTabTargetError('INSTANCE_NOT_FOUND', 'Instance tab not found.');
+  }
+  const wc = tab.view?.webContents;
+  if (wc && !wc.isDestroyed()) wc.reload();
+  return { reloaded: true, tabId };
+}
+
+function detachInstanceTab(id) {
+  const tabId = typeof id === 'string' ? id : '';
+  const tab = tabId ? instanceTabs.get(tabId) : null;
+  if (!tab) {
+    throw createTabTargetError('INSTANCE_NOT_FOUND', 'Instance tab not found.');
+  }
+
+  openAgentZeroUiWindow(tab.url, tab.title);
+  instanceTabs.delete(tabId);
+  destroyInstanceTab(tab);
+  if (activeInstanceTabId === tabId) {
+    activeInstanceTabId = instanceTabs.keys().next().value || '';
+  }
+  applyActiveInstanceTabBounds();
+  sendInstanceTabsEvent();
+  return { detached: true, tabId };
 }
 
 function shellSingleQuote(value) {
@@ -1174,35 +1553,74 @@ ipcMain.handle('docker-manager:installDocker', async () => {
   }
 });
 
+ipcMain.handle('docker-manager:getInstanceTabs', async () => {
+  try {
+    return getInstanceTabsSnapshot();
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:setInstanceTabBounds', async (_event, body) => {
+  try {
+    instanceTabBounds = sanitizeInstanceTabBounds(body);
+    applyActiveInstanceTabBounds();
+    sendInstanceTabsEvent();
+    return getInstanceTabsSnapshot();
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:openInstanceUi', async (_event, body) => {
+  try {
+    const target = await resolveInstanceUiTarget(body);
+    return await openInstanceTab(target);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:selectInstanceTab', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    return setActiveInstanceTab(getInstanceTabIdFromRequest(body));
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:closeInstanceTab', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    return closeInstanceTab(getInstanceTabIdFromRequest(body));
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:reloadInstanceTab', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    return reloadInstanceTab(getInstanceTabIdFromRequest(body));
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:detachInstanceTab', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    return detachInstanceTab(getInstanceTabIdFromRequest(body));
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 ipcMain.handle('docker-manager:openUi', async () => {
   try {
-    // Refresh state to compute a best-effort UI URL from the currently active container.
-    const state = await dockerManager.refreshDockerManager({ forceRefresh: false });
-    const url = typeof state?.uiUrl === 'string' ? state.uiUrl : '';
-    if (!url) {
-      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI is not available. Start a version first.' });
-    }
-    if (!isAllowedLocalUrl(url)) {
-      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI URL is not available.' });
-    }
-
-    // Open the A0 UI inside a new Electron window (not the system browser).
-    const iconPath = path.join(__dirname, 'assets',
-      process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-    );
-    const uiWindow = new BrowserWindow({
-      width: 1280,
-      height: 900,
-      title: 'Agent Zero',
-      icon: iconPath,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true
-      }
-    });
-    uiWindow.loadURL(url);
-    return { opened: true };
+    const target = await resolveInstanceUiTarget({ kind: 'local' });
+    return await openInstanceTab(target);
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -1212,30 +1630,8 @@ ipcMain.handle('docker-manager:openContainerUi', async (_event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const containerId = typeof body.containerId === 'string' ? body.containerId : '';
-    const url = await dockerManager.getContainerUiUrl(containerId);
-    if (!url) {
-      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI is not reachable for this instance yet.' });
-    }
-    if (!isAllowedLocalUrl(url)) {
-      return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI URL is not available.' });
-    }
-
-    const iconPath = path.join(__dirname, 'assets',
-      process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-    );
-    const uiWindow = new BrowserWindow({
-      width: 1280,
-      height: 900,
-      title: 'Agent Zero',
-      icon: iconPath,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true
-      }
-    });
-    uiWindow.loadURL(url);
-    return { opened: true };
+    const target = await resolveInstanceUiTarget({ kind: 'local', containerId });
+    return await openInstanceTab(target);
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -1245,13 +1641,8 @@ ipcMain.handle('docker-manager:openRemoteInstance', async (_event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const id = typeof body.id === 'string' ? body.id : '';
-    const remote = await dockerManager.getRemoteInstance(id);
-    const url = typeof remote?.url === 'string' ? remote.url : '';
-    if (!isAllowedHttpUrl(url)) {
-      return dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
-    }
-    openAgentZeroUiWindow(url, remote?.name || 'Agent Zero');
-    return { opened: true };
+    const target = await resolveInstanceUiTarget({ kind: 'remote', instanceId: id });
+    return await openInstanceTab(target);
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
