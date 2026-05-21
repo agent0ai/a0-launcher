@@ -18,6 +18,7 @@ export const dockerManagerStore = createStore("dockerManager", {
   progress: null,
   portPreferences: null,
   retentionPolicy: null,
+  instanceTabs: { tabs: [], activeTabId: "" },
   setBanner(type, message) {
     this.banner = { type: type || "", message: message || "" };
   }
