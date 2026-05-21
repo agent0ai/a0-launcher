@@ -901,21 +901,35 @@ body, html {
   min-width: 2rem;
 }
 
+/*
+ * Instance tabs render as a fixed overlay, not an inline block. The launcher
+ * shell is a fixed-height, non-scrolling window, so an always-present tab
+ * surface would push content off-screen. The overlay takes zero layout space
+ * until at least one instance tab is open.
+ */
 .dm-instance-tabs {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 0;
-  min-height: 18rem;
+  position: fixed;
+  inset: 0;
+  z-index: 4200;
+  background: var(--color-background);
+}
+
+.dm-instance-tabs.has-tabs {
+  display: flex;
 }
 
 .dm-instance-tab-strip {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2.5rem;
+  min-height: 2.75rem;
   border-bottom: 1px solid var(--dm-line-soft);
   overflow-x: auto;
-  padding-bottom: 0.35rem;
+  padding: 0.4rem 0.65rem 0;
+  flex: 0 0 auto;
 }
 
 .dm-instance-tab {
@@ -964,9 +978,8 @@ body, html {
 
 .dm-instance-tab-viewport {
   position: relative;
-  min-height: clamp(20rem, 52vh, 44rem);
-  border: 1px solid var(--dm-line-soft);
-  border-top: 0;
+  flex: 1 1 auto;
+  min-height: 0;
   background: color-mix(in srgb, var(--color-panel) 65%, transparent);
 }
 
@@ -975,7 +988,7 @@ body, html {
 }
 
 .dm-instance-tab-empty {
-  min-height: clamp(20rem, 52vh, 44rem);
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -985,10 +998,6 @@ body, html {
 }
 
 @media (max-width: 760px) {
-  .dm-instance-tabs {
-    min-height: 14rem;
-  }
-
   .dm-instance-tab {
     min-width: 6.5rem;
     max-width: 11rem;

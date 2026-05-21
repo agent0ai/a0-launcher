@@ -8,6 +8,7 @@ function activeTab(snapshot) {
 }
 
 function render(snapshot = window.__dmLastInstanceTabs || { tabs: [], activeTabId: "" }) {
+  const section = document.querySelector(".dm-instance-tabs");
   const strip = byId("dmInstanceTabStrip");
   const empty = byId("dmInstanceTabEmpty");
   const viewport = byId("dmInstanceTabViewport");
@@ -18,14 +19,16 @@ function render(snapshot = window.__dmLastInstanceTabs || { tabs: [], activeTabI
   strip.innerHTML = "";
 
   if (!tabs.length) {
-    strip.classList.add("hidden");
+    // No tabs: the overlay collapses out of layout entirely so the launcher
+    // shell behind it stays scrollable and clickable.
+    if (section) section.classList.remove("has-tabs");
     viewport.classList.remove("has-tab");
     if (empty) empty.classList.remove("hidden");
     window.dockerManagerActions?.syncInstanceTabBounds?.();
     return;
   }
 
-  strip.classList.remove("hidden");
+  if (section) section.classList.add("has-tabs");
   viewport.classList.add("has-tab");
   if (empty) empty.classList.add("hidden");
 
