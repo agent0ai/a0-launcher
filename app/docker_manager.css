@@ -1102,8 +1102,75 @@ body, html {
   border-radius: 0.35rem 0.35rem 0 0;
   padding: 0.35rem 0.55rem;
   background: rgba(255, 255, 255, 0.04);
-  color: #d7e1ee;
+  color: #8b9bb0;
+  font-family: inherit;
   font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.dm-terminal-tab:hover {
+  color: #d7e1ee;
+}
+
+.dm-terminal-tab .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.dm-terminal-tab.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f7fb;
+  border-bottom-color: transparent;
+}
+
+.dm-terminal-logs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.dm-terminal-logs-label {
+  color: #8b9bb0;
+  font-size: 0.76rem;
+}
+
+.dm-terminal-logs-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.055);
+  color: #f5f7fb;
+  font-size: 0.76rem;
+}
+
+.dm-terminal-logs {
+  margin: 0;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.055);
+  color: #d7e1ee;
+  font-family: "Roboto Mono", monospace;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dm-terminal-logs.error {
+  color: #f4a8a8;
+}
+
+.dm-log-line {
+  white-space: pre-wrap;
+}
+
+.dm-log-line.stderr {
+  color: #f4a8a8;
 }
 
 .dm-terminal-body {

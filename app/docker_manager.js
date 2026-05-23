@@ -555,34 +555,72 @@ window.dockerManagerActions = {
 };
 
 let terminalDockOpen = false;
+let terminalDockTab = "cli";
+let logsContainerId = "";
+let logsLines = [];
+let logsLinesFor = "";
+let logsLoading = false;
+let logsError = "";
 
-function renderTerminalDock(state = snapshot()) {
-  const mount = document.getElementById("dmTerminalDock");
-  if (!mount) return;
-  const cliHost = cliHostFromState(state);
+function logsContainerOptions(state = snapshot()) {
+  const containers = Array.isArray(state?.containers) ? state.containers : [];
+  return containers
+    .filter((c) => c && typeof c.containerId === "string" && /^[a-f0-9]+$/i.test(c.containerId))
+    .map((c) => ({
+      id: c.containerId,
+      name: c.containerName || c.containerId.slice(0, 12),
+      state: String(c.state || "").toLowerCase(),
+      active: isLauncherActiveContainer(c)
+    }))
+    .sort((a, b) => {
+      const ar = a.state === "running" ? 1 : 0;
+      const br = b.state === "running" ? 1 : 0;
+      if (ar !== br) return br - ar;
+      return Number(b.active) - Number(a.active);
+    });
+}
 
-  mount.innerHTML = "";
-  const shell = document.createElement("div");
-  shell.className = `dm-terminal-shell${terminalDockOpen ? " open" : ""}`;
+async function loadContainerLogs(id) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.readContainerLogs !== "function" || !id) return;
+  logsLoading = true;
+  logsError = "";
+  renderTerminalDock(snapshot());
+  try {
+    const res = await api.readContainerLogs(id, { maxLines: 500 });
+    if (isErrorResponse(res)) {
+      logsLines = [];
+      logsError = res.message;
+    } else {
+      logsLines = Array.isArray(res?.lines) ? res.lines : [];
+      logsError = "";
+    }
+  } catch (e) {
+    logsLines = [];
+    logsError = e?.message || "Failed to load container logs.";
+  } finally {
+    logsLoading = false;
+    logsLinesFor = id;
+    renderTerminalDock(snapshot());
+  }
+}
 
-  const panel = document.createElement("div");
-  panel.className = "dm-terminal-panel";
-
-  const tabs = document.createElement("div");
-  tabs.className = "dm-terminal-tabs";
-  const tab = document.createElement("div");
-  tab.className = "dm-terminal-tab";
+function makeDockTab(icon, label, active, onClick) {
+  const tab = document.createElement("button");
+  tab.type = "button";
+  tab.className = `dm-terminal-tab${active ? " active" : ""}`;
   const tabIcon = document.createElement("span");
   tabIcon.className = "material-symbols-outlined";
-  tabIcon.textContent = "terminal";
+  tabIcon.textContent = icon;
   const tabText = document.createElement("span");
-  tabText.textContent = "A0 CLI Connector";
+  tabText.textContent = label;
   tab.appendChild(tabIcon);
   tab.appendChild(tabText);
-  tabs.appendChild(tab);
+  tab.addEventListener("click", onClick);
+  return tab;
+}
 
-  const body = document.createElement("div");
-  body.className = "dm-terminal-body";
+function renderCliBody(body, cliHost) {
   const note = document.createElement("div");
   note.className = "dm-terminal-note";
   note.textContent = cliHost
@@ -593,6 +631,125 @@ function renderTerminalDock(state = snapshot()) {
   command.textContent = cliHost ? `a0 --host ${cliHost}` : "a0";
   body.appendChild(note);
   body.appendChild(command);
+}
+
+function renderLogsBody(body, containerOpts) {
+  if (!containerOpts.length) {
+    const note = document.createElement("div");
+    note.className = "dm-terminal-note";
+    note.textContent = "No Agent Zero containers found. Start an instance to view its logs.";
+    body.appendChild(note);
+    return;
+  }
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "dm-terminal-logs-toolbar";
+
+  const label = document.createElement("span");
+  label.className = "dm-terminal-logs-label";
+  label.textContent = "Container";
+
+  const select = document.createElement("select");
+  select.className = "dm-terminal-logs-select";
+  for (const opt of containerOpts) {
+    const option = document.createElement("option");
+    option.value = opt.id;
+    option.textContent = `${opt.name} (${opt.state || "unknown"})`;
+    if (opt.id === logsContainerId) option.selected = true;
+    select.appendChild(option);
+  }
+  select.addEventListener("change", () => {
+    logsContainerId = select.value;
+    logsLines = [];
+    logsLinesFor = "";
+    logsError = "";
+    loadContainerLogs(logsContainerId);
+  });
+
+  const refresh = document.createElement("button");
+  refresh.className = "button icon-button dm-icon-button";
+  refresh.type = "button";
+  refresh.title = "Refresh logs";
+  refresh.setAttribute("aria-label", "Refresh logs");
+  refresh.disabled = logsLoading;
+  refresh.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">refresh</span>';
+  refresh.addEventListener("click", () => loadContainerLogs(logsContainerId));
+
+  toolbar.appendChild(label);
+  toolbar.appendChild(select);
+  toolbar.appendChild(refresh);
+  body.appendChild(toolbar);
+
+  const logs = document.createElement("pre");
+  logs.className = "dm-terminal-logs";
+  if (logsLoading) {
+    logs.textContent = "Loading logs…";
+  } else if (logsError) {
+    logs.textContent = logsError;
+    logs.classList.add("error");
+  } else if (!logsLines.length) {
+    logs.textContent = "No log output.";
+  } else {
+    for (const evt of logsLines) {
+      const line = document.createElement("div");
+      line.className = `dm-log-line${evt?.stream === "stderr" ? " stderr" : ""}`;
+      line.textContent = typeof evt?.line === "string" ? evt.line : "";
+      logs.appendChild(line);
+    }
+  }
+  body.appendChild(logs);
+
+  // Auto-load once when the dock is open on the Logs tab and the cache is stale.
+  if (terminalDockOpen && logsContainerId && !logsLoading && !logsError &&
+    logsLinesFor !== logsContainerId) {
+    loadContainerLogs(logsContainerId);
+  }
+}
+
+function renderTerminalDock(state = snapshot()) {
+  const mount = document.getElementById("dmTerminalDock");
+  if (!mount) return;
+  const cliHost = cliHostFromState(state);
+  const containerOpts = logsContainerOptions(state);
+
+  // Keep the selected logs container valid against current inventory.
+  if (logsContainerId && !containerOpts.some((o) => o.id === logsContainerId)) {
+    logsContainerId = "";
+  }
+  if (!logsContainerId && containerOpts.length) {
+    logsContainerId = containerOpts[0].id;
+  }
+  if (logsLinesFor && logsLinesFor !== logsContainerId) {
+    logsLines = [];
+    logsLinesFor = "";
+    logsError = "";
+  }
+
+  mount.innerHTML = "";
+  const shell = document.createElement("div");
+  shell.className = `dm-terminal-shell${terminalDockOpen ? " open" : ""}`;
+
+  const panel = document.createElement("div");
+  panel.className = "dm-terminal-panel";
+
+  const tabs = document.createElement("div");
+  tabs.className = "dm-terminal-tabs";
+  tabs.appendChild(makeDockTab("terminal", "A0 CLI Connector", terminalDockTab === "cli", () => {
+    terminalDockTab = "cli";
+    renderTerminalDock(snapshot());
+  }));
+  tabs.appendChild(makeDockTab("article", "Logs", terminalDockTab === "logs", () => {
+    terminalDockTab = "logs";
+    renderTerminalDock(snapshot());
+  }));
+
+  const body = document.createElement("div");
+  body.className = "dm-terminal-body";
+  if (terminalDockTab === "logs") {
+    renderLogsBody(body, containerOpts);
+  } else {
+    renderCliBody(body, cliHost);
+  }
 
   panel.appendChild(tabs);
   panel.appendChild(body);
@@ -639,6 +796,12 @@ function renderTerminalDock(state = snapshot()) {
   shell.appendChild(panel);
   shell.appendChild(footer);
   mount.appendChild(shell);
+
+  // Keep the newest log lines in view after each rebuild.
+  if (terminalDockTab === "logs") {
+    const logs = mount.querySelector(".dm-terminal-logs");
+    if (logs) logs.scrollTop = logs.scrollHeight;
+  }
 }
 
 function initSubscriptions() {

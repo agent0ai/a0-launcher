@@ -1669,6 +1669,19 @@ ipcMain.handle('docker-manager:openCliTerminal', async (_event, body) => {
   }
 });
 
+ipcMain.handle('docker-manager:readContainerLogs', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const maxLines = Number(body.maxLines);
+    return await dockerManager.readContainerLogs(containerId, {
+      maxLines: Number.isFinite(maxLines) ? maxLines : undefined
+    });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Custom protocol: a0app://
 // Serves app content from disk so that fetch(), new URL(), and module imports

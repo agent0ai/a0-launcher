@@ -1855,6 +1855,24 @@ async function pruneVolumes() {
   return result && typeof result === 'object' ? result : {};
 }
 
+async function readContainerLogs(containerId, options = {}) {
+  const id = assertContainerId(containerId);
+  const imageRepo = getBackendImageRepo();
+  const docker = await getDocker({ imageRepo });
+  const requested = Number(options?.maxLines);
+  const maxLines = Number.isFinite(requested)
+    ? Math.min(Math.max(Math.trunc(requested), 1), 2000)
+    : 500;
+  const result = await docker.readContainerLogs(id, { maxLines, timestamps: false });
+  const lines = Array.isArray(result?.lines) ? result.lines : [];
+  return {
+    lines: lines.map((evt) => ({
+      stream: evt?.stream === 'stderr' ? 'stderr' : 'stdout',
+      line: typeof evt?.line === 'string' ? evt.line : ''
+    }))
+  };
+}
+
 async function getContainerUiUrl(containerId) {
   const imageRepo = getBackendImageRepo();
   const id = assertContainerId(containerId);
@@ -1908,6 +1926,7 @@ module.exports = {
   removeVolume,
   pruneVolumes,
   getContainerUiUrl,
+  readContainerLogs,
 
   // Error helpers for IPC handlers
   toErrorResponse
