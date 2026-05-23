@@ -1158,7 +1158,8 @@ body, html {
   font-size: 0.74rem;
   line-height: 1.5;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .dm-terminal-logs.error {

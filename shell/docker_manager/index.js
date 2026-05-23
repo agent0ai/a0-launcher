@@ -1859,6 +1859,19 @@ async function readContainerLogs(containerId, options = {}) {
   const id = assertContainerId(containerId);
   const imageRepo = getBackendImageRepo();
   const docker = await getDocker({ imageRepo });
+
+  // Only allow reading logs for containers managed by this launcher
+  // (i.e. containers belonging to the backend image repo). Without this
+  // check the IPC boundary would expose logs of arbitrary containers
+  // whose ID happens to be guessable.
+  const managed = await docker.listContainers(imageRepo);
+  const allowed = Array.isArray(managed) && managed.some((c) => c && c.containerId === id);
+  if (!allowed) {
+    const err = new Error('Container not found');
+    err.code = 'INSTANCE_NOT_FOUND';
+    throw err;
+  }
+
   const requested = Number(options?.maxLines);
   const maxLines = Number.isFinite(requested)
     ? Math.min(Math.max(Math.trunc(requested), 1), 2000)

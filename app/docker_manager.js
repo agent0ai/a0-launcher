@@ -562,6 +562,7 @@ let logsLinesFor = "";
 let logsLoading = false;
 let logsError = "";
 let lastRenderedLogsFor = "";
+let logsRequestSeq = 0;
 const LOGS_NEAR_BOTTOM_PX = 24;
 
 function logsContainerOptions(state = snapshot()) {
@@ -585,11 +586,15 @@ function logsContainerOptions(state = snapshot()) {
 async function loadContainerLogs(id) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.readContainerLogs !== "function" || !id) return;
+  // Tag this request so a stale response from a previous container can't
+  // overwrite the panel after the user has switched selection.
+  const reqSeq = ++logsRequestSeq;
   logsLoading = true;
   logsError = "";
   renderTerminalDock(snapshot());
   try {
     const res = await api.readContainerLogs(id, { maxLines: 1000 });
+    if (reqSeq !== logsRequestSeq) return;
     if (isErrorResponse(res)) {
       logsLines = [];
       logsError = res.message;
@@ -598,12 +603,15 @@ async function loadContainerLogs(id) {
       logsError = "";
     }
   } catch (e) {
+    if (reqSeq !== logsRequestSeq) return;
     logsLines = [];
     logsError = e?.message || "Failed to load container logs.";
   } finally {
-    logsLoading = false;
-    logsLinesFor = id;
-    renderTerminalDock(snapshot());
+    if (reqSeq === logsRequestSeq) {
+      logsLoading = false;
+      logsLinesFor = id;
+      renderTerminalDock(snapshot());
+    }
   }
 }
 
