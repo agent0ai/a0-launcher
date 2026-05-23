@@ -561,6 +561,8 @@ let logsLines = [];
 let logsLinesFor = "";
 let logsLoading = false;
 let logsError = "";
+let lastRenderedLogsFor = "";
+const LOGS_NEAR_BOTTOM_PX = 24;
 
 function logsContainerOptions(state = snapshot()) {
   const containers = Array.isArray(state?.containers) ? state.containers : [];
@@ -587,7 +589,7 @@ async function loadContainerLogs(id) {
   logsError = "";
   renderTerminalDock(snapshot());
   try {
-    const res = await api.readContainerLogs(id, { maxLines: 500 });
+    const res = await api.readContainerLogs(id, { maxLines: 1000 });
     if (isErrorResponse(res)) {
       logsLines = [];
       logsError = res.message;
@@ -725,6 +727,17 @@ function renderTerminalDock(state = snapshot()) {
     logsError = "";
   }
 
+  // Capture pre-render scroll state so we can preserve the user's position
+  // across the dock's full DOM rebuild (which fires on every dm:state event).
+  let prevLogsScrollTop = 0;
+  let prevLogsAtBottom = true;
+  const prevLogsEl = mount.querySelector(".dm-terminal-logs");
+  if (prevLogsEl) {
+    prevLogsScrollTop = prevLogsEl.scrollTop;
+    prevLogsAtBottom = (prevLogsEl.scrollHeight - prevLogsEl.scrollTop - prevLogsEl.clientHeight)
+      < LOGS_NEAR_BOTTOM_PX;
+  }
+
   mount.innerHTML = "";
   const shell = document.createElement("div");
   shell.className = `dm-terminal-shell${terminalDockOpen ? " open" : ""}`;
@@ -797,10 +810,20 @@ function renderTerminalDock(state = snapshot()) {
   shell.appendChild(footer);
   mount.appendChild(shell);
 
-  // Keep the newest log lines in view after each rebuild.
+  // Preserve the user's scroll position across the dock rebuild. Only
+  // auto-scroll to the newest line when the container changed (fresh load)
+  // or when the user was already near the bottom before the rebuild.
   if (terminalDockTab === "logs") {
     const logs = mount.querySelector(".dm-terminal-logs");
-    if (logs) logs.scrollTop = logs.scrollHeight;
+    if (logs) {
+      const containerChanged = (logsLinesFor || "") !== lastRenderedLogsFor;
+      if (containerChanged || prevLogsAtBottom) {
+        logs.scrollTop = logs.scrollHeight;
+      } else {
+        logs.scrollTop = prevLogsScrollTop;
+      }
+    }
+    lastRenderedLogsFor = logsLinesFor || "";
   }
 }
 
