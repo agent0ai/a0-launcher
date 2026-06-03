@@ -21,7 +21,7 @@ This scope owns:
 - `vendor/`: locally bundled third-party assets, fonts, Alpine, Ace, and Material
   Symbols.
 
-## Framework Contracts
+## Local Contracts
 
 - Keep this subtree network-independent. Do not add remote fonts, remote icon
   kits, CDN scripts, or runtime asset fetches.
@@ -37,7 +37,7 @@ This scope owns:
 - Shared primitives should stay conservative. A portable helper belongs here
   only when it is useful beyond one launcher component.
 
-## Development Guidance
+## Work Guidance
 
 - Prefer adding a launcher-local class in `app/docker_manager.css` before
   changing shared visual primitives.
@@ -46,7 +46,7 @@ This scope owns:
 - Keep this scope safe for static release bundling; avoid filesystem or
   environment assumptions.
 
-## Testing
+## Verification
 
 After framework changes, run:
 
@@ -60,3 +60,7 @@ Then launch with local content and verify component loading still works:
 ```bash
 A0_LAUNCHER_LOCAL_REPO=/home/eclypso/a0/a0-launcher npm start
 ```
+
+## Child DOX Index
+
+No child `AGENTS.md` files exist in this scope.

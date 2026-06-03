@@ -21,7 +21,7 @@ This scope owns:
 - `impl/DockerodeLogProcessor.mjs`: Docker pull/log stream processing.
 - `LOG_PROCESSOR.md`: explanatory implementation notes for log processing.
 
-## Adapter Contracts
+## Local Contracts
 
 - `DockerInterface.mjs` is ESM by design. Keep the CommonJS bridge contained in
   `getDocker.js`.
@@ -35,7 +35,7 @@ This scope owns:
 - Log processing should normalize stream events into stable progress messages and
   preserve enough detail for cancellation/failure diagnosis.
 
-## Development Guidance
+## Work Guidance
 
 - Keep this layer reusable. Do not import Electron UI modules or renderer files.
 - Do not add launcher-specific labels such as `Instances` here; translate
@@ -46,7 +46,7 @@ This scope owns:
 - When adding a new Docker capability, define or update the abstract method in
   `DockerInterface.mjs` before implementing it in `impl/DockerodeDocker.mjs`.
 
-## Testing
+## Verification
 
 After adapter changes, run:
 
@@ -60,3 +60,7 @@ For ESM files, also run Node syntax checks through dynamic import when needed:
 ```bash
 node -e "import('./shell/docker_adapter/DockerInterface.mjs')"
 ```
+
+## Child DOX Index
+
+No child `AGENTS.md` files exist in this scope.

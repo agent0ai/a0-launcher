@@ -8,17 +8,6 @@ It is a static browser application built from local HTML, CSS, ES modules, the
 portable Agent Zero UI framework, and `<x-component>` includes. It presents the
 Docker Manager experience and asks the preload APIs to perform privileged work.
 
-## Documentation Hierarchy
-
-Child docs:
-
-- `/app/a0ui/AGENTS.md`
-- `/app/components/docker-manager/AGENTS.md`
-
-Keep this file focused on renderer-wide architecture and contracts. Put
-component-specific behavior in `/app/components/docker-manager/AGENTS.md` and
-portable UI framework rules in `/app/a0ui/AGENTS.md`.
-
 ## Ownership
 
 This scope owns:
@@ -33,7 +22,7 @@ This scope owns:
   `<x-component>`.
 - `app/a0ui/`: portable Agent Zero UI primitives vendored into this app.
 
-## Renderer Contracts
+## Local Contracts
 
 - Renderer code must not import Node or Electron modules directly.
 - All privileged behavior goes through preload surfaces:
@@ -53,12 +42,6 @@ This scope owns:
   Dashboard should go through the shell action where one exists; direct
   `window.open` should stay limited to safe public links such as Docker install
   help.
-- Instance tab chrome is renderer-owned, but embedded Agent Zero pages are not.
-  The renderer computes the tab viewport bounds and sends them through preload;
-  the shell owns the `WebContentsView` attached to that rectangle.
-
-## UI And Language Contracts
-
 - Use `Instances`, not `Sessions`, in visible copy.
 - Use `Storage volumes` when referring to Docker volumes.
 - Keep install, activation, rollback, and destructive-storage flows explicit
@@ -70,8 +53,11 @@ This scope owns:
   icon/font assets.
 - Do not add marketing-page structure to the app entrypoint. The first screen is
   the usable launcher.
+- Instance tab chrome is renderer-owned, but embedded Agent Zero pages are not.
+  The renderer computes the tab viewport bounds and sends them through preload;
+  the shell owns the `WebContentsView` attached to that rectangle.
 
-## Development Guidance
+## Work Guidance
 
 - Add shared renderer state to `docker-manager-store.js` first, then expose it
   through the snapshot in `app/docker_manager.js`.
@@ -83,7 +69,7 @@ This scope owns:
 - Keep launcher-specific styles in `app/docker_manager.css`; do not place
   one-off feature styling in portable `app/a0ui` files.
 
-## Testing
+## Verification
 
 After renderer changes, run at least:
 
@@ -98,3 +84,10 @@ affected tabs:
 ```bash
 A0_LAUNCHER_LOCAL_REPO=/home/eclypso/a0/a0-launcher npm start
 ```
+
+## Child DOX Index
+
+- `/app/a0ui/AGENTS.md`: portable Agent Zero UI framework assets and vendored
+  browser dependencies.
+- `/app/components/docker-manager/AGENTS.md`: Docker Manager renderer
+  components and component store.

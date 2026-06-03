@@ -17,7 +17,7 @@ This scope owns:
 - `workflows/bundle-content.yml`: `app/` static content bundling into
   `content.json` for GitHub Releases or manual artifacts.
 
-## Release Contracts
+## Local Contracts
 
 - Release builds are driven by `v*` tags or manual workflow input.
 - Tags without a patch segment, such as `v0.1`, are normalized to full semver
@@ -42,7 +42,7 @@ This scope owns:
   reruns or release asset refreshes are needed; moving the ref alone does not
   guarantee all old assets were rebuilt.
 
-## Development Guidance
+## Work Guidance
 
 - Keep workflow permissions as narrow as practical.
 - Preserve separate executable-build and content-bundle workflows unless a task
@@ -53,7 +53,7 @@ This scope owns:
 - When version or tag semantics change, update `/AGENTS.md` and this file in the
   same session.
 
-## Testing
+## Verification
 
 Workflow YAML has no local test contract. For small edits, run:
 
@@ -63,3 +63,7 @@ git diff --check
 
 For release-affecting edits, inspect the relevant workflow path and document any
 manual GitHub Actions verification in the final response.
+
+## Child DOX Index
+
+No child `AGENTS.md` files exist in this scope.

@@ -17,7 +17,7 @@ This scope owns:
 - `release-todos.md`: release checklist and temporary product corrections that
   must survive across coding sessions.
 
-## Documentation Contracts
+## Local Contracts
 
 - Keep public/user-facing language clear and task-oriented.
 - Do not let docs drift into a second implementation contract. If a detail is
@@ -28,7 +28,7 @@ This scope owns:
 - Keep product terms aligned with the app: `Instances`, `Storage volumes`, and
   `Open UI`.
 
-## Development Guidance
+## Work Guidance
 
 - Prefer short sections with concrete commands and expected outcomes.
 - Avoid duplicating long code or architecture descriptions that belong in root or
@@ -36,10 +36,14 @@ This scope owns:
 - If screenshots or generated artifacts are added later, document the capture
   and regeneration path here.
 
-## Testing
+## Verification
 
 For docs-only changes, run:
 
 ```bash
 git diff --check
 ```
+
+## Child DOX Index
+
+No child `AGENTS.md` files exist in this scope.

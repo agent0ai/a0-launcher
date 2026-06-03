@@ -22,7 +22,7 @@ This scope owns:
 - `retention.js`: retained instance pruning policy.
 - `errors.js`: stable UI-facing error response and Docker diagnostic mapping.
 
-## Runtime Contracts
+## Local Contracts
 
 - Docker access must go through `getDocker()` from `shell/docker_adapter`.
 - Backend image repo defaults to `agent0ai/agent-zero` and may be overridden by
@@ -37,9 +37,6 @@ This scope owns:
   practical before opening.
 - Prefer structured state over renderer-side inference. If the UI needs a
   status, add it to the Docker Manager state shape.
-
-## State And Persistence Contracts
-
 - Persist user preferences and remote instances through `state_store.js`; do not
   invent parallel files.
 - Port preferences are stored as UI and SSH host-port preferences.
@@ -50,9 +47,6 @@ This scope owns:
   needlessly.
 - Storage-volume operations must remain separate from retained-instance
   activation/removal.
-
-## Operation Contracts
-
 - Long-running operations return an operation id and emit progress.
 - Progress messages should be user-oriented: `Starting selected version`, not
   raw Docker implementation chatter.
@@ -63,7 +57,7 @@ This scope owns:
 - Error responses should pass through `toErrorResponse()` and map common Docker
   diagnostics to useful UI messages.
 
-## Development Guidance
+## Work Guidance
 
 - Keep Docker Manager as the product layer. Low-level Docker quirks belong in
   `shell/docker_adapter`.
@@ -73,7 +67,7 @@ This scope owns:
 - If a new persisted field is introduced, document its shape here and keep
   migration/default behavior tolerant of older state files.
 
-## Testing
+## Verification
 
 After changes here, run:
 
@@ -85,3 +79,7 @@ git diff --check
 
 For changes touching state persistence, also exercise the affected path in a
 local launcher run.
+
+## Child DOX Index
+
+No child `AGENTS.md` files exist in this scope.

@@ -29,7 +29,7 @@ This scope owns:
 - `instance-tabs/`: browser-style tab chrome, active-tab controls, empty state,
   and viewport bounds reporting for shell-owned Agent Zero UI views.
 
-## State And Event Contracts
+## Local Contracts
 
 - Components render from the state emitted by `app/docker_manager.js` through
   `dm:state`.
@@ -42,9 +42,6 @@ This scope owns:
 - Empty, loading, error, success, and disabled states must be explicit enough
   that the user is never left wondering whether Docker or the launcher is still
   working.
-
-## Feature Contracts
-
 - Official version cards must distinguish available, installed, active, testing,
   local, matching digest, and differing digest states without exposing raw Docker
   mechanics as the main story.
@@ -63,7 +60,7 @@ This scope owns:
   Reopening the same target focuses the existing tab. Detach moves the target
   into a standalone secure Electron window without stopping the instance.
 
-## Development Guidance
+## Work Guidance
 
 - Keep component scripts pure enough to rerender repeatedly from state without
   accumulating duplicate event listeners.
@@ -75,7 +72,7 @@ This scope owns:
 - If a component's contract becomes large enough to need its own doc, add a
   child `AGENTS.md` and update this file plus the root index in the same session.
 
-## Testing
+## Verification
 
 After component changes, run:
 
@@ -86,3 +83,7 @@ git diff --check
 
 For script changes under this subtree, also run `node --check` on the edited
 component modules when they are standalone ES modules.
+
+## Child DOX Index
+
+No child `AGENTS.md` files exist in this scope.
