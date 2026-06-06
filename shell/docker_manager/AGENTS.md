@@ -58,9 +58,9 @@ This scope owns:
   If no runtime setup/default-socket state is saved, preserve the environment
   fallback.
 - A runtime setup no-op because Docker is already available must preserve the
-  existing runtime metadata as-is. It must not infer or persist
-  `usesDefaultDockerSocket: true` unless setup actually selected or verified the
-  default socket.
+  existing runtime metadata as-is, including `lastSuccessfulSetupAt`. It must
+  not infer or persist `usesDefaultDockerSocket: true` unless setup actually
+  selected or verified the default socket.
 - Port preferences are stored as UI and SSH host-port preferences.
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence.

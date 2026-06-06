@@ -144,7 +144,7 @@ test('runRuntimeSetup no-ops without probing install tooling when Docker is alre
   assert.equal(result.machineName, '');
   assert.equal(result.dockerHostOverride, '');
   assert.equal(result.usesDefaultDockerSocket, false);
-  assert.ok(result.lastSuccessfulSetupAt);
+  assert.equal(result.lastSuccessfulSetupAt, '');
   assert.deepEqual(progress, [{ stepId: 'verify_existing_docker', message: 'Docker is ready' }]);
 });
 
@@ -168,7 +168,7 @@ test('runRuntimeSetup preserves explicit default socket metadata on ready no-op'
   assert.equal(result.machineName, 'a0-launcher');
   assert.equal(result.dockerHostOverride, '');
   assert.equal(result.usesDefaultDockerSocket, true);
-  assert.ok(result.lastSuccessfulSetupAt);
+  assert.equal(result.lastSuccessfulSetupAt, '2026-06-05T00:00:00.000Z');
 });
 
 test('runRuntimeSetup rejects unsupported platforms before install-tool probes', async () => {

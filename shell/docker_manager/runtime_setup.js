@@ -551,13 +551,7 @@ async function runRuntimeSetup(options = {}) {
   }
   if (options.dockerAvailable) {
     report({ stepId: 'verify_existing_docker', message: 'Docker is ready' });
-    return normalizeRuntimeSetupState({
-      runtimeBackend: existingRuntimeSetup.runtimeBackend,
-      machineName: existingRuntimeSetup.machineName,
-      dockerHostOverride: existingRuntimeSetup.dockerHostOverride,
-      usesDefaultDockerSocket: existingRuntimeSetup.usesDefaultDockerSocket,
-      lastSuccessfulSetupAt: new Date().toISOString()
-    });
+    return existingRuntimeSetup;
   }
   if (platform !== 'darwin') {
     throw setupError(
