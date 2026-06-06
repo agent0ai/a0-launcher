@@ -66,6 +66,11 @@ This scope owns:
 - Runtime setup uses the same progress event contract with
   `type: "runtime_setup"` plus sanitized `setupStep` and `setupCode` strings.
   `docker-manager:installDocker` remains the Docker Desktop fallback path.
+- `docker-manager:getInventory` must return renderer-safe inventory only:
+  `dockerAvailable`, `images`, `containers`, `volumes`, `remoteInstances`, and
+  a sanitized `environment` summary limited to display-safe primitive fields.
+  It must not expose `environment.dockerHost`, `diagnosticDetails`, Docker host
+  overrides, socket paths, daemon host internals, or raw adapter diagnostics.
 - `docker-manager:getRuntimeSetupState` must return a renderer-safe summary:
   `runtimeBackend`, `machineName`, `hasDockerHostOverride`,
   `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`. It must not expose raw

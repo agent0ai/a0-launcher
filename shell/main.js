@@ -1311,6 +1311,75 @@ function sanitizeRuntimeSetupState(runtimeSetup) {
   };
 }
 
+const SAFE_DOCKER_DIAGNOSTIC_CODES = new Set([
+  'INVALID_DOCKER_HOST',
+  'DOCKERODE_MISSING',
+  'PERMISSION_DENIED',
+  'DOCKER_NOT_FOUND',
+  'DAEMON_UNAVAILABLE',
+  'UNAUTHORIZED'
+]);
+
+function sanitizeDockerDiagnosticCode(value) {
+  const code = typeof value === 'string' ? value.trim() : '';
+  if (!code || code.length > 80) return null;
+  if (!/^[A-Z0-9_-]+$/.test(code)) return null;
+  return code;
+}
+
+function sanitizeDockerDiagnosticMessage(code, value) {
+  const message = typeof value === 'string' ? value.trim() : '';
+  if (!message) return null;
+  if (!SAFE_DOCKER_DIAGNOSTIC_CODES.has(code)) {
+    return 'Docker runtime is unavailable.';
+  }
+  return message.slice(0, 500);
+}
+
+function sanitizeDockerFlavor(value) {
+  const flavor = typeof value === 'string' ? value.trim() : '';
+  if (flavor === 'docker_desktop' || flavor === 'docker_engine' || flavor === 'unknown') {
+    return flavor;
+  }
+  return null;
+}
+
+function sanitizeDockerInventoryEnvironment(environment, dockerAvailable) {
+  if (!isPlainObject(environment)) return null;
+
+  const out = {
+    dockerAvailable: !!dockerAvailable
+  };
+
+  if (typeof environment.platform === 'string') out.platform = environment.platform;
+  if (typeof environment.arch === 'string') out.arch = environment.arch;
+
+  const dockerFlavor = sanitizeDockerFlavor(environment.dockerFlavor);
+  if (dockerFlavor) out.dockerFlavor = dockerFlavor;
+  if (typeof environment.daemonVersion === 'string') out.daemonVersion = environment.daemonVersion.slice(0, 128);
+
+  const diagnosticCode = sanitizeDockerDiagnosticCode(environment.diagnosticCode);
+  if (diagnosticCode) out.diagnosticCode = diagnosticCode;
+
+  const diagnosticMessage = sanitizeDockerDiagnosticMessage(diagnosticCode, environment.diagnosticMessage);
+  if (diagnosticMessage) out.diagnosticMessage = diagnosticMessage;
+
+  return out;
+}
+
+function sanitizeDockerInventory(inventory) {
+  const source = isPlainObject(inventory) ? inventory : {};
+  const dockerAvailable = !!source.dockerAvailable;
+  return {
+    dockerAvailable,
+    environment: sanitizeDockerInventoryEnvironment(source.environment, dockerAvailable),
+    images: Array.isArray(source.images) ? source.images : [],
+    containers: Array.isArray(source.containers) ? source.containers : [],
+    volumes: Array.isArray(source.volumes) ? source.volumes : [],
+    remoteInstances: Array.isArray(source.remoteInstances) ? source.remoteInstances : []
+  };
+}
+
 function sanitizeDockerManagerProgress(progress) {
   if (!isPlainObject(progress)) return null;
   const out = {};
@@ -1554,7 +1623,7 @@ ipcMain.handle('docker-manager:cancel', async (_event, body) => {
 
 ipcMain.handle('docker-manager:getInventory', async () => {
   try {
-    return await dockerManager.getDockerInventory();
+    return sanitizeDockerInventory(await dockerManager.getDockerInventory());
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
