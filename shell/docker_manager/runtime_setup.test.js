@@ -7,6 +7,11 @@ const {
   sanitizeCommandOutput,
   normalizeDockerHostOverride,
   normalizeRuntimeSetupState,
+  dockerOptionsForRuntimeSetup,
+  runRuntimeSetupStep,
+  setupError,
+  HOMEBREW_INSTALL_COMMAND,
+  HOMEBREW_INSTALL_ARGS,
   MAX_DOCKER_HOST_OVERRIDE_LENGTH,
   DEFAULT_A0_MACHINE_NAME
 } = require('./runtime_setup');
@@ -78,6 +83,68 @@ test('planner blocks when a running non-A0 Podman machine appears after a manage
 test('sanitizeCommandOutput redacts obvious password and token lines', () => {
   const output = 'ok\nPASSWORD=secret\napi_token: abc123\nfinished';
   assert.equal(sanitizeCommandOutput(output), 'ok\n[redacted]\n[redacted]\nfinished');
+});
+
+test('Homebrew install step pipes the fetched installer into bash noninteractively', async () => {
+  const calls = [];
+  await runRuntimeSetupStep({ id: 'install_homebrew' }, {
+    brewPath: '/opt/homebrew/bin/brew',
+    runProcess: async (command, args, options) => {
+      calls.push({ command, args, options });
+      return { code: 0, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, HOMEBREW_INSTALL_COMMAND);
+  assert.deepEqual(calls[0].args, HOMEBREW_INSTALL_ARGS);
+  assert.equal(calls[0].args[0], '-c');
+  assert.match(calls[0].args[1], /^\/usr\/bin\/curl -fsSL https:\/\/raw\.githubusercontent\.com\/Homebrew\/install\/HEAD\/install\.sh \| \/bin\/bash$/);
+  assert.doesNotMatch(calls[0].args[1], /^\$\(/);
+  assert.equal(calls[0].options.env.NONINTERACTIVE, '1');
+});
+
+test('dockerOptionsForRuntimeSetup preserves env fallback unless default socket is persisted', () => {
+  assert.deepEqual(dockerOptionsForRuntimeSetup('agent0ai/agent-zero', {}), {
+    imageRepo: 'agent0ai/agent-zero'
+  });
+  assert.deepEqual(dockerOptionsForRuntimeSetup('agent0ai/agent-zero', {
+    usesDefaultDockerSocket: true
+  }), {
+    imageRepo: 'agent0ai/agent-zero',
+    dockerHost: ''
+  });
+  assert.deepEqual(dockerOptionsForRuntimeSetup('agent0ai/agent-zero', {
+    dockerHostOverride: 'unix:///tmp/podman.sock',
+    usesDefaultDockerSocket: true
+  }), {
+    imageRepo: 'agent0ai/agent-zero',
+    dockerHost: 'unix:///tmp/podman.sock'
+  });
+});
+
+test('install_podman_helper preserves setup cancellation before authorization cancel mapping', async () => {
+  await assert.rejects(
+    runRuntimeSetupStep({ id: 'install_podman_helper' }, {
+      brewPath: '/opt/homebrew/bin/brew',
+      plan: { machineName: DEFAULT_A0_MACHINE_NAME },
+      runProcess: async (command) => {
+        if (command === '/opt/homebrew/bin/brew') {
+          return { code: 0, stdout: '/opt/homebrew/Cellar/podman/5.0.0\n', stderr: '' };
+        }
+        if (command === '/usr/bin/osascript') {
+          throw setupError('SETUP_CANCELED', 'Runtime setup was canceled', {
+            stderr: 'operation canceled'
+          });
+        }
+        throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command}`);
+      }
+    }),
+    (error) => {
+      assert.equal(error.code, 'SETUP_CANCELED');
+      return true;
+    }
+  );
 });
 
 test('normalizeDockerHostOverride accepts only safe Docker host forms', () => {

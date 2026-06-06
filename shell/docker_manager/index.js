@@ -59,11 +59,7 @@ function getBackendGithubRepo() {
 
 async function getDockerForManager(imageRepo = getBackendImageRepo()) {
   const runtime = await stateStore.readRuntimeSetup();
-  const options = { imageRepo };
-  if (runtime.dockerHostOverride) {
-    options.dockerHost = runtime.dockerHostOverride;
-  }
-  return getDocker(options);
+  return getDocker(runtimeSetup.dockerOptionsForRuntimeSetup(imageRepo, runtime));
 }
 
 function mapRuntimeSetupErrorToMessage(error) {

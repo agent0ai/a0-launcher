@@ -14,7 +14,7 @@ const MAX_DOCKER_HOST_OVERRIDE_LENGTH = 2048;
 const HOMEBREW_INSTALL_COMMAND = '/bin/bash';
 const HOMEBREW_INSTALL_ARGS = Object.freeze([
   '-c',
-  '$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)'
+  '/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash'
 ]);
 
 function setupError(code, message, details = {}) {
@@ -65,6 +65,17 @@ function normalizeRuntimeSetupState(value = {}) {
     usesDefaultDockerSocket: !!input.usesDefaultDockerSocket,
     lastSuccessfulSetupAt: Number.isFinite(Date.parse(lastSuccessfulSetupAt)) ? lastSuccessfulSetupAt : ''
   };
+}
+
+function dockerOptionsForRuntimeSetup(imageRepo, runtimeSetupState = {}) {
+  const options = { imageRepo };
+  const runtime = normalizeRuntimeSetupState(runtimeSetupState);
+  if (runtime.dockerHostOverride) {
+    options.dockerHost = runtime.dockerHostOverride;
+  } else if (runtime.usesDefaultDockerSocket) {
+    options.dockerHost = '';
+  }
+  return options;
 }
 
 function chooseBrewPath(options = {}) {
@@ -461,6 +472,7 @@ async function runRuntimeSetupStep(step, context = {}) {
     case 'install_podman_helper': {
       const helperPath = await podmanHelperPath(brewPath, run);
       return run('/usr/bin/osascript', ['-e', makeAuthorizationScript(helperPath)], { signal }).catch((error) => {
+        if (error?.code === 'SETUP_CANCELED') throw error;
         const text = `${error?.message || ''}\n${error?.details?.stdout || ''}\n${error?.details?.stderr || ''}`;
         if (/cancel/i.test(text)) {
           throw setupError('AUTHORIZATION_CANCELED', 'Runtime setup needs one admin approval', error?.details || {});
@@ -548,6 +560,7 @@ module.exports = {
   choosePodmanMachine,
   collectRuntimeSetupContext,
   commandOutputLines,
+  dockerOptionsForRuntimeSetup,
   findBrewPath,
   makeRuntimeSetupPlan,
   makeAuthorizationScript,

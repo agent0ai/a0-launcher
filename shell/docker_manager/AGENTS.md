@@ -52,6 +52,11 @@ This scope owns:
   socket URLs, and root-only `tcp:`, `http:`, or `https:` daemon URLs. Network
   daemon URLs must not persist ignored path, query, fragment, or credential
   components.
+- When runtime setup persists `usesDefaultDockerSocket: true` with an empty
+  `dockerHostOverride`, Docker Manager must pass an explicit empty `dockerHost`
+  to the adapter so the default socket is used instead of `process.env.DOCKER_HOST`.
+  If no runtime setup/default-socket state is saved, preserve the environment
+  fallback.
 - Port preferences are stored as UI and SSH host-port preferences.
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence.
@@ -78,9 +83,9 @@ This scope owns:
 - Runtime setup progress may include only user-facing `message`, stable
   `setupStep`, and stable `setupCode` strings. Raw stdout/stderr stays inside
   `runtime_setup.js` after redaction.
-- The runtime setup command graph is fixed: Homebrew install uses
-  `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
-  with `NONINTERACTIVE=1`; package and machine work uses Homebrew, Podman, and
+- The runtime setup command graph is fixed: Homebrew install uses `/bin/bash`
+  with `-c "/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash"`
+  and `NONINTERACTIVE=1`; package and machine work uses Homebrew, Podman, and
   Docker commands selected by the setup plan; native authorization uses
   `/usr/bin/osascript -e <script>` with the helper path derived from
   `brew --prefix podman`.
