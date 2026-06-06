@@ -71,6 +71,10 @@ This scope owns:
   a sanitized `environment` summary limited to display-safe primitive fields.
   It must not expose `environment.dockerHost`, `diagnosticDetails`, Docker host
   overrides, socket paths, daemon host internals, or raw adapter diagnostics.
+- Inventory `volumes` entries must be built from an allowlist before crossing
+  IPC: `name`, `driver`, `scope`, `createdAt`, and product-safe string labels.
+  They must not expose Docker `Mountpoint` values, adapter `mountpoint` fields,
+  or any raw Docker host paths.
 - `docker-manager:getRuntimeSetupState` must return a renderer-safe summary:
   `runtimeBackend`, `machineName`, `hasDockerHostOverride`,
   `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`. It must not expose raw

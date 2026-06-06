@@ -1367,6 +1367,70 @@ function sanitizeDockerInventoryEnvironment(environment, dockerAvailable) {
   return out;
 }
 
+function looksLikeHostPath(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return false;
+  return text.startsWith('/') ||
+    text.startsWith('~/') ||
+    text.startsWith('\\\\') ||
+    /^[A-Za-z]:[\\/]/.test(text) ||
+    /(^|[\\/])(?:Users|Volumes|home|var|tmp|private|mnt|run|etc)[\\/]/.test(text);
+}
+
+function sanitizeDockerVolumeLabelKey(value) {
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!key || key.length > 160) return null;
+  if (!key.startsWith('a0.launcher.')) return null;
+  if (!/^[A-Za-z0-9_.-]+$/.test(key)) return null;
+  return key;
+}
+
+function sanitizeDockerVolumeLabelValue(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || text.length > 500) return null;
+  if (/[\r\n\0]/.test(text)) return null;
+  if (looksLikeHostPath(text)) return null;
+  return text;
+}
+
+function sanitizeDockerVolumeLabels(labels) {
+  if (!isPlainObject(labels)) return null;
+
+  const out = {};
+  for (const [rawKey, rawValue] of Object.entries(labels)) {
+    const key = sanitizeDockerVolumeLabelKey(rawKey);
+    const value = sanitizeDockerVolumeLabelValue(rawValue);
+    if (!key || !value) continue;
+    out[key] = value;
+  }
+
+  return Object.keys(out).length ? out : null;
+}
+
+function sanitizeDockerInventoryVolumes(volumes) {
+  const source = Array.isArray(volumes) ? volumes : [];
+  const out = [];
+
+  for (const v of source) {
+    if (!isPlainObject(v)) continue;
+    const name = typeof v.name === 'string' ? v.name.trim() : '';
+    if (!name || name.length > 255 || looksLikeHostPath(name)) continue;
+
+    const volume = { name };
+    if (typeof v.driver === 'string') volume.driver = v.driver.trim().slice(0, 80);
+    if (typeof v.scope === 'string') volume.scope = v.scope.trim().slice(0, 80);
+    if (typeof v.createdAt === 'string') volume.createdAt = v.createdAt;
+    if (v.createdAt === null) volume.createdAt = null;
+
+    const labels = sanitizeDockerVolumeLabels(v.labels);
+    if (labels) volume.labels = labels;
+
+    out.push(volume);
+  }
+
+  return out;
+}
+
 function sanitizeDockerInventory(inventory) {
   const source = isPlainObject(inventory) ? inventory : {};
   const dockerAvailable = !!source.dockerAvailable;
@@ -1375,7 +1439,7 @@ function sanitizeDockerInventory(inventory) {
     environment: sanitizeDockerInventoryEnvironment(source.environment, dockerAvailable),
     images: Array.isArray(source.images) ? source.images : [],
     containers: Array.isArray(source.containers) ? source.containers : [],
-    volumes: Array.isArray(source.volumes) ? source.volumes : [],
+    volumes: sanitizeDockerInventoryVolumes(source.volumes),
     remoteInstances: Array.isArray(source.remoteInstances) ? source.remoteInstances : []
   };
 }
