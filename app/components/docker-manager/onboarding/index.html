@@ -1,9 +1,12 @@
 <body>
   <section id="onboardingPanel" class="section sv-card hidden">
-    <h2 id="onboardingTitle" class="section-title sv-section-heading">Docker setup</h2>
+    <h2 id="onboardingTitle" class="section-title sv-section-heading">Runtime setup</h2>
     <p id="onboardingMessage" class="sv-onboarding-message"></p>
-    <div class="sv-row-end">
-      <button id="onboardingActionBtn" class="button confirm hidden" type="button"></button>
+    <div id="onboardingDetail" class="dm-runtime-detail hidden"></div>
+    <div class="sv-row-end dm-runtime-actions">
+      <button id="onboardingFallbackBtn" class="button cancel hidden" type="button">Download Docker Desktop</button>
+      <button id="onboardingCancelBtn" class="button cancel hidden" type="button">Cancel</button>
+      <button id="onboardingActionBtn" class="button confirm hidden" type="button">Set up runtime</button>
     </div>
   </section>
   <script type="module" src="components/docker-manager/onboarding/onboarding.js"></script>

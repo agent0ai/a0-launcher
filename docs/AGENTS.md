@@ -16,6 +16,10 @@ This scope owns:
 - `faq-integration.md`: integration-oriented FAQ and user guidance.
 - `release-todos.md`: release checklist and temporary product corrections that
   must survive across coding sessions.
+- `superpowers/specs/`: approved design specs created during brainstorming
+  before implementation planning.
+- `superpowers/plans/`: implementation plans written from approved specs before
+  code execution.
 
 ## Local Contracts
 

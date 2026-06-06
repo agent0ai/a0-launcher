@@ -38,7 +38,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 contextBridge.exposeInMainWorld('dockerManagerAPI', {
   getState: () => ipcRenderer.invoke('docker-manager:getState'),
+  getRuntimeSetupState: () => ipcRenderer.invoke('docker-manager:getRuntimeSetupState'),
   refresh: () => ipcRenderer.invoke('docker-manager:refresh'),
+  startRuntimeSetup: () => ipcRenderer.invoke('docker-manager:startRuntimeSetup'),
   installOrSync: (tag) => ipcRenderer.invoke('docker-manager:install', { tag }),
   startActive: () => ipcRenderer.invoke('docker-manager:startActive'),
   stopActive: () => ipcRenderer.invoke('docker-manager:stopActive'),
@@ -80,6 +82,13 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   openRemoteInstance: (id) => ipcRenderer.invoke('docker-manager:openRemoteInstance', { id }),
   openHomepage: () => ipcRenderer.invoke('docker-manager:openHomepage'),
   openCliTerminal: (host) => ipcRenderer.invoke('docker-manager:openCliTerminal', { host }),
+  readContainerLogs: (containerId, opts) => {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    return ipcRenderer.invoke('docker-manager:readContainerLogs', {
+      containerId,
+      maxLines: o.maxLines
+    });
+  },
   getInstanceTabs: () => ipcRenderer.invoke('docker-manager:getInstanceTabs'),
   openInstanceUi: (target) => {
     const t = target && typeof target === 'object' ? target : {};

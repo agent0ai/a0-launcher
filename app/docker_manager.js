@@ -83,6 +83,20 @@ window.toastFrontendSuccess = (message, title = "Agent Zero", displayTime = 3, g
 window.toastFrontendWarning = (message, title = "Agent Zero", displayTime = 5, group = "") =>
   showToast("warning", message, title, displayTime, group);
 
+let lastRuntimeSetupFailureBannerKey = "";
+let lastRuntimeSetupFailureMessage = "";
+
+function sanitizeRuntimeSetup(runtimeSetup) {
+  const setup = runtimeSetup && typeof runtimeSetup === "object" ? runtimeSetup : {};
+  return {
+    runtimeBackend: setup.runtimeBackend === "podman" ? "podman" : "",
+    machineName: typeof setup.machineName === "string" ? setup.machineName : "",
+    hasDockerHostOverride: !!setup.hasDockerHostOverride,
+    usesDefaultDockerSocket: !!setup.usesDefaultDockerSocket,
+    lastSuccessfulSetupAt: typeof setup.lastSuccessfulSetupAt === "string" ? setup.lastSuccessfulSetupAt : ""
+  };
+}
+
 function snapshot() {
   return {
     loading: !!store.loading,
@@ -100,6 +114,7 @@ function snapshot() {
     retainedInstances: Array.isArray(store.retainedInstances) ? store.retainedInstances : [],
     storage: store.storage || null,
     progress: store.progress || null,
+    runtimeSetup: sanitizeRuntimeSetup(store.runtimeSetup),
     portPreferences: store.portPreferences || null,
     retentionPolicy: store.retentionPolicy || null,
     instanceTabs: store.instanceTabs || { tabs: [], activeTabId: "" }
@@ -164,6 +179,21 @@ function setBanner(type, message) {
   emitState();
 }
 
+function isRuntimeSetupFailureBanner() {
+  return !!lastRuntimeSetupFailureMessage &&
+    store.banner?.type === "error" &&
+    store.banner?.message === lastRuntimeSetupFailureMessage;
+}
+
+function clearRuntimeSetupFailureBanner() {
+  const shouldClearBanner = isRuntimeSetupFailureBanner();
+  lastRuntimeSetupFailureBannerKey = "";
+  lastRuntimeSetupFailureMessage = "";
+  if (shouldClearBanner) {
+    store.setBanner("", "");
+  }
+}
+
 async function loadMeta() {
   try {
     const v = await window.electronAPI?.getContentVersion?.();
@@ -208,23 +238,37 @@ async function refresh() {
   emitState();
 
   try {
-    const [inventory, state] = await Promise.all([
+    const [inventory, state, runtimeSetup] = await Promise.all([
       typeof api.getInventory === "function" ? api.getInventory() : null,
-      typeof api.getState === "function" ? api.getState() : null
+      typeof api.getState === "function" ? api.getState() : null,
+      typeof api.getRuntimeSetupState === "function" ? api.getRuntimeSetupState() : null
     ]);
+
+    if (!isErrorResponse(runtimeSetup) && runtimeSetup && typeof runtimeSetup === "object") {
+      store.runtimeSetup = sanitizeRuntimeSetup(runtimeSetup);
+    }
 
     if (isErrorResponse(inventory)) {
       store.error = inventory.message;
       store.dockerAvailable = false;
-      setBanner("error", inventory.message);
+      if (!isRuntimeSetupFailureBanner()) {
+        setBanner("error", inventory.message);
+      }
       store.loading = false;
       emitState();
       return;
     }
 
+    const inventoryDockerAvailable = !!inventory?.dockerAvailable;
+    if (inventoryDockerAvailable) {
+      clearRuntimeSetupFailureBanner();
+    }
+
     if (isErrorResponse(state)) {
       store.error = state.message;
-      setBanner("error", state.message);
+      if (!isRuntimeSetupFailureBanner()) {
+        setBanner("error", state.message);
+      }
     } else {
       store.uiUrl = state?.uiUrl || "";
       store.versions = Array.isArray(state?.versions) ? state.versions : [];
@@ -233,10 +277,12 @@ async function refresh() {
       store.storage = state?.storage || null;
       store.portPreferences = state?.portPreferences || null;
       store.retentionPolicy = state?.retentionPolicy || null;
-      if (!store.error) setBanner("", "");
+      if (!store.error && !isRuntimeSetupFailureBanner()) {
+        setBanner("", "");
+      }
     }
 
-    store.dockerAvailable = !!inventory?.dockerAvailable;
+    store.dockerAvailable = inventoryDockerAvailable;
     store.environment = inventory?.environment || null;
     store.images = Array.isArray(inventory?.images) ? inventory.images : [];
     store.containers = Array.isArray(inventory?.containers) ? inventory.containers : [];
@@ -245,7 +291,9 @@ async function refresh() {
   } catch (e) {
     store.error = e?.message || "Failed to load Docker inventory.";
     store.dockerAvailable = false;
-    setBanner("error", store.error);
+    if (!isRuntimeSetupFailureBanner()) {
+      setBanner("error", store.error);
+    }
   } finally {
     store.loading = false;
     emitState();
@@ -364,6 +412,37 @@ async function openDockerDownload() {
     }
   }
   window.open("https://www.docker.com/products/docker-desktop/", "_blank");
+}
+
+async function startRuntimeSetup() {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.startRuntimeSetup !== "function") return;
+  try {
+    const res = await api.startRuntimeSetup();
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return;
+    }
+    setBanner("info", "Runtime setup started.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to start runtime setup");
+  }
+}
+
+async function cancelCurrentOperation() {
+  const api = window.dockerManagerAPI;
+  const opId = store.progress?.opId || "";
+  if (!api || !opId || typeof api.cancel !== "function") return;
+  try {
+    const res = await api.cancel(opId);
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return;
+    }
+    if (res?.canceled) setBanner("info", "Operation canceled.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to cancel operation");
+  }
 }
 
 let postOperationRefreshTimer = 0;
@@ -511,6 +590,8 @@ window.dockerManagerActions = {
   removeVolume,
   pruneVolumes,
   openDockerDownload,
+  startRuntimeSetup,
+  cancelCurrentOperation,
   startActive,
   stopActive,
   activateTag,
@@ -555,34 +636,82 @@ window.dockerManagerActions = {
 };
 
 let terminalDockOpen = false;
+let terminalDockTab = "cli";
+let logsContainerId = "";
+let logsLines = [];
+let logsLinesFor = "";
+let logsLoading = false;
+let logsError = "";
+let lastRenderedLogsFor = "";
+let logsRequestSeq = 0;
+const LOGS_NEAR_BOTTOM_PX = 24;
 
-function renderTerminalDock(state = snapshot()) {
-  const mount = document.getElementById("dmTerminalDock");
-  if (!mount) return;
-  const cliHost = cliHostFromState(state);
+function logsContainerOptions(state = snapshot()) {
+  const containers = Array.isArray(state?.containers) ? state.containers : [];
+  return containers
+    .filter((c) => c && typeof c.containerId === "string" && /^[a-f0-9]+$/i.test(c.containerId))
+    .map((c) => ({
+      id: c.containerId,
+      name: c.containerName || c.containerId.slice(0, 12),
+      state: String(c.state || "").toLowerCase(),
+      active: isLauncherActiveContainer(c)
+    }))
+    .sort((a, b) => {
+      const ar = a.state === "running" ? 1 : 0;
+      const br = b.state === "running" ? 1 : 0;
+      if (ar !== br) return br - ar;
+      return Number(b.active) - Number(a.active);
+    });
+}
 
-  mount.innerHTML = "";
-  const shell = document.createElement("div");
-  shell.className = `dm-terminal-shell${terminalDockOpen ? " open" : ""}`;
+async function loadContainerLogs(id) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.readContainerLogs !== "function" || !id) return;
+  // Tag this request so a stale response from a previous container can't
+  // overwrite the panel after the user has switched selection.
+  const reqSeq = ++logsRequestSeq;
+  logsLoading = true;
+  logsError = "";
+  renderTerminalDock(snapshot());
+  try {
+    const res = await api.readContainerLogs(id, { maxLines: 1000 });
+    if (reqSeq !== logsRequestSeq) return;
+    if (isErrorResponse(res)) {
+      logsLines = [];
+      logsError = res.message;
+    } else {
+      logsLines = Array.isArray(res?.lines) ? res.lines : [];
+      logsError = "";
+    }
+  } catch (e) {
+    if (reqSeq !== logsRequestSeq) return;
+    logsLines = [];
+    logsError = e?.message || "Failed to load container logs.";
+  } finally {
+    if (reqSeq === logsRequestSeq) {
+      logsLoading = false;
+      logsLinesFor = id;
+      renderTerminalDock(snapshot());
+    }
+  }
+}
 
-  const panel = document.createElement("div");
-  panel.className = "dm-terminal-panel";
-
-  const tabs = document.createElement("div");
-  tabs.className = "dm-terminal-tabs";
-  const tab = document.createElement("div");
-  tab.className = "dm-terminal-tab";
+function makeDockTab(icon, label, active, onClick) {
+  const tab = document.createElement("button");
+  tab.type = "button";
+  tab.className = `dm-terminal-tab${active ? " active" : ""}`;
   const tabIcon = document.createElement("span");
   tabIcon.className = "material-symbols-outlined";
-  tabIcon.textContent = "terminal";
+  tabIcon.textContent = icon;
   const tabText = document.createElement("span");
-  tabText.textContent = "A0 CLI Connector";
+  tabText.textContent = label;
   tab.appendChild(tabIcon);
   tab.appendChild(tabText);
-  tabs.appendChild(tab);
+  tab.addEventListener("click", onClick);
+  return tab;
+}
 
-  const body = document.createElement("div");
-  body.className = "dm-terminal-body";
+function renderCliBody(body, cliHost) {
   const note = document.createElement("div");
   note.className = "dm-terminal-note";
   note.textContent = cliHost
@@ -593,6 +722,136 @@ function renderTerminalDock(state = snapshot()) {
   command.textContent = cliHost ? `a0 --host ${cliHost}` : "a0";
   body.appendChild(note);
   body.appendChild(command);
+}
+
+function renderLogsBody(body, containerOpts) {
+  if (!containerOpts.length) {
+    const note = document.createElement("div");
+    note.className = "dm-terminal-note";
+    note.textContent = "No Agent Zero containers found. Start an instance to view its logs.";
+    body.appendChild(note);
+    return;
+  }
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "dm-terminal-logs-toolbar";
+
+  const label = document.createElement("span");
+  label.className = "dm-terminal-logs-label";
+  label.textContent = "Container";
+
+  const select = document.createElement("select");
+  select.className = "dm-terminal-logs-select";
+  for (const opt of containerOpts) {
+    const option = document.createElement("option");
+    option.value = opt.id;
+    option.textContent = `${opt.name} (${opt.state || "unknown"})`;
+    if (opt.id === logsContainerId) option.selected = true;
+    select.appendChild(option);
+  }
+  select.addEventListener("change", () => {
+    logsContainerId = select.value;
+    logsLines = [];
+    logsLinesFor = "";
+    logsError = "";
+    loadContainerLogs(logsContainerId);
+  });
+
+  const refresh = document.createElement("button");
+  refresh.className = "button icon-button dm-icon-button";
+  refresh.type = "button";
+  refresh.title = "Refresh logs";
+  refresh.setAttribute("aria-label", "Refresh logs");
+  refresh.disabled = logsLoading;
+  refresh.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">refresh</span>';
+  refresh.addEventListener("click", () => loadContainerLogs(logsContainerId));
+
+  toolbar.appendChild(label);
+  toolbar.appendChild(select);
+  toolbar.appendChild(refresh);
+  body.appendChild(toolbar);
+
+  const logs = document.createElement("pre");
+  logs.className = "dm-terminal-logs";
+  if (logsLoading) {
+    logs.textContent = "Loading logs…";
+  } else if (logsError) {
+    logs.textContent = logsError;
+    logs.classList.add("error");
+  } else if (!logsLines.length) {
+    logs.textContent = "No log output.";
+  } else {
+    for (const evt of logsLines) {
+      const line = document.createElement("div");
+      line.className = `dm-log-line${evt?.stream === "stderr" ? " stderr" : ""}`;
+      line.textContent = typeof evt?.line === "string" ? evt.line : "";
+      logs.appendChild(line);
+    }
+  }
+  body.appendChild(logs);
+
+  // Auto-load once when the dock is open on the Logs tab and the cache is stale.
+  if (terminalDockOpen && logsContainerId && !logsLoading && !logsError &&
+    logsLinesFor !== logsContainerId) {
+    loadContainerLogs(logsContainerId);
+  }
+}
+
+function renderTerminalDock(state = snapshot()) {
+  const mount = document.getElementById("dmTerminalDock");
+  if (!mount) return;
+  const cliHost = cliHostFromState(state);
+  const containerOpts = logsContainerOptions(state);
+
+  // Keep the selected logs container valid against current inventory.
+  if (logsContainerId && !containerOpts.some((o) => o.id === logsContainerId)) {
+    logsContainerId = "";
+  }
+  if (!logsContainerId && containerOpts.length) {
+    logsContainerId = containerOpts[0].id;
+  }
+  if (logsLinesFor && logsLinesFor !== logsContainerId) {
+    logsLines = [];
+    logsLinesFor = "";
+    logsError = "";
+  }
+
+  // Capture pre-render scroll state so we can preserve the user's position
+  // across the dock's full DOM rebuild (which fires on every dm:state event).
+  let prevLogsScrollTop = 0;
+  let prevLogsAtBottom = true;
+  const prevLogsEl = mount.querySelector(".dm-terminal-logs");
+  if (prevLogsEl) {
+    prevLogsScrollTop = prevLogsEl.scrollTop;
+    prevLogsAtBottom = (prevLogsEl.scrollHeight - prevLogsEl.scrollTop - prevLogsEl.clientHeight)
+      < LOGS_NEAR_BOTTOM_PX;
+  }
+
+  mount.innerHTML = "";
+  const shell = document.createElement("div");
+  shell.className = `dm-terminal-shell${terminalDockOpen ? " open" : ""}`;
+
+  const panel = document.createElement("div");
+  panel.className = "dm-terminal-panel";
+
+  const tabs = document.createElement("div");
+  tabs.className = "dm-terminal-tabs";
+  tabs.appendChild(makeDockTab("terminal", "A0 CLI Connector", terminalDockTab === "cli", () => {
+    terminalDockTab = "cli";
+    renderTerminalDock(snapshot());
+  }));
+  tabs.appendChild(makeDockTab("article", "Logs", terminalDockTab === "logs", () => {
+    terminalDockTab = "logs";
+    renderTerminalDock(snapshot());
+  }));
+
+  const body = document.createElement("div");
+  body.className = "dm-terminal-body";
+  if (terminalDockTab === "logs") {
+    renderLogsBody(body, containerOpts);
+  } else {
+    renderCliBody(body, cliHost);
+  }
 
   panel.appendChild(tabs);
   panel.appendChild(body);
@@ -639,6 +898,46 @@ function renderTerminalDock(state = snapshot()) {
   shell.appendChild(panel);
   shell.appendChild(footer);
   mount.appendChild(shell);
+
+  // Preserve the user's scroll position across the dock rebuild. Only
+  // auto-scroll to the newest line when the container changed (fresh load)
+  // or when the user was already near the bottom before the rebuild.
+  if (terminalDockTab === "logs") {
+    const logs = mount.querySelector(".dm-terminal-logs");
+    if (logs) {
+      const containerChanged = (logsLinesFor || "") !== lastRenderedLogsFor;
+      if (containerChanged || prevLogsAtBottom) {
+        logs.scrollTop = logs.scrollHeight;
+      } else {
+        logs.scrollTop = prevLogsScrollTop;
+      }
+    }
+    lastRenderedLogsFor = logsLinesFor || "";
+  }
+}
+
+function maybeSurfaceRuntimeSetupFailure(progress) {
+  const status = typeof progress?.status === "string" ? progress.status : "";
+  if (progress?.type !== "runtime_setup") return;
+  if (status === "running") {
+    lastRuntimeSetupFailureBannerKey = "";
+    lastRuntimeSetupFailureMessage = "";
+    return;
+  }
+  if (status === "completed") {
+    lastRuntimeSetupFailureBannerKey = "";
+    lastRuntimeSetupFailureMessage = "";
+    return;
+  }
+  if (status !== "failed") return;
+
+  const message = String(progress?.error || progress?.message || "Runtime setup failed.").trim()
+    || "Runtime setup failed.";
+  lastRuntimeSetupFailureMessage = message;
+  const key = `${progress?.opId || ""}:${message}`;
+  if (key === lastRuntimeSetupFailureBannerKey) return;
+  lastRuntimeSetupFailureBannerKey = key;
+  setBanner("error", message);
 }
 
 function initSubscriptions() {
@@ -668,6 +967,7 @@ function initSubscriptions() {
       if (status === "completed" || status === "failed" || status === "canceled") {
         schedulePostOperationRefresh();
       }
+      maybeSurfaceRuntimeSetupFailure(progress);
     });
   }
 

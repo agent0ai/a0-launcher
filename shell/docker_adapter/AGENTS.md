@@ -25,6 +25,12 @@ This scope owns:
 
 - `DockerInterface.mjs` is ESM by design. Keep the CommonJS bridge contained in
   `getDocker.js`.
+- `DockerInterface.get({ imageRepo, dockerHost })` caches adapter instances per
+  image repo and Docker host override. Runtime setup may change the host at
+  runtime, so a different `dockerHost` must create a fresh adapter instance.
+- When `dockerHost` is omitted, the cache key uses the current `DOCKER_HOST`
+  environment value. An explicit empty `dockerHost` means the default Docker
+  socket and must not fall back to `DOCKER_HOST`.
 - Environment detection should be best-effort and return structured diagnostics
   rather than throwing for ordinary "Docker unavailable" cases.
 - `DOCKER_HOST` parsing must preserve enough detail to diagnose Unix socket,

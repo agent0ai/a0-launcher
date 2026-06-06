@@ -16,6 +16,13 @@ export const dockerManagerStore = createStore("dockerManager", {
   retainedInstances: [],
   storage: null,
   progress: null,
+  runtimeSetup: {
+    runtimeBackend: "",
+    machineName: "",
+    hasDockerHostOverride: false,
+    usesDefaultDockerSocket: false,
+    lastSuccessfulSetupAt: ""
+  },
   portPreferences: null,
   retentionPolicy: null,
   instanceTabs: { tabs: [], activeTabId: "" },

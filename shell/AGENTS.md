@@ -30,6 +30,10 @@ This scope owns:
   `shell/preload.js` and `shell/main.js` deliberately.
 - Validate IPC bodies in `shell/main.js` before passing values to
   `shell/docker_manager`.
+- macOS runtime setup is shell-owned privileged work. Renderer code may call
+  only named Docker Manager methods such as `getRuntimeSetupState()` and
+  `startRuntimeSetup()`; it must never provide shell commands, helper paths,
+  sudo credentials, or raw process arguments.
 - New windows that open Agent Zero UIs or remote instances must sanitize URLs and
   allow only `http:` or `https:`.
 - The A0 CLI terminal IPC must accept only local `http:` or `https:` URLs
@@ -56,9 +60,39 @@ This scope owns:
 - `app.getVersion()` owns the app version shown as `App:`.
 - `electronAPI` owns shell metadata: status/error listeners, app/content version,
   and icon data URL.
+- Runtime app branding is shell-owned. `shell/assets/icon.png`, `icon.ico`, and
+  `icon.icns` are the Agent Zero application icons for window, tray,
+  renderer-header, Dock, and packaged app surfaces. `shell/main.js` must set the
+  macOS Dock icon explicitly during local/dev Electron runs because those runs
+  otherwise inherit the stock `Electron.app` icon.
 - `dockerManagerAPI` owns all Docker Manager calls.
 - Long-running Docker operations should return an accepted operation id and
   report progress through Docker Manager events instead of blocking the renderer.
+- Runtime setup uses the same progress event contract with
+  `type: "runtime_setup"` plus sanitized `setupStep` and `setupCode` strings.
+  `docker-manager:installDocker` remains the Docker Desktop fallback path.
+- `docker-manager:getInventory` must return renderer-safe inventory only:
+  `dockerAvailable`, `images`, `containers`, `volumes`, `remoteInstances`, and
+  a sanitized `environment` summary limited to display-safe primitive fields.
+  It must not expose `environment.dockerHost`, `diagnosticDetails`, Docker host
+  overrides, socket paths, daemon host internals, or raw adapter diagnostics.
+- Inventory `images` entries must be built from an allowlist before crossing
+  IPC: `imageRef`, `tag`, `createdAt`, and `sizeBytes`.
+- Inventory `containers` entries must be built from an allowlist before
+  crossing IPC: `containerId`, `containerName`, `instanceName`, `imageRef`,
+  `state`, `status`, `createdAt`, `startedAt`, `uiUrl`, and only exact
+  renderer-used launcher labels such as `a0.launcher.role=active`. Do not pass
+  arbitrary Docker labels, port objects, or raw inspect data.
+- Inventory `volumes` entries must be built from an allowlist before crossing
+  IPC: `name`, `driver`, `scope`, and `createdAt`. They must not expose Docker
+  `Mountpoint` values, adapter `mountpoint` fields, Docker labels, or any raw
+  Docker host paths.
+- Inventory `remoteInstances` entries must be built from an allowlist before
+  crossing IPC: `id`, `name`, and validated `http:` or `https:` `url`.
+- `docker-manager:getRuntimeSetupState` must return a renderer-safe summary:
+  `runtimeBackend`, `machineName`, `hasDockerHostOverride`,
+  `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`. It must not expose raw
+  Docker host overrides, socket paths, helper paths, or command details.
 - Error responses should use `dockerManager.toErrorResponse()` so renderer code
   sees a stable `{ code, message }` shape.
 - The tray should reflect current Docker Manager state without becoming a second

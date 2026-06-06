@@ -21,7 +21,7 @@ function render(state) {
     title.textContent = v?.name || "volume";
     const meta = document.createElement("div");
     meta.className = "item-meta";
-    meta.textContent = `${v?.driver || ""}${v?.mountpoint ? ` - ${v.mountpoint}` : ""}`;
+    meta.textContent = volumeMeta(v);
     left.appendChild(title);
     left.appendChild(meta);
 
@@ -41,6 +41,13 @@ function render(state) {
     row.appendChild(actions);
     list.appendChild(row);
   }
+}
+
+function volumeMeta(volume) {
+  const parts = [volume?.driver, volume?.scope]
+    .filter((part) => typeof part === "string" && part.trim())
+    .map((part) => part.trim());
+  return parts.join(" - ");
 }
 
 function bind() {

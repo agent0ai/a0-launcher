@@ -19,11 +19,18 @@ if (require('electron-squirrel-startup')) {
 }
 
 // Constants
+const APP_DISPLAY_NAME = 'Agent Zero';
+const APP_USER_MODEL_ID = 'ai.agent0.launcher';
 const DEFAULT_GITHUB_REPO = 'agent0ai/a0-launcher';
 const BUILD_INFO_FILE = path.join(__dirname, 'build-info.json');
 const GITHUB_REPO_ENV_VAR = 'A0_LAUNCHER_GITHUB_REPO';
 const LOCAL_REPO_ENV_VAR = 'A0_LAUNCHER_LOCAL_REPO';
 const USE_LOCAL_CONTENT_ENV_VAR = 'A0_LAUNCHER_USE_LOCAL_CONTENT';
+
+app.setName(APP_DISPLAY_NAME);
+if (process.platform === 'win32') {
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+}
 
 function isTruthyEnv(value) {
   const v = (value || '').trim().toLowerCase();
@@ -114,6 +121,22 @@ let instanceTabs = new Map();
 let activeInstanceTabId = '';
 let instanceTabBounds = null;
 let instanceTabSeq = 0;
+
+function shellIconPath() {
+  return path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+}
+
+function shellIconImage() {
+  return nativeImage.createFromPath(shellIconPath());
+}
+
+function applyAppBranding() {
+  app.setName(APP_DISPLAY_NAME);
+  if (process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
+    const image = shellIconImage();
+    if (image && !image.isEmpty()) app.dock.setIcon(image);
+  }
+}
 
 /**
  * Fetch the latest release info from GitHub
@@ -410,17 +433,13 @@ async function loadAppContent() {
  * Create the main browser window
  */
 function createWindow() {
-  const iconPath = path.join(__dirname, 'assets',
-    process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-  );
-
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'A0 Launcher',
-    icon: iconPath,
+    title: APP_DISPLAY_NAME,
+    icon: shellIconPath(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -565,8 +584,7 @@ function createTray() {
   if (tray) return tray;
 
   try {
-    const iconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
-    let image = nativeImage.createFromPath(iconPath);
+    let image = shellIconImage();
     if (image && !image.isEmpty() && process.platform !== 'darwin') {
       image = image.resize({ width: 16, height: 16 });
     }
@@ -596,8 +614,7 @@ ipcMain.handle('get-content-version', async () => {
 
 ipcMain.handle('get-shell-icon-data-url', () => {
   try {
-    const iconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
-    const image = nativeImage.createFromPath(iconPath);
+    const image = shellIconImage();
     if (!image || image.isEmpty()) return '';
     return image.resize({ width: 32, height: 32 }).toDataURL();
   } catch {
@@ -1299,6 +1316,248 @@ function sanitizeDockerManagerState(state) {
   return outState;
 }
 
+function sanitizeRuntimeSetupState(runtimeSetup) {
+  const setup = isPlainObject(runtimeSetup) ? runtimeSetup : {};
+  return {
+    runtimeBackend: setup.runtimeBackend === 'podman' ? 'podman' : '',
+    machineName: typeof setup.machineName === 'string' ? setup.machineName : '',
+    hasDockerHostOverride: !!setup.hasDockerHostOverride ||
+      (typeof setup.dockerHostOverride === 'string' && setup.dockerHostOverride.trim() !== ''),
+    usesDefaultDockerSocket: !!setup.usesDefaultDockerSocket,
+    lastSuccessfulSetupAt: typeof setup.lastSuccessfulSetupAt === 'string' ? setup.lastSuccessfulSetupAt : ''
+  };
+}
+
+const SAFE_DOCKER_DIAGNOSTIC_CODES = new Set([
+  'INVALID_DOCKER_HOST',
+  'DOCKERODE_MISSING',
+  'PERMISSION_DENIED',
+  'DOCKER_NOT_FOUND',
+  'DAEMON_UNAVAILABLE',
+  'UNAUTHORIZED'
+]);
+
+function sanitizeDockerDiagnosticCode(value) {
+  const code = typeof value === 'string' ? value.trim() : '';
+  if (!code || code.length > 80) return null;
+  if (!/^[A-Z0-9_-]+$/.test(code)) return null;
+  return code;
+}
+
+function sanitizeDockerDiagnosticMessage(code, value) {
+  const message = typeof value === 'string' ? value.trim() : '';
+  if (!message) return null;
+  if (!SAFE_DOCKER_DIAGNOSTIC_CODES.has(code)) {
+    return 'Docker runtime is unavailable.';
+  }
+  return message.slice(0, 500);
+}
+
+function sanitizeDockerFlavor(value) {
+  const flavor = typeof value === 'string' ? value.trim() : '';
+  if (flavor === 'docker_desktop' || flavor === 'docker_engine' || flavor === 'unknown') {
+    return flavor;
+  }
+  return null;
+}
+
+function sanitizeDockerInventoryEnvironment(environment, dockerAvailable) {
+  if (!isPlainObject(environment)) return null;
+
+  const out = {
+    dockerAvailable: !!dockerAvailable
+  };
+
+  if (typeof environment.platform === 'string') out.platform = environment.platform;
+  if (typeof environment.arch === 'string') out.arch = environment.arch;
+
+  const dockerFlavor = sanitizeDockerFlavor(environment.dockerFlavor);
+  if (dockerFlavor) out.dockerFlavor = dockerFlavor;
+  if (typeof environment.daemonVersion === 'string') out.daemonVersion = environment.daemonVersion.slice(0, 128);
+
+  const diagnosticCode = sanitizeDockerDiagnosticCode(environment.diagnosticCode);
+  if (diagnosticCode) out.diagnosticCode = diagnosticCode;
+
+  const diagnosticMessage = sanitizeDockerDiagnosticMessage(diagnosticCode, environment.diagnosticMessage);
+  if (diagnosticMessage) out.diagnosticMessage = diagnosticMessage;
+
+  return out;
+}
+
+function looksLikeHostPath(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return false;
+  return text.startsWith('/') ||
+    text.startsWith('~/') ||
+    text.startsWith('\\\\') ||
+    /^[A-Za-z]:[\\/]/.test(text) ||
+    /(^|[\\/])(?:Users|Volumes|home|var|tmp|private|mnt|run|etc)[\\/]/.test(text);
+}
+
+function sanitizeInventoryString(value, maxLength = 160) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return '';
+  if (/[\r\n\0]/.test(text)) return '';
+  return text.slice(0, maxLength);
+}
+
+function sanitizeInventoryTimestamp(value) {
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  const text = sanitizeInventoryString(value, 80);
+  return text || undefined;
+}
+
+function sanitizeInventorySizeBytes(value) {
+  if (value === null || value === undefined || value === '') return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(0, Math.floor(n));
+}
+
+function sanitizeDockerInventoryImages(images) {
+  const source = Array.isArray(images) ? images : [];
+  const out = [];
+
+  for (const img of source) {
+    if (!isPlainObject(img)) continue;
+    const imageRef = sanitizeInventoryString(img.imageRef, 300);
+    const tag = sanitizeInventoryString(img.tag, 160);
+    if (!imageRef && !tag) continue;
+
+    const image = {};
+    if (imageRef) image.imageRef = imageRef;
+    if (tag) image.tag = tag;
+
+    const createdAt = sanitizeInventoryTimestamp(img.createdAt);
+    if (createdAt !== undefined) image.createdAt = createdAt;
+
+    const sizeBytes = sanitizeInventorySizeBytes(img.sizeBytes);
+    if (sizeBytes !== undefined) image.sizeBytes = sizeBytes;
+
+    out.push(image);
+  }
+
+  return out;
+}
+
+function sanitizeDockerContainerId(value) {
+  const id = sanitizeInventoryString(value, 128);
+  if (!/^[a-f0-9]{12,128}$/i.test(id)) return '';
+  return id;
+}
+
+function sanitizeDockerContainerLabels(labels) {
+  if (!isPlainObject(labels)) return null;
+
+  const role = sanitizeInventoryString(labels['a0.launcher.role'], 40);
+  if (role !== 'active') return null;
+  return { 'a0.launcher.role': 'active' };
+}
+
+function sanitizeDockerInventoryContainers(containers) {
+  const source = Array.isArray(containers) ? containers : [];
+  const out = [];
+
+  for (const c of source) {
+    if (!isPlainObject(c)) continue;
+
+    const containerId = sanitizeDockerContainerId(c.containerId);
+    if (!containerId) continue;
+
+    const container = { containerId };
+    const containerName = sanitizeInventoryString(c.containerName, 160);
+    if (containerName && !looksLikeHostPath(containerName)) container.containerName = containerName;
+
+    const instanceName = sanitizeInventoryString(c.instanceName, 160);
+    if (instanceName && !looksLikeHostPath(instanceName)) container.instanceName = instanceName;
+
+    const imageRef = sanitizeInventoryString(c.imageRef, 300);
+    if (imageRef) container.imageRef = imageRef;
+
+    const state = sanitizeInventoryString(c.state, 80);
+    if (state) container.state = state;
+
+    const status = sanitizeInventoryString(c.status, 240);
+    if (status) container.status = status;
+
+    const createdAt = sanitizeInventoryTimestamp(c.createdAt);
+    if (createdAt !== undefined) container.createdAt = createdAt;
+
+    const startedAt = sanitizeInventoryTimestamp(c.startedAt);
+    if (startedAt !== undefined) container.startedAt = startedAt;
+
+    const uiUrl = normalizeHttpUrl(c.uiUrl);
+    if (uiUrl && isAllowedLocalUrl(uiUrl)) container.uiUrl = uiUrl;
+
+    const labels = sanitizeDockerContainerLabels(c.labels);
+    if (labels) container.labels = labels;
+
+    out.push(container);
+  }
+
+  return out;
+}
+
+function sanitizeDockerInventoryVolumes(volumes) {
+  const source = Array.isArray(volumes) ? volumes : [];
+  const out = [];
+
+  for (const v of source) {
+    if (!isPlainObject(v)) continue;
+    const name = typeof v.name === 'string' ? v.name.trim() : '';
+    if (!name || name.length > 255 || looksLikeHostPath(name)) continue;
+
+    const volume = { name };
+    const driver = sanitizeInventoryString(v.driver, 80);
+    if (driver) volume.driver = driver;
+    const scope = sanitizeInventoryString(v.scope, 80);
+    if (scope) volume.scope = scope;
+
+    const createdAt = sanitizeInventoryTimestamp(v.createdAt);
+    if (createdAt !== undefined) volume.createdAt = createdAt;
+
+    out.push(volume);
+  }
+
+  return out;
+}
+
+function sanitizeDockerInventoryRemoteInstances(remoteInstances) {
+  const source = Array.isArray(remoteInstances) ? remoteInstances : [];
+  const out = [];
+
+  for (const r of source) {
+    if (!isPlainObject(r)) continue;
+
+    const id = sanitizeInventoryString(r.id, 96);
+    const name = sanitizeInventoryString(r.name, 80);
+    const url = normalizeHttpUrl(r.url);
+    if (!id || !/^[A-Za-z0-9_.:-]+$/.test(id)) continue;
+    if (!name || looksLikeHostPath(name)) continue;
+    if (!url || !isAllowedHttpUrl(url)) continue;
+
+    out.push({ id, name, url });
+  }
+
+  return out;
+}
+
+function sanitizeDockerInventory(inventory) {
+  const source = isPlainObject(inventory) ? inventory : {};
+  const dockerAvailable = !!source.dockerAvailable;
+  return {
+    dockerAvailable,
+    environment: sanitizeDockerInventoryEnvironment(source.environment, dockerAvailable),
+    images: sanitizeDockerInventoryImages(source.images),
+    containers: sanitizeDockerInventoryContainers(source.containers),
+    volumes: sanitizeDockerInventoryVolumes(source.volumes),
+    remoteInstances: sanitizeDockerInventoryRemoteInstances(source.remoteInstances)
+  };
+}
+
 function sanitizeDockerManagerProgress(progress) {
   if (!isPlainObject(progress)) return null;
   const out = {};
@@ -1315,6 +1574,8 @@ function sanitizeDockerManagerProgress(progress) {
   if (Number.isFinite(Number(progress.extractProgress))) out.extractProgress = Number(progress.extractProgress);
   if (typeof progress.message === 'string') out.message = progress.message;
   if (typeof progress.error === 'string') out.error = progress.error;
+  if (typeof progress.setupStep === 'string') out.setupStep = progress.setupStep;
+  if (typeof progress.setupCode === 'string') out.setupCode = progress.setupCode;
 
   return out.opId ? out : null;
 }
@@ -1351,10 +1612,30 @@ ipcMain.handle('docker-manager:getState', async () => {
   }
 });
 
+ipcMain.handle('docker-manager:getRuntimeSetupState', async () => {
+  try {
+    return sanitizeRuntimeSetupState(await dockerManager.getRuntimeSetupState());
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 ipcMain.handle('docker-manager:refresh', async () => {
   try {
     const state = await dockerManager.refreshDockerManager({ forceRefresh: true });
     return sanitizeDockerManagerState(state);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:startRuntimeSetup', async () => {
+  try {
+    const accepted = await dockerManager.startRuntimeSetup();
+    if (!accepted || typeof accepted.opId !== 'string') {
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Runtime setup did not return an opId' });
+    }
+    return { opId: accepted.opId };
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -1520,7 +1801,7 @@ ipcMain.handle('docker-manager:cancel', async (_event, body) => {
 
 ipcMain.handle('docker-manager:getInventory', async () => {
   try {
-    return await dockerManager.getDockerInventory();
+    return sanitizeDockerInventory(await dockerManager.getDockerInventory());
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -1669,6 +1950,19 @@ ipcMain.handle('docker-manager:openCliTerminal', async (_event, body) => {
   }
 });
 
+ipcMain.handle('docker-manager:readContainerLogs', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const maxLines = Number(body.maxLines);
+    return await dockerManager.readContainerLogs(containerId, {
+      maxLines: Number.isFinite(maxLines) ? maxLines : undefined
+    });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Custom protocol: a0app://
 // Serves app content from disk so that fetch(), new URL(), and module imports
@@ -1682,6 +1976,8 @@ protocol.registerSchemesAsPrivileged([{
 
 // App lifecycle
 app.whenReady().then(async () => {
+  applyAppBranding();
+
   // Register the a0app:// protocol handler (must be inside whenReady).
   protocol.handle('a0app', (request) => {
     const url = new URL(request.url);
