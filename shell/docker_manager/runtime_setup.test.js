@@ -20,6 +20,7 @@ const {
   runRuntimeSetup,
   runRuntimeSetupStep,
   setupError,
+  verifiedRuntimeSetupState,
   HOMEBREW_INSTALL_COMMAND,
   HOMEBREW_INSTALL_ARGS,
   MAX_DOCKER_HOST_OVERRIDE_LENGTH,
@@ -372,6 +373,93 @@ test('runRuntimeSetup throws VERIFY_FAILED when default and Podman API socket ve
   );
 
   assert.deepEqual(verifyCalls, ['', `unix://${socketPath}`]);
+});
+
+test('verifiedRuntimeSetupState rejects cancellation after default socket verification resolves', async () => {
+  const controller = new AbortController();
+  const verifyCalls = [];
+
+  await assert.rejects(
+    verifiedRuntimeSetupState(
+      { machineName: DEFAULT_A0_MACHINE_NAME },
+      {
+        signal: controller.signal,
+        verifyDockerHost: async (dockerHost) => {
+          verifyCalls.push(dockerHost);
+          assert.equal(dockerHost, '');
+          controller.abort();
+        }
+      }
+    ),
+    (error) => {
+      assert.equal(error.code, 'SETUP_CANCELED');
+      return true;
+    }
+  );
+
+  assert.deepEqual(verifyCalls, ['']);
+});
+
+test('verifiedRuntimeSetupState rejects cancellation after Podman API socket derivation resolves', async () => {
+  const controller = new AbortController();
+  const socketHost = 'unix:///tmp/a0-launcher-podman-api.sock';
+  const verifyCalls = [];
+  const deriveCalls = [];
+
+  await assert.rejects(
+    verifiedRuntimeSetupState(
+      { machineName: DEFAULT_A0_MACHINE_NAME },
+      {
+        signal: controller.signal,
+        verifyDockerHost: async (dockerHost) => {
+          verifyCalls.push(dockerHost);
+          throw setupError('VERIFY_FAILED', 'Default socket failed');
+        },
+        deriveDockerHostOverride: async (machineName) => {
+          deriveCalls.push(machineName);
+          controller.abort();
+          return socketHost;
+        }
+      }
+    ),
+    (error) => {
+      assert.equal(error.code, 'SETUP_CANCELED');
+      return true;
+    }
+  );
+
+  assert.deepEqual(verifyCalls, ['']);
+  assert.deepEqual(deriveCalls, [DEFAULT_A0_MACHINE_NAME]);
+});
+
+test('verifiedRuntimeSetupState rejects cancellation after override verification resolves', async () => {
+  const controller = new AbortController();
+  const socketHost = 'unix:///tmp/a0-launcher-podman-api.sock';
+  const verifyCalls = [];
+
+  await assert.rejects(
+    verifiedRuntimeSetupState(
+      { machineName: DEFAULT_A0_MACHINE_NAME },
+      {
+        signal: controller.signal,
+        verifyDockerHost: async (dockerHost) => {
+          verifyCalls.push(dockerHost);
+          if (!dockerHost) {
+            throw setupError('VERIFY_FAILED', 'Default socket failed');
+          }
+          assert.equal(dockerHost, socketHost);
+          controller.abort();
+        },
+        deriveDockerHostOverride: async () => socketHost
+      }
+    ),
+    (error) => {
+      assert.equal(error.code, 'SETUP_CANCELED');
+      return true;
+    }
+  );
+
+  assert.deepEqual(verifyCalls, ['', socketHost]);
 });
 
 test('runProcess cancellation terminates subprocesses in the spawned process group', async () => {

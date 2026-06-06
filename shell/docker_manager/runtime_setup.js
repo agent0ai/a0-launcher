@@ -24,6 +24,12 @@ function setupError(code, message, details = {}) {
   return err;
 }
 
+function assertRuntimeSetupNotCanceled(signal) {
+  if (signal?.aborted) {
+    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
+  }
+}
+
 function normalizeMachineName(value) {
   const name = String(value || '').trim();
   return /^[A-Za-z0-9_.-]{1,80}$/.test(name) ? name : '';
@@ -451,22 +457,17 @@ async function readPodmanMachines(run = runProcess, podmanPath = 'podman', optio
 async function collectRuntimeSetupContext(options = {}) {
   const run = options.runProcess || runProcess;
   const signal = options.signal;
-  if (signal?.aborted) {
-    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
-  }
+  assertRuntimeSetupNotCanceled(signal);
   const brewPath = await findBrewPath(run, { signal });
-  if (signal?.aborted) {
-    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
-  }
+  assertRuntimeSetupNotCanceled(signal);
   const formulae = await readInstalledFormulae(brewPath, run, { signal }).catch((error) => {
     if (error?.code === 'SETUP_CANCELED') throw error;
     return {};
   });
-  if (signal?.aborted) {
-    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
-  }
+  assertRuntimeSetupNotCanceled(signal);
   const podmanPath = formulae.podman ? runtimeCommandPath(brewPath, 'podman') : 'podman';
   const podmanMachines = await readPodmanMachines(run, podmanPath, { signal });
+  assertRuntimeSetupNotCanceled(signal);
 
   return {
     platform: options.platform || process.platform,
@@ -670,13 +671,12 @@ async function verifiedRuntimeSetupState(plan, context = {}) {
     : undefined;
   const machineName = normalizeMachineName(plan?.machineName);
 
-  if (signal?.aborted) {
-    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
-  }
+  assertRuntimeSetupNotCanceled(signal);
 
   let defaultError = null;
   try {
     await verifyDockerHost('', { signal, timeoutMs, machineName, usesDefaultDockerSocket: true });
+    assertRuntimeSetupNotCanceled(signal);
     return normalizeRuntimeSetupState({
       runtimeBackend: 'podman',
       machineName,
@@ -686,14 +686,17 @@ async function verifiedRuntimeSetupState(plan, context = {}) {
     });
   } catch (error) {
     if (error?.code === 'SETUP_CANCELED') throw error;
+    assertRuntimeSetupNotCanceled(signal);
     defaultError = error;
   }
 
   let dockerHostOverride = '';
   try {
     dockerHostOverride = normalizeDockerHostOverride(await deriveDockerHostOverride(machineName, context));
+    assertRuntimeSetupNotCanceled(signal);
   } catch (error) {
     if (error?.code === 'SETUP_CANCELED') throw error;
+    assertRuntimeSetupNotCanceled(signal);
     throw setupError('VERIFY_FAILED', 'Runtime verification failed', verificationFailureDetails(defaultError, error));
   }
 
@@ -708,6 +711,7 @@ async function verifiedRuntimeSetupState(plan, context = {}) {
       machineName,
       usesDefaultDockerSocket: false
     });
+    assertRuntimeSetupNotCanceled(signal);
     return normalizeRuntimeSetupState({
       runtimeBackend: 'podman',
       machineName,
@@ -717,6 +721,7 @@ async function verifiedRuntimeSetupState(plan, context = {}) {
     });
   } catch (error) {
     if (error?.code === 'SETUP_CANCELED') throw error;
+    assertRuntimeSetupNotCanceled(signal);
     throw setupError('VERIFY_FAILED', 'Runtime verification failed', verificationFailureDetails(defaultError, error));
   }
 }
@@ -727,9 +732,7 @@ async function runRuntimeSetup(options = {}) {
   const run = options.runProcess || runProcess;
   const existingRuntimeSetup = normalizeRuntimeSetupState(options.runtimeSetupState);
   const platform = options.platform || process.platform;
-  if (signal?.aborted) {
-    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
-  }
+  assertRuntimeSetupNotCanceled(signal);
   if (options.dockerAvailable) {
     report({ stepId: 'verify_existing_docker', message: 'Docker is ready' });
     return existingRuntimeSetup;
@@ -761,9 +764,7 @@ async function runRuntimeSetup(options = {}) {
   }
 
   for (const step of plan.steps) {
-    if (signal?.aborted) {
-      throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
-    }
+    assertRuntimeSetupNotCanceled(signal);
 
     report({ stepId: step.id, message: step.label });
     await runRuntimeSetupStep(step, { ...context, plan, signal, runProcess: run });
@@ -786,6 +787,7 @@ module.exports = {
   HOMEBREW_INSTALL_COMMAND,
   MAX_DOCKER_HOST_OVERRIDE_LENGTH,
   REQUIRED_FORMULAE,
+  assertRuntimeSetupNotCanceled,
   chooseBrewPath,
   choosePodmanMachine,
   collectRuntimeSetupContext,

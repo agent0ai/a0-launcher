@@ -98,6 +98,9 @@ This scope owns:
 - Runtime setup must check for pre-canceled, Docker-ready, and unsupported
   platform cases before probing Homebrew, package formulae, or Podman machines.
   Probe commands that do run must receive the operation abort signal.
+- Runtime setup must re-check cancellation after final Dockerode verification,
+  after Podman socket derivation, and before persisting successful metadata or
+  marking the operation completed.
 - Runtime setup steps must resolve Homebrew-derived command paths lazily and
   only for steps that need them; step-time `findBrewPath` and
   `brew --prefix podman` calls must receive the operation abort signal.

@@ -890,7 +890,9 @@ async function startRuntimeSetup() {
         }
       });
 
+      runtimeSetup.assertRuntimeSetupNotCanceled(controller.signal);
       await stateStore.writeRuntimeSetup(result);
+      runtimeSetup.assertRuntimeSetupNotCanceled(controller.signal);
       finishOperation('completed', null);
       updateOperationProgress({ progress: 100, message: 'Runtime ready', setupCode: '' });
       await refreshDockerManager({ forceRefresh: true }).catch(() => {});
