@@ -15,7 +15,13 @@ This scope owns:
 
 - `index.js`: Docker Manager service, state assembly, install/sync/start/stop,
   activation, rollback, retained-instance, remote-instance, port, storage, and
-  progress operations.
+  progress operations. Runtime setup operation/progress integration belongs
+  here; setup planning and command execution belong in `runtime_setup.js`.
+- `runtime_setup.js`: macOS runtime setup planning, Homebrew/Podman machine
+  selection, fixed setup step modeling, command execution helpers, and sanitized
+  command output handling.
+- `runtime_setup.test.js`: pure planner and sanitization coverage for runtime
+  setup. Tests must not install Homebrew, run Podman, or mutate the host.
 - `state_store.js`: persisted launcher state under Electron `userData`.
 - `releases_client.js`: GitHub release discovery for Agent Zero backend
   versions.
@@ -56,6 +62,9 @@ This scope owns:
   instance may be replaced or data may be affected.
 - Error responses should pass through `toErrorResponse()` and map common Docker
   diagnostics to useful UI messages.
+- macOS runtime setup must stay shell-owned and fixed-step. Renderer code may
+  request setup intent through named IPC only; it must never provide arbitrary
+  commands or receive unsanitized command output.
 
 ## Work Guidance
 
@@ -73,7 +82,9 @@ After changes here, run:
 
 ```bash
 node --check shell/docker_manager/index.js
+node --check shell/docker_manager/runtime_setup.js
 node --check shell/main.js
+node --test shell/docker_manager/runtime_setup.test.js
 git diff --check
 ```
 
