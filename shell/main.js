@@ -19,11 +19,18 @@ if (require('electron-squirrel-startup')) {
 }
 
 // Constants
+const APP_DISPLAY_NAME = 'Agent Zero';
+const APP_USER_MODEL_ID = 'ai.agent0.launcher';
 const DEFAULT_GITHUB_REPO = 'agent0ai/a0-launcher';
 const BUILD_INFO_FILE = path.join(__dirname, 'build-info.json');
 const GITHUB_REPO_ENV_VAR = 'A0_LAUNCHER_GITHUB_REPO';
 const LOCAL_REPO_ENV_VAR = 'A0_LAUNCHER_LOCAL_REPO';
 const USE_LOCAL_CONTENT_ENV_VAR = 'A0_LAUNCHER_USE_LOCAL_CONTENT';
+
+app.setName(APP_DISPLAY_NAME);
+if (process.platform === 'win32') {
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+}
 
 function isTruthyEnv(value) {
   const v = (value || '').trim().toLowerCase();
@@ -114,6 +121,22 @@ let instanceTabs = new Map();
 let activeInstanceTabId = '';
 let instanceTabBounds = null;
 let instanceTabSeq = 0;
+
+function shellIconPath() {
+  return path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+}
+
+function shellIconImage() {
+  return nativeImage.createFromPath(shellIconPath());
+}
+
+function applyAppBranding() {
+  app.setName(APP_DISPLAY_NAME);
+  if (process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
+    const image = shellIconImage();
+    if (image && !image.isEmpty()) app.dock.setIcon(image);
+  }
+}
 
 /**
  * Fetch the latest release info from GitHub
@@ -410,17 +433,13 @@ async function loadAppContent() {
  * Create the main browser window
  */
 function createWindow() {
-  const iconPath = path.join(__dirname, 'assets',
-    process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-  );
-
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'A0 Launcher',
-    icon: iconPath,
+    title: APP_DISPLAY_NAME,
+    icon: shellIconPath(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -565,8 +584,7 @@ function createTray() {
   if (tray) return tray;
 
   try {
-    const iconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
-    let image = nativeImage.createFromPath(iconPath);
+    let image = shellIconImage();
     if (image && !image.isEmpty() && process.platform !== 'darwin') {
       image = image.resize({ width: 16, height: 16 });
     }
@@ -596,8 +614,7 @@ ipcMain.handle('get-content-version', async () => {
 
 ipcMain.handle('get-shell-icon-data-url', () => {
   try {
-    const iconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
-    const image = nativeImage.createFromPath(iconPath);
+    const image = shellIconImage();
     if (!image || image.isEmpty()) return '';
     return image.resize({ width: 32, height: 32 }).toDataURL();
   } catch {
@@ -1959,6 +1976,8 @@ protocol.registerSchemesAsPrivileged([{
 
 // App lifecycle
 app.whenReady().then(async () => {
+  applyAppBranding();
+
   // Register the a0app:// protocol handler (must be inside whenReady).
   protocol.handle('a0app', (request) => {
     const url = new URL(request.url);

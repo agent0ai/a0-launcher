@@ -60,6 +60,11 @@ This scope owns:
 - `app.getVersion()` owns the app version shown as `App:`.
 - `electronAPI` owns shell metadata: status/error listeners, app/content version,
   and icon data URL.
+- Runtime app branding is shell-owned. `shell/assets/icon.png`, `icon.ico`, and
+  `icon.icns` are the Agent Zero application icons for window, tray,
+  renderer-header, Dock, and packaged app surfaces. `shell/main.js` must set the
+  macOS Dock icon explicitly during local/dev Electron runs because those runs
+  otherwise inherit the stock `Electron.app` icon.
 - `dockerManagerAPI` owns all Docker Manager calls.
 - Long-running Docker operations should return an accepted operation id and
   report progress through Docker Manager events instead of blocking the renderer.
