@@ -219,6 +219,54 @@ function commandOutputLines(stdout) {
     .filter(Boolean);
 }
 
+function makeUnixDockerHost(socketPath) {
+  const socket = String(socketPath || '').trim();
+  if (!socket || !socket.startsWith('/')) return '';
+  return normalizeDockerHostOverride(`unix://${socket}`);
+}
+
+function podmanApiSocketPathFromInspect(value) {
+  const entry = Array.isArray(value) ? value[0] : value;
+  if (!entry || typeof entry !== 'object') return '';
+
+  const connectionInfo = entry.ConnectionInfo || entry.connectionInfo || {};
+  const podmanSocket = connectionInfo.PodmanSocket || connectionInfo.podmanSocket || {};
+  const direct = podmanSocket.Path || podmanSocket.path;
+  if (typeof direct === 'string' && direct.trim().startsWith('/')) return direct.trim();
+
+  const candidates = [];
+  const visit = (node, keyHint = '') => {
+    if (!node || candidates.length) return;
+    if (typeof node === 'string') {
+      const text = node.trim();
+      if (text.startsWith('/') && /\.sock(?:et)?$/i.test(text) && /podman/i.test(`${keyHint} ${text}`)) {
+        candidates.push(text);
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, keyHint);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    for (const [key, child] of Object.entries(node)) {
+      visit(child, `${keyHint} ${key}`);
+    }
+  };
+
+  visit(entry);
+  return candidates[0] || '';
+}
+
+function podmanApiSocketHostFromInspect(stdout) {
+  try {
+    const parsed = JSON.parse(stdout || '[]');
+    return makeUnixDockerHost(podmanApiSocketPathFromInspect(parsed));
+  } catch {
+    return '';
+  }
+}
+
 function terminateProcessTree(child, signal = 'SIGTERM') {
   if (!child) return;
 
@@ -451,6 +499,36 @@ async function podmanHelperPath(brewPath, run = runProcess, options = {}) {
   return path.join(prefix, 'bin', 'podman-mac-helper');
 }
 
+async function podmanMachineDockerHost(machineName, context = {}) {
+  const run = context.runProcess || runProcess;
+  const signal = context.signal;
+  const name = normalizeMachineName(machineName);
+  if (!name) {
+    throw setupError('VERIFY_FAILED', 'Runtime verification failed', {
+      reason: 'machine name unavailable'
+    });
+  }
+
+  const brewPath = context.brewPath || await findBrewPath(run, { signal });
+  const podmanPath = context.podmanPath || runtimeCommandPath(brewPath, 'podman');
+  const env = context.env || runtimeProcessEnv(brewPath);
+
+  try {
+    const result = await run(podmanPath, ['machine', 'inspect', name], { env, signal });
+    const dockerHost = podmanApiSocketHostFromInspect(result.stdout);
+    if (!dockerHost) {
+      throw setupError('VERIFY_FAILED', 'Runtime verification failed', {
+        reason: 'podman socket unavailable'
+      });
+    }
+    return dockerHost;
+  } catch (error) {
+    if (error?.code === 'SETUP_CANCELED') throw error;
+    if (error?.code === 'VERIFY_FAILED') throw error;
+    throw commandFailureForStep(error, 'VERIFY_FAILED', 'Runtime verification failed');
+  }
+}
+
 function commandFailureForStep(error, code, message) {
   if (error?.code === 'SETUP_CANCELED') return error;
   return setupError(code, message, {
@@ -547,14 +625,99 @@ async function runRuntimeSetupStep(step, context = {}) {
     }
 
     case 'verify_runtime': {
-      const { dockerPath, env } = await resolveRuntime();
-      return run(dockerPath, ['version', '--format', '{{.Server.Version}}'], { env, signal }).catch((error) => {
-        throw commandFailureForStep(error, 'VERIFY_FAILED', 'Runtime verification failed');
-      });
+      return null;
     }
 
     default:
       throw setupError('UNKNOWN_SETUP_STEP', `Unknown runtime setup step: ${step?.id || ''}`);
+  }
+}
+
+async function verifyDockerHostWithAdapter(dockerHost, options = {}) {
+  const { DockerInterface } = await import('../docker_adapter/DockerInterface.mjs');
+  const environment = await DockerInterface.detectEnvironment({
+    dockerHost,
+    timeoutMs: options.timeoutMs
+  });
+
+  if (environment?.dockerAvailable) return environment;
+
+  throw setupError('VERIFY_FAILED', 'Runtime verification failed', {
+    diagnosticCode: environment?.diagnosticCode || '',
+    diagnosticMessage: environment?.diagnosticMessage || ''
+  });
+}
+
+function verificationFailureDetails(defaultError, overrideError) {
+  return {
+    defaultCode: defaultError?.code || '',
+    overrideCode: overrideError?.code || '',
+    defaultDiagnosticCode: defaultError?.details?.diagnosticCode || '',
+    overrideDiagnosticCode: overrideError?.details?.diagnosticCode || ''
+  };
+}
+
+async function verifiedRuntimeSetupState(plan, context = {}) {
+  const signal = context.signal;
+  const verifyDockerHost = typeof context.verifyDockerHost === 'function'
+    ? context.verifyDockerHost
+    : verifyDockerHostWithAdapter;
+  const deriveDockerHostOverride = typeof context.deriveDockerHostOverride === 'function'
+    ? context.deriveDockerHostOverride
+    : podmanMachineDockerHost;
+  const timeoutMs = Number.isFinite(Number(context.verifyTimeoutMs))
+    ? Number(context.verifyTimeoutMs)
+    : undefined;
+  const machineName = normalizeMachineName(plan?.machineName);
+
+  if (signal?.aborted) {
+    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
+  }
+
+  let defaultError = null;
+  try {
+    await verifyDockerHost('', { signal, timeoutMs, machineName, usesDefaultDockerSocket: true });
+    return normalizeRuntimeSetupState({
+      runtimeBackend: 'podman',
+      machineName,
+      dockerHostOverride: '',
+      usesDefaultDockerSocket: true,
+      lastSuccessfulSetupAt: new Date().toISOString()
+    });
+  } catch (error) {
+    if (error?.code === 'SETUP_CANCELED') throw error;
+    defaultError = error;
+  }
+
+  let dockerHostOverride = '';
+  try {
+    dockerHostOverride = normalizeDockerHostOverride(await deriveDockerHostOverride(machineName, context));
+  } catch (error) {
+    if (error?.code === 'SETUP_CANCELED') throw error;
+    throw setupError('VERIFY_FAILED', 'Runtime verification failed', verificationFailureDetails(defaultError, error));
+  }
+
+  if (!dockerHostOverride) {
+    throw setupError('VERIFY_FAILED', 'Runtime verification failed', verificationFailureDetails(defaultError, null));
+  }
+
+  try {
+    await verifyDockerHost(dockerHostOverride, {
+      signal,
+      timeoutMs,
+      machineName,
+      usesDefaultDockerSocket: false
+    });
+    return normalizeRuntimeSetupState({
+      runtimeBackend: 'podman',
+      machineName,
+      dockerHostOverride,
+      usesDefaultDockerSocket: false,
+      lastSuccessfulSetupAt: new Date().toISOString()
+    });
+  } catch (error) {
+    if (error?.code === 'SETUP_CANCELED') throw error;
+    throw setupError('VERIFY_FAILED', 'Runtime verification failed', verificationFailureDetails(defaultError, error));
   }
 }
 
@@ -606,12 +769,13 @@ async function runRuntimeSetup(options = {}) {
     await runRuntimeSetupStep(step, { ...context, plan, signal, runProcess: run });
   }
 
-  return normalizeRuntimeSetupState({
-    runtimeBackend: plan.ready ? existingRuntimeSetup.runtimeBackend : 'podman',
-    machineName: plan.ready ? existingRuntimeSetup.machineName : plan.machineName,
-    dockerHostOverride: plan.ready ? existingRuntimeSetup.dockerHostOverride : '',
-    usesDefaultDockerSocket: plan.ready ? existingRuntimeSetup.usesDefaultDockerSocket : true,
-    lastSuccessfulSetupAt: new Date().toISOString()
+  return verifiedRuntimeSetupState(plan, {
+    ...context,
+    signal,
+    runProcess: run,
+    verifyDockerHost: options.verifyDockerHost,
+    deriveDockerHostOverride: options.deriveDockerHostOverride,
+    verifyTimeoutMs: options.verifyTimeoutMs
   });
 }
 
@@ -636,12 +800,17 @@ module.exports = {
   normalizeRuntimeSetupState,
   parsePodmanMachineList,
   pathExists,
+  podmanApiSocketHostFromInspect,
+  podmanApiSocketPathFromInspect,
   podmanHelperPath,
+  podmanMachineDockerHost,
   readInstalledFormulae,
   readPodmanMachines,
   runProcess,
   runRuntimeSetup,
   runRuntimeSetupStep,
   sanitizeCommandOutput,
-  setupError
+  setupError,
+  verifiedRuntimeSetupState,
+  verifyDockerHostWithAdapter
 };

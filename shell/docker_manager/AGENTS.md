@@ -19,7 +19,9 @@ This scope owns:
   here; setup planning and command execution belong in `runtime_setup.js`.
 - `runtime_setup.js`: macOS runtime setup planning, Homebrew/Podman machine
   selection, fixed setup step modeling, fixed command execution, native
-  authorization script construction, and sanitized command output handling.
+  authorization script construction, Dockerode-backed setup verification,
+  launcher-owned socket fallback selection, and sanitized command output
+  handling.
 - `runtime_setup.test.js`: pure planner and sanitization coverage for runtime
   setup. Tests must not install Homebrew, run Podman, or mutate the host.
 - `state_store.js`: persisted launcher state under Electron `userData`.
@@ -57,6 +59,12 @@ This scope owns:
   to the adapter so the default socket is used instead of `process.env.DOCKER_HOST`.
   If no runtime setup/default-socket state is saved, preserve the environment
   fallback.
+- Runtime setup success must be verified through the Docker adapter/Dockerode
+  before metadata is persisted. After Podman setup steps complete, verify the
+  default Docker socket first. If that fails, derive the selected Podman
+  machine API socket from `podman machine inspect`, verify that socket through
+  the adapter, and persist the sanitized `dockerHostOverride` only after that
+  verification succeeds. If both paths fail, fail setup with `VERIFY_FAILED`.
 - A runtime setup no-op because Docker is already available must preserve the
   existing runtime metadata as-is, including `lastSuccessfulSetupAt`. It must
   not infer or persist `usesDefaultDockerSocket: true` unless setup actually
@@ -101,10 +109,11 @@ This scope owns:
   child termination because the macOS setup path is the target runtime.
 - The runtime setup command graph is fixed: Homebrew install uses `/bin/bash`
   with `-c "/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash"`
-  and `NONINTERACTIVE=1`; package and machine work uses Homebrew, Podman, and
-  Docker commands selected by the setup plan; native authorization uses
+  and `NONINTERACTIVE=1`; package and machine work uses Homebrew and Podman
+  commands selected by the setup plan; native authorization uses
   `/usr/bin/osascript -e <script>` with the helper path derived from
-  `brew --prefix podman`.
+  `brew --prefix podman`; final runtime verification uses the Docker
+  adapter/Dockerode instead of the Docker CLI.
 - Runtime setup must not collect or store sudo passwords. It must not stop,
   rootful-toggle, or otherwise mutate an active external Podman machine; the
   planner blocks that case with `PODMAN_MACHINE_EXISTS`.

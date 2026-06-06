@@ -12,6 +12,7 @@ const {
   normalizeRuntimeSetupState,
   dockerOptionsForRuntimeSetup,
   findBrewPath,
+  podmanApiSocketHostFromInspect,
   podmanHelperPath,
   readInstalledFormulae,
   readPodmanMachines,
@@ -27,6 +28,70 @@ const {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function makePodmanSetupRunProcess(options = {}) {
+  const calls = [];
+  const machineName = options.machineName || DEFAULT_A0_MACHINE_NAME;
+  const socketPath = options.socketPath || '/tmp/a0-launcher-podman.sock';
+
+  const runProcess = async (command, args = []) => {
+    calls.push({ command, args });
+    const argv = Array.isArray(args) ? args : [];
+
+    if (command === '/usr/bin/env' && argv.join(' ') === 'bash -lc command -v brew') {
+      return { code: 0, stdout: '/opt/homebrew/bin/brew\n', stderr: '' };
+    }
+
+    if (String(command).endsWith('/brew') && argv.join(' ') === 'list --formula --quiet') {
+      return {
+        code: 0,
+        stdout: 'docker\ndocker-compose\ndocker-credential-helper\npodman\n',
+        stderr: ''
+      };
+    }
+
+    if (String(command).endsWith('/brew') && argv.join(' ') === '--prefix podman') {
+      return { code: 0, stdout: '/opt/homebrew/Cellar/podman/5.0.0\n', stderr: '' };
+    }
+
+    if (String(command).endsWith('/podman') && argv.join(' ') === 'machine list --format json') {
+      return {
+        code: 0,
+        stdout: JSON.stringify([{ Name: machineName, Running: false, Rootful: true }]),
+        stderr: ''
+      };
+    }
+
+    if (String(command).endsWith('/podman') && argv[0] === 'machine' && ['start', 'stop'].includes(argv[1])) {
+      assert.equal(argv[2], machineName);
+      return { code: 0, stdout: '', stderr: '' };
+    }
+
+    if (String(command).endsWith('/podman') && argv.join(' ') === `machine inspect ${machineName}`) {
+      return {
+        code: 0,
+        stdout: JSON.stringify([{
+          Name: machineName,
+          ConnectionInfo: {
+            PodmanSocket: {
+              Path: socketPath
+            }
+          }
+        }]),
+        stderr: ''
+      };
+    }
+
+    if (command === '/usr/bin/osascript') {
+      return { code: 0, stdout: '', stderr: '' };
+    }
+
+    throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command} ${argv.join(' ')}`);
+  };
+
+  runProcess.calls = calls;
+  return runProcess;
 }
 
 async function waitForFileValue(filePath, predicate, timeoutMs = 4000) {
@@ -229,6 +294,86 @@ test('runRuntimeSetup rejects pre-canceled setup before install-tool probes', as
   );
 });
 
+test('runRuntimeSetup persists default socket metadata only after adapter verification succeeds', async () => {
+  const runProcess = makePodmanSetupRunProcess();
+  const verifyCalls = [];
+
+  const result = await runRuntimeSetup({
+    dockerAvailable: false,
+    platform: 'darwin',
+    runProcess,
+    verifyDockerHost: async (dockerHost) => {
+      verifyCalls.push(dockerHost);
+      assert.equal(dockerHost, '');
+    }
+  });
+
+  assert.equal(result.runtimeBackend, 'podman');
+  assert.equal(result.machineName, DEFAULT_A0_MACHINE_NAME);
+  assert.equal(result.dockerHostOverride, '');
+  assert.equal(result.usesDefaultDockerSocket, true);
+  assert.ok(Number.isFinite(Date.parse(result.lastSuccessfulSetupAt)));
+  assert.deepEqual(verifyCalls, ['']);
+  assert.equal(runProcess.calls.some((call) => call.args.join(' ') === `machine inspect ${DEFAULT_A0_MACHINE_NAME}`), false);
+});
+
+test('runRuntimeSetup persists verified Podman API socket override when default socket fails', async () => {
+  const socketPath = '/tmp/a0-launcher-podman-api.sock';
+  const runProcess = makePodmanSetupRunProcess({ socketPath });
+  const verifyCalls = [];
+
+  const result = await runRuntimeSetup({
+    dockerAvailable: false,
+    platform: 'darwin',
+    runProcess,
+    verifyDockerHost: async (dockerHost) => {
+      verifyCalls.push(dockerHost);
+      if (!dockerHost) {
+        throw setupError('VERIFY_FAILED', 'Default socket failed', {
+          diagnosticCode: 'DAEMON_UNAVAILABLE'
+        });
+      }
+      assert.equal(dockerHost, `unix://${socketPath}`);
+    }
+  });
+
+  assert.equal(result.runtimeBackend, 'podman');
+  assert.equal(result.machineName, DEFAULT_A0_MACHINE_NAME);
+  assert.equal(result.dockerHostOverride, `unix://${socketPath}`);
+  assert.equal(result.usesDefaultDockerSocket, false);
+  assert.ok(Number.isFinite(Date.parse(result.lastSuccessfulSetupAt)));
+  assert.deepEqual(verifyCalls, ['', `unix://${socketPath}`]);
+  assert.equal(runProcess.calls.some((call) => call.args.join(' ') === `machine inspect ${DEFAULT_A0_MACHINE_NAME}`), true);
+});
+
+test('runRuntimeSetup throws VERIFY_FAILED when default and Podman API socket verification fail', async () => {
+  const socketPath = '/tmp/a0-launcher-podman-api.sock';
+  const runProcess = makePodmanSetupRunProcess({ socketPath });
+  const verifyCalls = [];
+
+  await assert.rejects(
+    runRuntimeSetup({
+      dockerAvailable: false,
+      platform: 'darwin',
+      runProcess,
+      verifyDockerHost: async (dockerHost) => {
+        verifyCalls.push(dockerHost);
+        throw setupError('VERIFY_FAILED', 'Socket verification failed', {
+          diagnosticCode: dockerHost ? 'ECONNREFUSED' : 'DAEMON_UNAVAILABLE'
+        });
+      }
+    }),
+    (error) => {
+      assert.equal(error.code, 'VERIFY_FAILED');
+      assert.equal(error.details.defaultCode, 'VERIFY_FAILED');
+      assert.equal(error.details.overrideCode, 'VERIFY_FAILED');
+      return true;
+    }
+  );
+
+  assert.deepEqual(verifyCalls, ['', `unix://${socketPath}`]);
+});
+
 test('runProcess cancellation terminates subprocesses in the spawned process group', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'a0-runprocess-'));
   const marker = path.join(tmp, 'grandchild.pid');
@@ -406,6 +551,17 @@ test('normalizeDockerHostOverride accepts only safe Docker host forms', () => {
   assert.equal(normalizeDockerHostOverride('http://localhost:2375#daemon'), '');
   assert.equal(normalizeDockerHostOverride(`/${'x'.repeat(MAX_DOCKER_HOST_OVERRIDE_LENGTH)}`), '');
   assert.equal(normalizeDockerHostOverride('http://[::1'), '');
+});
+
+test('podmanApiSocketHostFromInspect derives a normalized Unix Docker host', () => {
+  assert.equal(podmanApiSocketHostFromInspect(JSON.stringify([{
+    ConnectionInfo: {
+      PodmanSocket: {
+        Path: '/tmp/a0-launcher-podman-api.sock'
+      }
+    }
+  }])), 'unix:///tmp/a0-launcher-podman-api.sock');
+  assert.equal(podmanApiSocketHostFromInspect('not json'), '');
 });
 
 test('normalizeRuntimeSetupState keeps only safe runtime metadata', () => {
