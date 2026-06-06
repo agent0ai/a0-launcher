@@ -1,4 +1,7 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { test } = require('node:test');
 
 const {
@@ -12,6 +15,7 @@ const {
   podmanHelperPath,
   readInstalledFormulae,
   readPodmanMachines,
+  runProcess,
   runRuntimeSetup,
   runRuntimeSetupStep,
   setupError,
@@ -20,6 +24,24 @@ const {
   MAX_DOCKER_HOST_OVERRIDE_LENGTH,
   DEFAULT_A0_MACHINE_NAME
 } = require('./runtime_setup');
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForFileValue(filePath, predicate, timeoutMs = 4000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const value = await fs.readFile(filePath, 'utf8');
+      if (predicate(value)) return value;
+    } catch {
+      // keep polling until the child writes the marker
+    }
+    await sleep(50);
+  }
+  throw new Error(`Timed out waiting for ${filePath}`);
+}
 
 test('chooseBrewPath prefers explicit Homebrew locations before PATH hits', () => {
   assert.equal(chooseBrewPath({
@@ -205,6 +227,71 @@ test('runRuntimeSetup rejects pre-canceled setup before install-tool probes', as
       return true;
     }
   );
+});
+
+test('runProcess cancellation terminates subprocesses in the spawned process group', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'a0-runprocess-'));
+  const marker = path.join(tmp, 'grandchild.pid');
+  let grandchildPid = 0;
+  let grandchildTerminated = false;
+
+  const grandchildScript = `
+    const fs = require('node:fs');
+    const marker = process.argv[1];
+    process.on('SIGTERM', () => {
+      fs.writeFileSync(marker, process.pid + ':term');
+      process.exit(0);
+    });
+    fs.writeFileSync(marker, process.pid + ':ready');
+    setInterval(() => {}, 1000);
+  `;
+
+  const parentScript = `
+    const childProcess = require('node:child_process');
+    const marker = process.argv[1];
+    const grandchildScript = process.argv[2];
+    const child = childProcess.spawn(process.execPath, ['-e', grandchildScript, marker], {
+      stdio: 'ignore'
+    });
+    child.unref();
+    setInterval(() => {}, 1000);
+  `;
+
+  try {
+    const controller = new AbortController();
+    const promise = runProcess(process.execPath, ['-e', parentScript, marker, grandchildScript], {
+      signal: controller.signal
+    });
+
+    const ready = await waitForFileValue(marker, (value) => value.includes(':ready'));
+    grandchildPid = Number(ready.split(':')[0]);
+    assert.ok(Number.isInteger(grandchildPid) && grandchildPid > 0);
+
+    controller.abort();
+
+    await assert.rejects(
+      promise,
+      (error) => {
+        assert.equal(error.code, 'SETUP_CANCELED');
+        return true;
+      }
+    );
+
+    if (process.platform !== 'win32') {
+      const terminated = await waitForFileValue(marker, (value) => value.includes(':term'));
+      assert.equal(Number(terminated.split(':')[0]), grandchildPid);
+      grandchildTerminated = true;
+    }
+  } finally {
+    if (grandchildPid > 0 && !grandchildTerminated) {
+      try {
+        process.kill(grandchildPid, 'SIGKILL');
+      } catch {
+        // ignore
+      }
+    }
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
 });
 
 test('findBrewPath passes abort signal to PATH lookup command', async () => {

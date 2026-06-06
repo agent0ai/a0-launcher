@@ -219,6 +219,26 @@ function commandOutputLines(stdout) {
     .filter(Boolean);
 }
 
+function terminateProcessTree(child, signal = 'SIGTERM') {
+  if (!child) return;
+
+  const pid = Number(child.pid);
+  if (process.platform !== 'win32' && Number.isInteger(pid) && pid > 0) {
+    try {
+      process.kill(-pid, signal);
+      return;
+    } catch (error) {
+      if (error?.code === 'ESRCH') return;
+    }
+  }
+
+  try {
+    child.kill(signal);
+  } catch {
+    // ignore
+  }
+}
+
 function runProcess(command, args = [], options = {}) {
   const cmd = String(command || '').trim();
   const argv = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
@@ -254,6 +274,7 @@ function runProcess(command, args = [], options = {}) {
       child = childProcess.spawn(cmd, argv, {
         cwd,
         env,
+        detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe']
       });
     } catch (error) {
@@ -265,23 +286,12 @@ function runProcess(command, args = [], options = {}) {
       return;
     }
 
-    child.stdout.on('data', (chunk) => {
+    child.stdout?.on('data', (chunk) => {
       stdout += chunk.toString();
     });
-    child.stderr.on('data', (chunk) => {
+    child.stderr?.on('data', (chunk) => {
       stderr += chunk.toString();
     });
-
-    if (signal) {
-      abortListener = () => {
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // ignore
-        }
-      };
-      signal.addEventListener('abort', abortListener, { once: true });
-    }
 
     child.on('error', (error) => {
       const result = {
@@ -309,6 +319,14 @@ function runProcess(command, args = [], options = {}) {
         done(reject, setupError('COMMAND_FAILED', `${cmd} failed`, result));
       }
     });
+
+    if (signal) {
+      abortListener = () => {
+        terminateProcessTree(child, 'SIGTERM');
+      };
+      signal.addEventListener('abort', abortListener, { once: true });
+      if (signal.aborted) abortListener();
+    }
   });
 }
 

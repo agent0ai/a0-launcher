@@ -1377,34 +1377,111 @@ function looksLikeHostPath(value) {
     /(^|[\\/])(?:Users|Volumes|home|var|tmp|private|mnt|run|etc)[\\/]/.test(text);
 }
 
-function sanitizeDockerVolumeLabelKey(value) {
-  const key = typeof value === 'string' ? value.trim() : '';
-  if (!key || key.length > 160) return null;
-  if (!key.startsWith('a0.launcher.')) return null;
-  if (!/^[A-Za-z0-9_.-]+$/.test(key)) return null;
-  return key;
-}
-
-function sanitizeDockerVolumeLabelValue(value) {
+function sanitizeInventoryString(value, maxLength = 160) {
   const text = typeof value === 'string' ? value.trim() : '';
-  if (!text || text.length > 500) return null;
-  if (/[\r\n\0]/.test(text)) return null;
-  if (looksLikeHostPath(text)) return null;
-  return text;
+  if (!text) return '';
+  if (/[\r\n\0]/.test(text)) return '';
+  return text.slice(0, maxLength);
 }
 
-function sanitizeDockerVolumeLabels(labels) {
-  if (!isPlainObject(labels)) return null;
+function sanitizeInventoryTimestamp(value) {
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  const text = sanitizeInventoryString(value, 80);
+  return text || undefined;
+}
 
-  const out = {};
-  for (const [rawKey, rawValue] of Object.entries(labels)) {
-    const key = sanitizeDockerVolumeLabelKey(rawKey);
-    const value = sanitizeDockerVolumeLabelValue(rawValue);
-    if (!key || !value) continue;
-    out[key] = value;
+function sanitizeInventorySizeBytes(value) {
+  if (value === null || value === undefined || value === '') return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(0, Math.floor(n));
+}
+
+function sanitizeDockerInventoryImages(images) {
+  const source = Array.isArray(images) ? images : [];
+  const out = [];
+
+  for (const img of source) {
+    if (!isPlainObject(img)) continue;
+    const imageRef = sanitizeInventoryString(img.imageRef, 300);
+    const tag = sanitizeInventoryString(img.tag, 160);
+    if (!imageRef && !tag) continue;
+
+    const image = {};
+    if (imageRef) image.imageRef = imageRef;
+    if (tag) image.tag = tag;
+
+    const createdAt = sanitizeInventoryTimestamp(img.createdAt);
+    if (createdAt !== undefined) image.createdAt = createdAt;
+
+    const sizeBytes = sanitizeInventorySizeBytes(img.sizeBytes);
+    if (sizeBytes !== undefined) image.sizeBytes = sizeBytes;
+
+    out.push(image);
   }
 
-  return Object.keys(out).length ? out : null;
+  return out;
+}
+
+function sanitizeDockerContainerId(value) {
+  const id = sanitizeInventoryString(value, 128);
+  if (!/^[a-f0-9]{12,128}$/i.test(id)) return '';
+  return id;
+}
+
+function sanitizeDockerContainerLabels(labels) {
+  if (!isPlainObject(labels)) return null;
+
+  const role = sanitizeInventoryString(labels['a0.launcher.role'], 40);
+  if (role !== 'active') return null;
+  return { 'a0.launcher.role': 'active' };
+}
+
+function sanitizeDockerInventoryContainers(containers) {
+  const source = Array.isArray(containers) ? containers : [];
+  const out = [];
+
+  for (const c of source) {
+    if (!isPlainObject(c)) continue;
+
+    const containerId = sanitizeDockerContainerId(c.containerId);
+    if (!containerId) continue;
+
+    const container = { containerId };
+    const containerName = sanitizeInventoryString(c.containerName, 160);
+    if (containerName && !looksLikeHostPath(containerName)) container.containerName = containerName;
+
+    const instanceName = sanitizeInventoryString(c.instanceName, 160);
+    if (instanceName && !looksLikeHostPath(instanceName)) container.instanceName = instanceName;
+
+    const imageRef = sanitizeInventoryString(c.imageRef, 300);
+    if (imageRef) container.imageRef = imageRef;
+
+    const state = sanitizeInventoryString(c.state, 80);
+    if (state) container.state = state;
+
+    const status = sanitizeInventoryString(c.status, 240);
+    if (status) container.status = status;
+
+    const createdAt = sanitizeInventoryTimestamp(c.createdAt);
+    if (createdAt !== undefined) container.createdAt = createdAt;
+
+    const startedAt = sanitizeInventoryTimestamp(c.startedAt);
+    if (startedAt !== undefined) container.startedAt = startedAt;
+
+    const uiUrl = normalizeHttpUrl(c.uiUrl);
+    if (uiUrl && isAllowedLocalUrl(uiUrl)) container.uiUrl = uiUrl;
+
+    const labels = sanitizeDockerContainerLabels(c.labels);
+    if (labels) container.labels = labels;
+
+    out.push(container);
+  }
+
+  return out;
 }
 
 function sanitizeDockerInventoryVolumes(volumes) {
@@ -1417,15 +1494,35 @@ function sanitizeDockerInventoryVolumes(volumes) {
     if (!name || name.length > 255 || looksLikeHostPath(name)) continue;
 
     const volume = { name };
-    if (typeof v.driver === 'string') volume.driver = v.driver.trim().slice(0, 80);
-    if (typeof v.scope === 'string') volume.scope = v.scope.trim().slice(0, 80);
-    if (typeof v.createdAt === 'string') volume.createdAt = v.createdAt;
-    if (v.createdAt === null) volume.createdAt = null;
+    const driver = sanitizeInventoryString(v.driver, 80);
+    if (driver) volume.driver = driver;
+    const scope = sanitizeInventoryString(v.scope, 80);
+    if (scope) volume.scope = scope;
 
-    const labels = sanitizeDockerVolumeLabels(v.labels);
-    if (labels) volume.labels = labels;
+    const createdAt = sanitizeInventoryTimestamp(v.createdAt);
+    if (createdAt !== undefined) volume.createdAt = createdAt;
 
     out.push(volume);
+  }
+
+  return out;
+}
+
+function sanitizeDockerInventoryRemoteInstances(remoteInstances) {
+  const source = Array.isArray(remoteInstances) ? remoteInstances : [];
+  const out = [];
+
+  for (const r of source) {
+    if (!isPlainObject(r)) continue;
+
+    const id = sanitizeInventoryString(r.id, 96);
+    const name = sanitizeInventoryString(r.name, 80);
+    const url = normalizeHttpUrl(r.url);
+    if (!id || !/^[A-Za-z0-9_.:-]+$/.test(id)) continue;
+    if (!name || looksLikeHostPath(name)) continue;
+    if (!url || !isAllowedHttpUrl(url)) continue;
+
+    out.push({ id, name, url });
   }
 
   return out;
@@ -1437,10 +1534,10 @@ function sanitizeDockerInventory(inventory) {
   return {
     dockerAvailable,
     environment: sanitizeDockerInventoryEnvironment(source.environment, dockerAvailable),
-    images: Array.isArray(source.images) ? source.images : [],
-    containers: Array.isArray(source.containers) ? source.containers : [],
+    images: sanitizeDockerInventoryImages(source.images),
+    containers: sanitizeDockerInventoryContainers(source.containers),
     volumes: sanitizeDockerInventoryVolumes(source.volumes),
-    remoteInstances: Array.isArray(source.remoteInstances) ? source.remoteInstances : []
+    remoteInstances: sanitizeDockerInventoryRemoteInstances(source.remoteInstances)
   };
 }
 

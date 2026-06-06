@@ -93,6 +93,12 @@ This scope owns:
 - Runtime setup steps must resolve Homebrew-derived command paths lazily and
   only for steps that need them; step-time `findBrewPath` and
   `brew --prefix podman` calls must receive the operation abort signal.
+- Runtime setup command execution must terminate the command tree on
+  cancellation. On non-Windows platforms, fixed setup commands run in a detached
+  process group and abort sends `SIGTERM` to the negative process id so
+  subprocesses such as the Homebrew `curl | /bin/bash` pipeline do not continue
+  after cancellation. On Windows, cancellation remains a best-effort direct
+  child termination because the macOS setup path is the target runtime.
 - The runtime setup command graph is fixed: Homebrew install uses `/bin/bash`
   with `-c "/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash"`
   and `NONINTERACTIVE=1`; package and machine work uses Homebrew, Podman, and

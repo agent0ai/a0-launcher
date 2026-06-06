@@ -65,8 +65,8 @@ This scope owns:
   clearly separate from instance start/stop actions.
 - Storage UI must say `Storage volumes` when referring to Docker volumes.
 - Storage-volume rows receive the shell-sanitized inventory shape only:
-  `name`, `driver`, `scope`, `createdAt`, and optional product-safe string
-  labels. Do not display Docker mountpoints or other host filesystem paths.
+  `name`, `driver`, `scope`, and `createdAt`. Do not display Docker labels,
+  mountpoints, or other host filesystem paths.
 - Settings owns persistence for preferred UI/SSH ports and retained-instance
   count. Do not scatter those controls into install or instance cards.
 - Onboarding is visible only when Docker is unavailable and there are no images

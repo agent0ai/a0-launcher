@@ -71,10 +71,19 @@ This scope owns:
   a sanitized `environment` summary limited to display-safe primitive fields.
   It must not expose `environment.dockerHost`, `diagnosticDetails`, Docker host
   overrides, socket paths, daemon host internals, or raw adapter diagnostics.
+- Inventory `images` entries must be built from an allowlist before crossing
+  IPC: `imageRef`, `tag`, `createdAt`, and `sizeBytes`.
+- Inventory `containers` entries must be built from an allowlist before
+  crossing IPC: `containerId`, `containerName`, `instanceName`, `imageRef`,
+  `state`, `status`, `createdAt`, `startedAt`, `uiUrl`, and only exact
+  renderer-used launcher labels such as `a0.launcher.role=active`. Do not pass
+  arbitrary Docker labels, port objects, or raw inspect data.
 - Inventory `volumes` entries must be built from an allowlist before crossing
-  IPC: `name`, `driver`, `scope`, `createdAt`, and product-safe string labels.
-  They must not expose Docker `Mountpoint` values, adapter `mountpoint` fields,
-  or any raw Docker host paths.
+  IPC: `name`, `driver`, `scope`, and `createdAt`. They must not expose Docker
+  `Mountpoint` values, adapter `mountpoint` fields, Docker labels, or any raw
+  Docker host paths.
+- Inventory `remoteInstances` entries must be built from an allowlist before
+  crossing IPC: `id`, `name`, and validated `http:` or `https:` `url`.
 - `docker-manager:getRuntimeSetupState` must return a renderer-safe summary:
   `runtimeBackend`, `machineName`, `hasDockerHostOverride`,
   `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`. It must not expose raw
