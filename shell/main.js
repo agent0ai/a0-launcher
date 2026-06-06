@@ -1299,6 +1299,18 @@ function sanitizeDockerManagerState(state) {
   return outState;
 }
 
+function sanitizeRuntimeSetupState(runtimeSetup) {
+  const setup = isPlainObject(runtimeSetup) ? runtimeSetup : {};
+  return {
+    runtimeBackend: setup.runtimeBackend === 'podman' ? 'podman' : '',
+    machineName: typeof setup.machineName === 'string' ? setup.machineName : '',
+    hasDockerHostOverride: !!setup.hasDockerHostOverride ||
+      (typeof setup.dockerHostOverride === 'string' && setup.dockerHostOverride.trim() !== ''),
+    usesDefaultDockerSocket: !!setup.usesDefaultDockerSocket,
+    lastSuccessfulSetupAt: typeof setup.lastSuccessfulSetupAt === 'string' ? setup.lastSuccessfulSetupAt : ''
+  };
+}
+
 function sanitizeDockerManagerProgress(progress) {
   if (!isPlainObject(progress)) return null;
   const out = {};
@@ -1355,7 +1367,7 @@ ipcMain.handle('docker-manager:getState', async () => {
 
 ipcMain.handle('docker-manager:getRuntimeSetupState', async () => {
   try {
-    return await dockerManager.getRuntimeSetupState();
+    return sanitizeRuntimeSetupState(await dockerManager.getRuntimeSetupState());
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

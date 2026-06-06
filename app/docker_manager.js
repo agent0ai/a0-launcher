@@ -83,6 +83,20 @@ window.toastFrontendSuccess = (message, title = "Agent Zero", displayTime = 3, g
 window.toastFrontendWarning = (message, title = "Agent Zero", displayTime = 5, group = "") =>
   showToast("warning", message, title, displayTime, group);
 
+let lastRuntimeSetupFailureBannerKey = "";
+let lastRuntimeSetupFailureMessage = "";
+
+function sanitizeRuntimeSetup(runtimeSetup) {
+  const setup = runtimeSetup && typeof runtimeSetup === "object" ? runtimeSetup : {};
+  return {
+    runtimeBackend: setup.runtimeBackend === "podman" ? "podman" : "",
+    machineName: typeof setup.machineName === "string" ? setup.machineName : "",
+    hasDockerHostOverride: !!setup.hasDockerHostOverride,
+    usesDefaultDockerSocket: !!setup.usesDefaultDockerSocket,
+    lastSuccessfulSetupAt: typeof setup.lastSuccessfulSetupAt === "string" ? setup.lastSuccessfulSetupAt : ""
+  };
+}
+
 function snapshot() {
   return {
     loading: !!store.loading,
@@ -100,13 +114,7 @@ function snapshot() {
     retainedInstances: Array.isArray(store.retainedInstances) ? store.retainedInstances : [],
     storage: store.storage || null,
     progress: store.progress || null,
-    runtimeSetup: store.runtimeSetup || {
-      runtimeBackend: "",
-      machineName: "",
-      dockerHostOverride: "",
-      usesDefaultDockerSocket: false,
-      lastSuccessfulSetupAt: ""
-    },
+    runtimeSetup: sanitizeRuntimeSetup(store.runtimeSetup),
     portPreferences: store.portPreferences || null,
     retentionPolicy: store.retentionPolicy || null,
     instanceTabs: store.instanceTabs || { tabs: [], activeTabId: "" }
@@ -171,6 +179,12 @@ function setBanner(type, message) {
   emitState();
 }
 
+function isRuntimeSetupFailureBanner() {
+  return !!lastRuntimeSetupFailureMessage &&
+    store.banner?.type === "error" &&
+    store.banner?.message === lastRuntimeSetupFailureMessage;
+}
+
 async function loadMeta() {
   try {
     const v = await window.electronAPI?.getContentVersion?.();
@@ -222,13 +236,15 @@ async function refresh() {
     ]);
 
     if (!isErrorResponse(runtimeSetup) && runtimeSetup && typeof runtimeSetup === "object") {
-      store.runtimeSetup = runtimeSetup;
+      store.runtimeSetup = sanitizeRuntimeSetup(runtimeSetup);
     }
 
     if (isErrorResponse(inventory)) {
       store.error = inventory.message;
       store.dockerAvailable = false;
-      setBanner("error", inventory.message);
+      if (!isRuntimeSetupFailureBanner()) {
+        setBanner("error", inventory.message);
+      }
       store.loading = false;
       emitState();
       return;
@@ -236,7 +252,9 @@ async function refresh() {
 
     if (isErrorResponse(state)) {
       store.error = state.message;
-      setBanner("error", state.message);
+      if (!isRuntimeSetupFailureBanner()) {
+        setBanner("error", state.message);
+      }
     } else {
       store.uiUrl = state?.uiUrl || "";
       store.versions = Array.isArray(state?.versions) ? state.versions : [];
@@ -245,10 +263,7 @@ async function refresh() {
       store.storage = state?.storage || null;
       store.portPreferences = state?.portPreferences || null;
       store.retentionPolicy = state?.retentionPolicy || null;
-      const preserveRuntimeSetupFailure = !!lastRuntimeSetupFailureMessage &&
-        store.banner?.type === "error" &&
-        store.banner?.message === lastRuntimeSetupFailureMessage;
-      if (!store.error && !preserveRuntimeSetupFailure) {
+      if (!store.error && !isRuntimeSetupFailureBanner()) {
         setBanner("", "");
       }
     }
@@ -262,7 +277,9 @@ async function refresh() {
   } catch (e) {
     store.error = e?.message || "Failed to load Docker inventory.";
     store.dockerAvailable = false;
-    setBanner("error", store.error);
+    if (!isRuntimeSetupFailureBanner()) {
+      setBanner("error", store.error);
+    }
   } finally {
     store.loading = false;
     emitState();
@@ -884,9 +901,6 @@ function renderTerminalDock(state = snapshot()) {
     lastRenderedLogsFor = logsLinesFor || "";
   }
 }
-
-let lastRuntimeSetupFailureBannerKey = "";
-let lastRuntimeSetupFailureMessage = "";
 
 function maybeSurfaceRuntimeSetupFailure(progress) {
   const status = typeof progress?.status === "string" ? progress.status : "";

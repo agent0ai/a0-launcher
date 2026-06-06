@@ -66,6 +66,10 @@ This scope owns:
 - Runtime setup uses the same progress event contract with
   `type: "runtime_setup"` plus sanitized `setupStep` and `setupCode` strings.
   `docker-manager:installDocker` remains the Docker Desktop fallback path.
+- `docker-manager:getRuntimeSetupState` must return a renderer-safe summary:
+  `runtimeBackend`, `machineName`, `hasDockerHostOverride`,
+  `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`. It must not expose raw
+  Docker host overrides, socket paths, helper paths, or command details.
 - Error responses should use `dockerManager.toErrorResponse()` so renderer code
   sees a stable `{ code, message }` shape.
 - The tray should reflect current Docker Manager state without becoming a second

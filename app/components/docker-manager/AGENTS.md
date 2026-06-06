@@ -14,8 +14,8 @@ asks for work.
 This scope owns:
 
 - `docker-manager-store.js`: mutable renderer store and default state shape.
-- `status-header/`: title, release metadata, refresh, API Dashboard, and
-  operation progress.
+- `status-header/`: title, release metadata, persistent banner surface,
+  refresh, API Dashboard, and operation progress.
 - `onboarding/`: runtime setup guidance, primary setup action, operation cancel,
   and Docker Desktop fallback when no local Docker inventory is available.
 - `sidebar/`: tab navigation and `dm:nav` event publication.
@@ -41,6 +41,12 @@ This scope owns:
 - Runtime setup progress appears as the normal Docker Manager operation shape
   with `type: "runtime_setup"`. Onboarding renders that state but does not know
   setup commands, socket paths, or package-manager mechanics.
+- `state.banner` is the persistent top-of-page status surface rendered by
+  `status-header/`. Toasts are transient echoes only; components should not
+  create duplicate persistent banners.
+- Runtime setup summaries exposed to components must not include raw
+  `dockerHostOverride` values. Use `hasDockerHostOverride` when the UI needs to
+  know whether an override exists.
 - Sidebar navigation publishes `dm:nav`; tab content activation remains owned by
   the renderer coordinator, not individual tab content components.
 - Empty, loading, error, success, and disabled states must be explicit enough

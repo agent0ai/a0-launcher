@@ -257,12 +257,30 @@ body, html {
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.88rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dm-status-banner {
+  margin-top: 0.75rem;
 }
 
 .sv-banner.info {
   border-color: var(--color-highlight);
   color: var(--color-text);
   background: color-mix(in srgb, var(--color-highlight) 10%, transparent);
+}
+
+.sv-banner.success {
+  border-color: var(--color-positive, var(--color-highlight));
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-positive, var(--color-highlight)) 10%, transparent);
+}
+
+.sv-banner.warning {
+  border-color: var(--color-warning, var(--color-highlight));
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-warning, var(--color-highlight)) 12%, transparent);
 }
 
 .sv-banner.error {

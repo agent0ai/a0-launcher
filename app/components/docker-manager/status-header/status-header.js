@@ -6,9 +6,28 @@ function render(state) {
   const panel = byId("progressPanel");
   const progressTitle = byId("progressTitle");
   const progressMessage = byId("progressMessage");
+  const banner = byId("statusBanner");
 
   if (contentVersion) contentVersion.textContent = state?.meta?.contentVersion || "";
   if (appVersion) appVersion.textContent = state?.meta?.appVersion || "";
+
+  if (banner) {
+    const message = String(state?.banner?.message || "").trim();
+    const type = ["error", "success", "warning", "info"].includes(state?.banner?.type)
+      ? state.banner.type
+      : "info";
+    banner.classList.remove("info", "error", "success", "warning");
+    if (message) {
+      banner.textContent = message;
+      banner.classList.add(type);
+      banner.classList.remove("hidden");
+      banner.setAttribute("role", type === "error" ? "alert" : "status");
+    } else {
+      banner.textContent = "";
+      banner.classList.add("hidden");
+      banner.setAttribute("role", "status");
+    }
+  }
 
   const progress = state?.progress || null;
   if (!panel || !progress || progress.status !== "running") {

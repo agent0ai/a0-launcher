@@ -39,6 +39,11 @@ This scope owns:
   from progress events must remain visible as error banners even if the
   onboarding panel hides; runtime detection, installation, socket selection, and
   privileged Docker mechanics remain shell-owned.
+- Renderer runtime setup state must stay sanitized. The renderer may keep
+  `runtimeBackend`, `machineName`, `hasDockerHostOverride`,
+  `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`, but must not store or
+  display raw Docker host overrides, socket paths, helper paths, or command
+  details.
 - The bottom A0 CLI Connector should prefer the launcher-managed active
   instance URL, then fall back to a running local container from the Instances
   inventory when that container has a local UI URL.

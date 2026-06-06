@@ -19,7 +19,7 @@ export const dockerManagerStore = createStore("dockerManager", {
   runtimeSetup: {
     runtimeBackend: "",
     machineName: "",
-    dockerHostOverride: "",
+    hasDockerHostOverride: false,
     usesDefaultDockerSocket: false,
     lastSuccessfulSetupAt: ""
   },
