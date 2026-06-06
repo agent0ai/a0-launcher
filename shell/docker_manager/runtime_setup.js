@@ -313,10 +313,11 @@ function runProcess(command, args = [], options = {}) {
 }
 
 async function findBrewPath(run = runProcess, options = {}) {
+  const exists = typeof options.pathExists === 'function' ? options.pathExists : pathExists;
   const opt = '/opt/homebrew/bin/brew';
   const usr = '/usr/local/bin/brew';
-  if (await pathExists(opt)) return opt;
-  if (await pathExists(usr)) return usr;
+  if (await exists(opt)) return opt;
+  if (await exists(usr)) return usr;
 
   try {
     const found = await run('/usr/bin/env', ['bash', '-lc', 'command -v brew'], { signal: options.signal });
@@ -418,13 +419,13 @@ function makeAuthorizationScript(helperPath) {
   return `do shell script ${JSON.stringify(`${shellQuote(helperPath)} install`)} with administrator privileges`;
 }
 
-async function podmanHelperPath(brewPath, run = runProcess) {
+async function podmanHelperPath(brewPath, run = runProcess, options = {}) {
   const brew = String(brewPath || '').trim();
   if (!brew) {
     throw setupError('BREW_NOT_FOUND', 'Homebrew was not found');
   }
 
-  const result = await run(brew, ['--prefix', 'podman']);
+  const result = await run(brew, ['--prefix', 'podman'], { signal: options.signal });
   const prefix = commandOutputLines(result.stdout)[0] || '';
   if (!prefix) {
     throw setupError('PODMAN_INSTALL_FAILED', 'Podman helper path was not found');
@@ -444,10 +445,16 @@ async function runRuntimeSetupStep(step, context = {}) {
   const run = context.runProcess || runProcess;
   const machineName = context.plan?.machineName || DEFAULT_A0_MACHINE_NAME;
   const signal = context.signal;
-  const brewPath = context.brewPath || await findBrewPath(run);
-  const podmanPath = runtimeCommandPath(brewPath, 'podman');
-  const dockerPath = runtimeCommandPath(brewPath, 'docker');
-  const env = runtimeProcessEnv(brewPath);
+  const resolveBrewPath = async () => context.brewPath || await findBrewPath(run, { signal });
+  const resolveRuntime = async () => {
+    const brewPath = await resolveBrewPath();
+    return {
+      brewPath,
+      dockerPath: runtimeCommandPath(brewPath, 'docker'),
+      env: runtimeProcessEnv(brewPath),
+      podmanPath: runtimeCommandPath(brewPath, 'podman')
+    };
+  };
 
   switch (step?.id) {
     case 'verify_existing_docker':
@@ -462,30 +469,36 @@ async function runRuntimeSetupStep(step, context = {}) {
       });
 
     case 'install_formulae': {
-      const activeBrewPath = brewPath || await findBrewPath(run);
+      const activeBrewPath = await resolveBrewPath();
       if (!activeBrewPath) {
         throw setupError('BREW_NOT_FOUND', 'Homebrew was not found after installation');
       }
 
       const missing = missingFormulae(context.formulae);
       if (!missing.length) return null;
+      const env = runtimeProcessEnv(activeBrewPath);
       return run(activeBrewPath, ['install', ...missing], { env, signal }).catch((error) => {
         throw commandFailureForStep(error, 'PACKAGE_INSTALL_FAILED', 'Runtime package installation failed');
       });
     }
 
-    case 'init_podman_machine':
+    case 'init_podman_machine': {
+      const { env, podmanPath } = await resolveRuntime();
       return run(podmanPath, ['machine', 'init', machineName], { env, signal }).catch((error) => {
         throw commandFailureForStep(error, 'PODMAN_MACHINE_FAILED', 'Podman machine initialization failed');
       });
+    }
 
-    case 'start_podman_machine':
+    case 'start_podman_machine': {
+      const { env, podmanPath } = await resolveRuntime();
       return run(podmanPath, ['machine', 'start', machineName], { env, signal }).catch((error) => {
         throw commandFailureForStep(error, 'PODMAN_MACHINE_FAILED', 'Podman machine start failed');
       });
+    }
 
     case 'install_podman_helper': {
-      const helperPath = await podmanHelperPath(brewPath, run);
+      const brewPath = await resolveBrewPath();
+      const helperPath = await podmanHelperPath(brewPath, run, { signal });
       return run('/usr/bin/osascript', ['-e', makeAuthorizationScript(helperPath)], { signal }).catch((error) => {
         if (error?.code === 'SETUP_CANCELED') throw error;
         const text = `${error?.message || ''}\n${error?.details?.stdout || ''}\n${error?.details?.stderr || ''}`;
@@ -496,13 +509,16 @@ async function runRuntimeSetupStep(step, context = {}) {
       });
     }
 
-    case 'restart_podman_machine':
+    case 'restart_podman_machine': {
+      const { env, podmanPath } = await resolveRuntime();
       await run(podmanPath, ['machine', 'stop', machineName], { env, signal }).catch(() => null);
       return run(podmanPath, ['machine', 'start', machineName], { env, signal }).catch((error) => {
         throw commandFailureForStep(error, 'PODMAN_MACHINE_FAILED', 'Podman machine restart failed');
       });
+    }
 
-    case 'set_podman_rootful':
+    case 'set_podman_rootful': {
+      const { env, podmanPath } = await resolveRuntime();
       await run(podmanPath, ['machine', 'stop', machineName], { env, signal }).catch(() => null);
       await run(podmanPath, ['machine', 'set', '--rootful', machineName], { env, signal }).catch((error) => {
         throw commandFailureForStep(error, 'ROOTFUL_SWITCH_FAILED', 'Podman rootful configuration failed');
@@ -510,11 +526,14 @@ async function runRuntimeSetupStep(step, context = {}) {
       return run(podmanPath, ['machine', 'start', machineName], { env, signal }).catch((error) => {
         throw commandFailureForStep(error, 'PODMAN_MACHINE_FAILED', 'Podman machine start failed');
       });
+    }
 
-    case 'verify_runtime':
+    case 'verify_runtime': {
+      const { dockerPath, env } = await resolveRuntime();
       return run(dockerPath, ['version', '--format', '{{.Server.Version}}'], { env, signal }).catch((error) => {
         throw commandFailureForStep(error, 'VERIFY_FAILED', 'Runtime verification failed');
       });
+    }
 
     default:
       throw setupError('UNKNOWN_SETUP_STEP', `Unknown runtime setup step: ${step?.id || ''}`);

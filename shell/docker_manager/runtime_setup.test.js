@@ -8,6 +8,8 @@ const {
   normalizeDockerHostOverride,
   normalizeRuntimeSetupState,
   dockerOptionsForRuntimeSetup,
+  findBrewPath,
+  podmanHelperPath,
   readInstalledFormulae,
   readPodmanMachines,
   runRuntimeSetup,
@@ -205,6 +207,21 @@ test('runRuntimeSetup rejects pre-canceled setup before install-tool probes', as
   );
 });
 
+test('findBrewPath passes abort signal to PATH lookup command', async () => {
+  const controller = new AbortController();
+  const result = await findBrewPath(async (command, args, options) => {
+    assert.equal(command, '/usr/bin/env');
+    assert.deepEqual(args, ['bash', '-lc', 'command -v brew']);
+    assert.equal(options.signal, controller.signal);
+    return { code: 0, stdout: '/custom/bin/brew\n', stderr: '' };
+  }, {
+    pathExists: async () => false,
+    signal: controller.signal
+  });
+
+  assert.equal(result, '/custom/bin/brew');
+});
+
 test('runtime setup inventory probes pass abort signals to fixed commands', async () => {
   const controller = new AbortController();
   const formulae = await readInstalledFormulae('/opt/homebrew/bin/brew', async (command, args, options) => {
@@ -232,16 +249,41 @@ test('runtime setup inventory probes pass abort signals to fixed commands', asyn
   }]);
 });
 
+test('podmanHelperPath passes abort signal to brew prefix lookup', async () => {
+  const controller = new AbortController();
+  const helperPath = await podmanHelperPath('/opt/homebrew/bin/brew', async (command, args, options) => {
+    assert.equal(command, '/opt/homebrew/bin/brew');
+    assert.deepEqual(args, ['--prefix', 'podman']);
+    assert.equal(options.signal, controller.signal);
+    return { code: 0, stdout: '/opt/homebrew/Cellar/podman/5.0.0\n', stderr: '' };
+  }, { signal: controller.signal });
+
+  assert.equal(helperPath, '/opt/homebrew/Cellar/podman/5.0.0/bin/podman-mac-helper');
+});
+
+test('runRuntimeSetupStep does not resolve brew for steps that do not need it', async () => {
+  await runRuntimeSetupStep({ id: 'verify_existing_docker' }, {
+    runProcess: async (command) => {
+      throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command}`);
+    }
+  });
+});
+
 test('install_podman_helper preserves setup cancellation before authorization cancel mapping', async () => {
+  const controller = new AbortController();
   await assert.rejects(
     runRuntimeSetupStep({ id: 'install_podman_helper' }, {
       brewPath: '/opt/homebrew/bin/brew',
       plan: { machineName: DEFAULT_A0_MACHINE_NAME },
-      runProcess: async (command) => {
+      signal: controller.signal,
+      runProcess: async (command, args, options) => {
         if (command === '/opt/homebrew/bin/brew') {
+          assert.deepEqual(args, ['--prefix', 'podman']);
+          assert.equal(options.signal, controller.signal);
           return { code: 0, stdout: '/opt/homebrew/Cellar/podman/5.0.0\n', stderr: '' };
         }
         if (command === '/usr/bin/osascript') {
+          assert.equal(options.signal, controller.signal);
           throw setupError('SETUP_CANCELED', 'Runtime setup was canceled', {
             stderr: 'operation canceled'
           });

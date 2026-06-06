@@ -90,6 +90,9 @@ This scope owns:
 - Runtime setup must check for pre-canceled, Docker-ready, and unsupported
   platform cases before probing Homebrew, package formulae, or Podman machines.
   Probe commands that do run must receive the operation abort signal.
+- Runtime setup steps must resolve Homebrew-derived command paths lazily and
+  only for steps that need them; step-time `findBrewPath` and
+  `brew --prefix podman` calls must receive the operation abort signal.
 - The runtime setup command graph is fixed: Homebrew install uses `/bin/bash`
   with `-c "/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash"`
   and `NONINTERACTIVE=1`; package and machine work uses Homebrew, Podman, and
