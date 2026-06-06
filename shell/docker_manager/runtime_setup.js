@@ -55,10 +55,14 @@ function normalizeMachines(machines = []) {
 
 function choosePodmanMachine(machines = []) {
   const list = normalizeMachines(machines);
-  const active = list.find((machine) => machine.running);
+  const activeExternal = list.find((machine) => (
+    machine.running &&
+    machine.name !== DEFAULT_A0_MACHINE_NAME &&
+    machine.name !== DEFAULT_PODMAN_MACHINE_NAME
+  ));
 
-  if (active && active.name !== DEFAULT_A0_MACHINE_NAME && active.name !== DEFAULT_PODMAN_MACHINE_NAME) {
-    return { blocked: true, blockCode: 'PODMAN_MACHINE_EXISTS', machineName: active.name };
+  if (activeExternal) {
+    return { blocked: true, blockCode: 'PODMAN_MACHINE_EXISTS', machineName: activeExternal.name };
   }
 
   const a0 = list.find((machine) => machine.name === DEFAULT_A0_MACHINE_NAME);

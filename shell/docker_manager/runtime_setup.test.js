@@ -57,6 +57,21 @@ test('planner halts instead of mutating an active non-A0 Podman machine', () => 
   assert.equal(plan.blockCode, 'PODMAN_MACHINE_EXISTS');
 });
 
+test('planner blocks when a running non-A0 Podman machine appears after a managed machine', () => {
+  const plan = makeRuntimeSetupPlan({
+    platform: 'darwin',
+    dockerAvailable: false,
+    brewPath: '/opt/homebrew/bin/brew',
+    formulae: { docker: true, 'docker-compose': true, 'docker-credential-helper': true, podman: true },
+    podmanMachines: [
+      { name: DEFAULT_A0_MACHINE_NAME, running: true },
+      { name: 'work-machine', running: true }
+    ]
+  });
+  assert.equal(plan.blocked, true);
+  assert.equal(plan.blockCode, 'PODMAN_MACHINE_EXISTS');
+});
+
 test('sanitizeCommandOutput redacts obvious password and token lines', () => {
   const output = 'ok\nPASSWORD=secret\napi_token: abc123\nfinished';
   assert.equal(sanitizeCommandOutput(output), 'ok\n[redacted]\n[redacted]\nfinished');
