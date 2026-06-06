@@ -1315,6 +1315,8 @@ function sanitizeDockerManagerProgress(progress) {
   if (Number.isFinite(Number(progress.extractProgress))) out.extractProgress = Number(progress.extractProgress);
   if (typeof progress.message === 'string') out.message = progress.message;
   if (typeof progress.error === 'string') out.error = progress.error;
+  if (typeof progress.setupStep === 'string') out.setupStep = progress.setupStep;
+  if (typeof progress.setupCode === 'string') out.setupCode = progress.setupCode;
 
   return out.opId ? out : null;
 }
@@ -1351,10 +1353,30 @@ ipcMain.handle('docker-manager:getState', async () => {
   }
 });
 
+ipcMain.handle('docker-manager:getRuntimeSetupState', async () => {
+  try {
+    return await dockerManager.getRuntimeSetupState();
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 ipcMain.handle('docker-manager:refresh', async () => {
   try {
     const state = await dockerManager.refreshDockerManager({ forceRefresh: true });
     return sanitizeDockerManagerState(state);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:startRuntimeSetup', async () => {
+  try {
+    const accepted = await dockerManager.startRuntimeSetup();
+    if (!accepted || typeof accepted.opId !== 'string') {
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Runtime setup did not return an opId' });
+    }
+    return { opId: accepted.opId };
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

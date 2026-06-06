@@ -38,7 +38,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 contextBridge.exposeInMainWorld('dockerManagerAPI', {
   getState: () => ipcRenderer.invoke('docker-manager:getState'),
+  getRuntimeSetupState: () => ipcRenderer.invoke('docker-manager:getRuntimeSetupState'),
   refresh: () => ipcRenderer.invoke('docker-manager:refresh'),
+  startRuntimeSetup: () => ipcRenderer.invoke('docker-manager:startRuntimeSetup'),
   installOrSync: (tag) => ipcRenderer.invoke('docker-manager:install', { tag }),
   startActive: () => ipcRenderer.invoke('docker-manager:startActive'),
   stopActive: () => ipcRenderer.invoke('docker-manager:stopActive'),

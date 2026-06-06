@@ -18,8 +18,8 @@ This scope owns:
   progress operations. Runtime setup operation/progress integration belongs
   here; setup planning and command execution belong in `runtime_setup.js`.
 - `runtime_setup.js`: macOS runtime setup planning, Homebrew/Podman machine
-  selection, fixed setup step modeling, command execution helpers, and sanitized
-  command output handling.
+  selection, fixed setup step modeling, fixed command execution, native
+  authorization script construction, and sanitized command output handling.
 - `runtime_setup.test.js`: pure planner and sanitization coverage for runtime
   setup. Tests must not install Homebrew, run Podman, or mutate the host.
 - `state_store.js`: persisted launcher state under Electron `userData`.
@@ -72,6 +72,21 @@ This scope owns:
 - macOS runtime setup must stay shell-owned and fixed-step. Renderer code may
   request setup intent through named IPC only; it must never provide arbitrary
   commands or receive unsanitized command output.
+- Runtime setup runs as `_currentOperation` with `type: "runtime_setup"`.
+  `index.js` owns the operation id, abort controller, progress forwarding,
+  setup result persistence, and Docker Manager refresh after setup.
+- Runtime setup progress may include only user-facing `message`, stable
+  `setupStep`, and stable `setupCode` strings. Raw stdout/stderr stays inside
+  `runtime_setup.js` after redaction.
+- The runtime setup command graph is fixed: Homebrew install uses
+  `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
+  with `NONINTERACTIVE=1`; package and machine work uses Homebrew, Podman, and
+  Docker commands selected by the setup plan; native authorization uses
+  `/usr/bin/osascript -e <script>` with the helper path derived from
+  `brew --prefix podman`.
+- Runtime setup must not collect or store sudo passwords. It must not stop,
+  rootful-toggle, or otherwise mutate an active external Podman machine; the
+  planner blocks that case with `PODMAN_MACHINE_EXISTS`.
 
 ## Work Guidance
 
@@ -91,6 +106,7 @@ After changes here, run:
 node --check shell/docker_manager/index.js
 node --check shell/docker_manager/runtime_setup.js
 node --check shell/main.js
+node --check shell/preload.js
 node --test shell/docker_manager/runtime_setup.test.js
 git diff --check
 ```

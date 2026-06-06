@@ -8,6 +8,7 @@ const { getDocker } = require('../docker_adapter/getDocker');
 const releasesClient = require('./releases_client');
 const stateStore = require('./state_store');
 const retention = require('./retention');
+const runtimeSetup = require('./runtime_setup');
 const { toErrorResponse, mapDockerInterfaceErrorToUiMessage } = require('./errors');
 
 const DEFAULT_IMAGE_REPO = 'agent0ai/agent-zero';
@@ -54,6 +55,48 @@ function getBackendGithubRepo() {
   const fromEnv = normalizeRepo(process.env[GITHUB_REPO_ENV_VAR]);
   if (fromEnv) return fromEnv;
   return DEFAULT_GITHUB_REPO;
+}
+
+async function getDockerForManager(imageRepo = getBackendImageRepo()) {
+  const runtime = await stateStore.readRuntimeSetup();
+  const options = { imageRepo };
+  if (runtime.dockerHostOverride) {
+    options.dockerHost = runtime.dockerHostOverride;
+  }
+  return getDocker(options);
+}
+
+function mapRuntimeSetupErrorToMessage(error) {
+  switch (error?.code) {
+    case 'UNSUPPORTED_PLATFORM':
+      return 'Runtime setup is only available on macOS.';
+    case 'PODMAN_MACHINE_EXISTS':
+      return 'A Podman machine is already running. Runtime setup needs confirmation before changing it.';
+    case 'SETUP_CANCELED':
+      return 'Runtime setup was canceled.';
+    case 'AUTHORIZATION_CANCELED':
+      return 'Runtime setup needs one admin approval to enable Docker compatibility.';
+    case 'HOMEBREW_INSTALL_FAILED':
+      return 'Homebrew installation failed. Retry setup or use Docker Desktop.';
+    case 'BREW_NOT_FOUND':
+      return 'Homebrew was not found after installation. Retry setup or use Docker Desktop.';
+    case 'PACKAGE_INSTALL_FAILED':
+      return 'Runtime package installation failed. Retry setup or use Docker Desktop.';
+    case 'PODMAN_INSTALL_FAILED':
+      return 'Podman installation could not be verified. Retry setup or use Docker Desktop.';
+    case 'PODMAN_MACHINE_FAILED':
+      return 'The runtime machine could not be prepared. Retry setup or use Docker Desktop.';
+    case 'PODMAN_HELPER_FAILED':
+      return 'Docker compatibility could not be enabled. Retry setup or use Docker Desktop.';
+    case 'ROOTFUL_SWITCH_FAILED':
+      return 'Runtime mode configuration failed. Retry setup or use Docker Desktop.';
+    case 'VERIFY_FAILED':
+      return 'Runtime verification failed. Retry setup or use Docker Desktop.';
+    case 'COMMAND_FAILED':
+      return 'Runtime setup failed. Retry setup or use Docker Desktop.';
+    default:
+      return error?.message || 'Runtime setup failed.';
+  }
 }
 
 function isSafeTag(tag) {
@@ -445,7 +488,7 @@ async function buildDerivedState(options = {}) {
   const imageRepo = getBackendImageRepo();
   const githubRepo = getBackendGithubRepo();
 
-  const docker = await getDocker({ imageRepo });
+  const docker = await getDockerForManager(imageRepo);
 
   const env = await docker.getEnvironment();
   if (!env?.dockerAvailable) {
@@ -824,6 +867,57 @@ async function getDockerManagerState() {
   return await refreshDockerManager({ forceRefresh: false });
 }
 
+async function getRuntimeSetupState() {
+  return stateStore.readRuntimeSetup();
+}
+
+async function startRuntimeSetup() {
+  const opId = beginOperation('runtime_setup', null);
+  const controller = new AbortController();
+  _abortControllers.set(opId, controller);
+
+  (async () => {
+    try {
+      updateOperationProgress({ message: 'Checking runtime', progress: null, setupStep: 'check_runtime', setupCode: '' });
+      const runtimeSetupState = await stateStore.readRuntimeSetup();
+      const inventory = await getDockerInventory().catch(() => ({ dockerAvailable: false }));
+      const result = await runtimeSetup.runRuntimeSetup({
+        dockerAvailable: !!inventory?.dockerAvailable,
+        runtimeSetupState,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          updateOperationProgress({
+            message: progress?.message || 'Setting up runtime',
+            setupStep: progress?.stepId || '',
+            setupCode: ''
+          });
+        }
+      });
+
+      await stateStore.writeRuntimeSetup(result);
+      finishOperation('completed', null);
+      updateOperationProgress({ progress: 100, message: 'Runtime ready', setupCode: '' });
+      await refreshDockerManager({ forceRefresh: true }).catch(() => {});
+    } catch (error) {
+      const code = error?.code || 'RUNTIME_SETUP_FAILED';
+      const message = mapRuntimeSetupErrorToMessage(error);
+      finishOperation(controller.signal.aborted ? 'canceled' : 'failed', message);
+      updateOperationProgress({
+        setupCode: code,
+        message,
+        error: message
+      });
+    } finally {
+      _abortControllers.delete(opId);
+    }
+  })().catch((error) => {
+    logDockerManagerError('startRuntimeSetup.unhandled', error, { opId });
+    _abortControllers.delete(opId);
+  });
+
+  return { opId };
+}
+
 function assertKeepCount(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) {
@@ -1144,7 +1238,7 @@ async function installOrSync(tag) {
     try {
       updateOperationProgress({ message: 'Checking availability', progress: null });
 
-      docker = await getDocker({ imageRepo });
+      docker = await getDockerForManager(imageRepo);
       const cache = await stateStore.readInstallabilityCache();
       const entries = cache?.entries && typeof cache.entries === 'object' ? cache.entries : {};
 
@@ -1244,7 +1338,7 @@ async function stopActiveInstance() {
   (async () => {
     try {
       updateOperationProgress({ message: 'Stopping', progress: null });
-      const docker = await getDocker({ imageRepo });
+      const docker = await getDockerForManager(imageRepo);
       const containers = await docker.listContainers(imageRepo);
       const activeName = retention.getActiveContainerName(imageRepo);
       const active = (containers || []).find((c) => c && c.containerName === activeName) || null;
@@ -1282,7 +1376,7 @@ async function startActiveInstance() {
   (async () => {
     try {
       updateOperationProgress({ message: 'Starting', progress: null });
-      const docker = await getDocker({ imageRepo });
+      const docker = await getDockerForManager(imageRepo);
       const containers = await docker.listContainers(imageRepo);
       const activeName = retention.getActiveContainerName(imageRepo);
       const active = (containers || []).find((c) => c && c.containerName === activeName) || null;
@@ -1339,7 +1433,7 @@ async function deleteRetainedInstance(containerId) {
 
   (async () => {
     try {
-      const docker = await getDocker({ imageRepo });
+      const docker = await getDockerForManager(imageRepo);
       const containers = await docker.listContainers(imageRepo);
       const activeName = retention.getActiveContainerName(imageRepo);
       const active = (containers || []).find((c) => c && c.containerName === activeName) || null;
@@ -1395,7 +1489,7 @@ async function updateToLatest(dataLossAck) {
     let createdNew = null;
 
     try {
-      docker = await getDocker({ imageRepo });
+      docker = await getDockerForManager(imageRepo);
       policy = await stateStore.readRetentionPolicy();
       keep = effectiveRetentionCount(policy);
       portPreferences = await stateStore.readPortPreferences();
@@ -1558,7 +1652,7 @@ async function activateRetainedInstance(containerId, dataLossAck) {
     let target = null;
 
     try {
-      docker = await getDocker({ imageRepo });
+      docker = await getDockerForManager(imageRepo);
       policy = await stateStore.readRetentionPolicy();
 
       updateOperationProgress({ message: 'Preparing rollback', progress: null });
@@ -1667,7 +1761,7 @@ async function activateTag(tag, dataLossAck, options = {}) {
     let createdNew = null;
 
     try {
-      docker = await getDocker({ imageRepo });
+      docker = await getDockerForManager(imageRepo);
       policy = await stateStore.readRetentionPolicy();
       portPreferences = await stateStore.readPortPreferences();
 
@@ -1799,7 +1893,7 @@ async function cancelOperation(opId) {
 async function getDockerInventory() {
   const imageRepo = getBackendImageRepo();
   const remoteInstances = await stateStore.readRemoteInstances();
-  const docker = await getDocker({ imageRepo });
+  const docker = await getDockerForManager(imageRepo);
   const env = await docker.getEnvironment();
 
   // Even when the ping-based env detection reports unavailable, attempt listing
@@ -1843,14 +1937,14 @@ async function removeVolume(volumeName) {
     throw err;
   }
   const imageRepo = getBackendImageRepo();
-  const docker = await getDocker({ imageRepo });
+  const docker = await getDockerForManager(imageRepo);
   await docker.removeVolume(name);
   return { removed: true };
 }
 
 async function pruneVolumes() {
   const imageRepo = getBackendImageRepo();
-  const docker = await getDocker({ imageRepo });
+  const docker = await getDockerForManager(imageRepo);
   const result = await docker.pruneVolumes();
   return result && typeof result === 'object' ? result : {};
 }
@@ -1858,7 +1952,7 @@ async function pruneVolumes() {
 async function readContainerLogs(containerId, options = {}) {
   const id = assertContainerId(containerId);
   const imageRepo = getBackendImageRepo();
-  const docker = await getDocker({ imageRepo });
+  const docker = await getDockerForManager(imageRepo);
 
   // Only allow reading logs for containers managed by this launcher
   // (i.e. containers belonging to the backend image repo). Without this
@@ -1889,7 +1983,7 @@ async function readContainerLogs(containerId, options = {}) {
 async function getContainerUiUrl(containerId) {
   const imageRepo = getBackendImageRepo();
   const id = assertContainerId(containerId);
-  const docker = await getDocker({ imageRepo });
+  const docker = await getDockerForManager(imageRepo);
   const inspect = await docker.inspectContainer(id);
   const candidate = bestEffortUiUrlFromInspect(inspect);
   if (!candidate) return null;
@@ -1917,11 +2011,13 @@ module.exports = {
 
   // State + events
   getDockerManagerState,
+  getRuntimeSetupState,
   refreshDockerManager,
   getCurrentOperation,
   events,
 
   // Operations (implemented in later tasks)
+  startRuntimeSetup,
   installOrSync,
   startActiveInstance,
   stopActiveInstance,

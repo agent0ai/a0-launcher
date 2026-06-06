@@ -30,6 +30,10 @@ This scope owns:
   `shell/preload.js` and `shell/main.js` deliberately.
 - Validate IPC bodies in `shell/main.js` before passing values to
   `shell/docker_manager`.
+- macOS runtime setup is shell-owned privileged work. Renderer code may call
+  only named Docker Manager methods such as `getRuntimeSetupState()` and
+  `startRuntimeSetup()`; it must never provide shell commands, helper paths,
+  sudo credentials, or raw process arguments.
 - New windows that open Agent Zero UIs or remote instances must sanitize URLs and
   allow only `http:` or `https:`.
 - The A0 CLI terminal IPC must accept only local `http:` or `https:` URLs
@@ -59,6 +63,9 @@ This scope owns:
 - `dockerManagerAPI` owns all Docker Manager calls.
 - Long-running Docker operations should return an accepted operation id and
   report progress through Docker Manager events instead of blocking the renderer.
+- Runtime setup uses the same progress event contract with
+  `type: "runtime_setup"` plus sanitized `setupStep` and `setupCode` strings.
+  `docker-manager:installDocker` remains the Docker Desktop fallback path.
 - Error responses should use `dockerManager.toErrorResponse()` so renderer code
   sees a stable `{ code, message }` shape.
 - The tray should reflect current Docker Manager state without becoming a second
