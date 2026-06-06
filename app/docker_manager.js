@@ -260,8 +260,7 @@ async function refresh() {
     }
 
     const inventoryDockerAvailable = !!inventory?.dockerAvailable;
-    const refreshSucceeded = !isErrorResponse(state);
-    if (refreshSucceeded || inventoryDockerAvailable) {
+    if (inventoryDockerAvailable) {
       clearRuntimeSetupFailureBanner();
     }
 
