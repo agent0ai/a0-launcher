@@ -100,6 +100,13 @@ function snapshot() {
     retainedInstances: Array.isArray(store.retainedInstances) ? store.retainedInstances : [],
     storage: store.storage || null,
     progress: store.progress || null,
+    runtimeSetup: store.runtimeSetup || {
+      runtimeBackend: "",
+      machineName: "",
+      dockerHostOverride: "",
+      usesDefaultDockerSocket: false,
+      lastSuccessfulSetupAt: ""
+    },
     portPreferences: store.portPreferences || null,
     retentionPolicy: store.retentionPolicy || null,
     instanceTabs: store.instanceTabs || { tabs: [], activeTabId: "" }
@@ -208,10 +215,15 @@ async function refresh() {
   emitState();
 
   try {
-    const [inventory, state] = await Promise.all([
+    const [inventory, state, runtimeSetup] = await Promise.all([
       typeof api.getInventory === "function" ? api.getInventory() : null,
-      typeof api.getState === "function" ? api.getState() : null
+      typeof api.getState === "function" ? api.getState() : null,
+      typeof api.getRuntimeSetupState === "function" ? api.getRuntimeSetupState() : null
     ]);
+
+    if (!isErrorResponse(runtimeSetup) && runtimeSetup && typeof runtimeSetup === "object") {
+      store.runtimeSetup = runtimeSetup;
+    }
 
     if (isErrorResponse(inventory)) {
       store.error = inventory.message;
@@ -366,6 +378,37 @@ async function openDockerDownload() {
   window.open("https://www.docker.com/products/docker-desktop/", "_blank");
 }
 
+async function startRuntimeSetup() {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.startRuntimeSetup !== "function") return;
+  try {
+    const res = await api.startRuntimeSetup();
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return;
+    }
+    setBanner("info", "Runtime setup started.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to start runtime setup");
+  }
+}
+
+async function cancelCurrentOperation() {
+  const api = window.dockerManagerAPI;
+  const opId = store.progress?.opId || "";
+  if (!api || !opId || typeof api.cancel !== "function") return;
+  try {
+    const res = await api.cancel(opId);
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return;
+    }
+    if (res?.canceled) setBanner("info", "Operation canceled.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to cancel operation");
+  }
+}
+
 let postOperationRefreshTimer = 0;
 
 function schedulePostOperationRefresh() {
@@ -511,6 +554,8 @@ window.dockerManagerActions = {
   removeVolume,
   pruneVolumes,
   openDockerDownload,
+  startRuntimeSetup,
+  cancelCurrentOperation,
   startActive,
   stopActive,
   activateTag,

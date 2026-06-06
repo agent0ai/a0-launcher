@@ -664,6 +664,17 @@ body, html {
   margin: 0.25rem 0 0.55rem;
 }
 
+.dm-runtime-actions {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dm-runtime-detail {
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  margin: 0.35rem 0 0.6rem;
+}
+
 .sv-settings-grid {
   display: flex;
   flex-direction: column;

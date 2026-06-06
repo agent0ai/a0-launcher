@@ -1,10 +1,24 @@
 function byId(id) { return document.getElementById(id); }
 
+function setupProgress(state) {
+  const progress = state?.progress || null;
+  return progress?.type === "runtime_setup" && progress.status === "running" ? progress : null;
+}
+
+function bindButton(button, actionName) {
+  if (!button || button.dataset.bound) return;
+  button.dataset.bound = "1";
+  button.addEventListener("click", () => window.dockerManagerActions?.[actionName]?.());
+}
+
 function render(state) {
   const panel = byId("onboardingPanel");
   const title = byId("onboardingTitle");
   const message = byId("onboardingMessage");
+  const detail = byId("onboardingDetail");
   const actionBtn = byId("onboardingActionBtn");
+  const fallbackBtn = byId("onboardingFallbackBtn");
+  const cancelBtn = byId("onboardingCancelBtn");
   if (!panel) return;
 
   const hasData = (Array.isArray(state?.images) && state.images.length > 0)
@@ -14,18 +28,32 @@ function render(state) {
     return;
   }
 
+  const progress = setupProgress(state);
   panel.classList.remove("hidden");
-  if (title) title.textContent = "Docker required";
-  const detail = state?.error || state?.environment?.diagnosticMessage || "Docker is not available. Install Docker Desktop (or Docker Engine) and start it.";
-  if (message) message.textContent = detail;
+  if (title) title.textContent = "Runtime setup";
+  if (message) {
+    message.textContent = progress
+      ? (progress.message || "Setting up the required runtime.")
+      : (state?.error || state?.environment?.diagnosticMessage || "Set up the required runtime to run Agent Zero locally.");
+  }
+  if (detail) {
+    const setupStep = progress?.setupStep || "";
+    detail.classList.toggle("hidden", !setupStep);
+    detail.textContent = setupStep ? `Step: ${setupStep}` : "";
+  }
 
   if (actionBtn) {
-    actionBtn.classList.remove("hidden");
-    actionBtn.textContent = "Download Docker";
-    if (!actionBtn.dataset.bound) {
-      actionBtn.dataset.bound = "1";
-      actionBtn.addEventListener("click", () => window.dockerManagerActions?.openDockerDownload?.());
-    }
+    actionBtn.classList.toggle("hidden", !!progress);
+    actionBtn.textContent = "Set up runtime";
+    bindButton(actionBtn, "startRuntimeSetup");
+  }
+  if (fallbackBtn) {
+    fallbackBtn.classList.remove("hidden");
+    bindButton(fallbackBtn, "openDockerDownload");
+  }
+  if (cancelBtn) {
+    cancelBtn.classList.toggle("hidden", !progress);
+    bindButton(cancelBtn, "cancelCurrentOperation");
   }
 }
 
