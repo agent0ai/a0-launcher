@@ -19,6 +19,7 @@ const {
   runProcess,
   runRuntimeSetup,
   runRuntimeSetupStep,
+  runtimeCommandOrPath,
   setupError,
   verifiedRuntimeSetupState,
   HOMEBREW_INSTALL_COMMAND,
@@ -88,6 +89,10 @@ function makePodmanSetupRunProcess(options = {}) {
       return { code: 0, stdout: '', stderr: '' };
     }
 
+    if ((command === 'docker' || String(command).endsWith('/docker')) && argv.join(' ') === 'context use default') {
+      return { code: 0, stdout: 'default\n', stderr: '' };
+    }
+
     throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command} ${argv.join(' ')}`);
   };
 
@@ -139,6 +144,7 @@ test('planner installs Homebrew and packages on a clean macOS machine', () => {
     'init_podman_machine',
     'start_podman_machine',
     'install_podman_helper',
+    'select_docker_context',
     'restart_podman_machine',
     'set_podman_rootful',
     'verify_runtime'
@@ -195,6 +201,61 @@ test('Homebrew install step pipes the fetched installer into bash noninteractive
   assert.match(calls[0].args[1], /^\/usr\/bin\/curl -fsSL https:\/\/raw\.githubusercontent\.com\/Homebrew\/install\/HEAD\/install\.sh \| \/bin\/bash$/);
   assert.doesNotMatch(calls[0].args[1], /^\$\(/);
   assert.equal(calls[0].options.env.NONINTERACTIVE, '1');
+});
+
+test('package install step accepts Homebrew link failures once formulae are present', async () => {
+  const calls = [];
+
+  await runRuntimeSetupStep({ id: 'install_formulae' }, {
+    brewPath: '/opt/homebrew/bin/brew',
+    formulae: {},
+    runProcess: async (command, args, options) => {
+      calls.push({ command, args, options });
+      const argv = Array.isArray(args) ? args : [];
+      if (String(command).endsWith('/brew') && argv[0] === 'install') {
+        throw setupError('COMMAND_FAILED', 'brew install failed after installing formulae', {
+          stderr: 'Warning: docker is already installed, it is just not linked.'
+        });
+      }
+      if (String(command).endsWith('/brew') && argv.join(' ') === 'list --formula --quiet') {
+        return {
+          code: 0,
+          stdout: 'docker\ndocker-compose\ndocker-credential-helper\npodman\n',
+          stderr: ''
+        };
+      }
+      throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command} ${argv.join(' ')}`);
+    }
+  });
+
+  assert.deepEqual(calls.map((call) => call.args.join(' ')), [
+    'install docker docker-compose docker-credential-helper podman',
+    'list --formula --quiet'
+  ]);
+});
+
+test('runtimeCommandOrPath falls back to PATH when Brew formula is not linked', async () => {
+  assert.equal(await runtimeCommandOrPath('/opt/homebrew/bin/brew', 'docker', {
+    pathExists: async () => false
+  }), 'docker');
+  assert.equal(await runtimeCommandOrPath('/opt/homebrew/bin/brew', 'docker', {
+    pathExists: async () => true
+  }), '/opt/homebrew/bin/docker');
+});
+
+test('Docker context selection is best effort for stale Docker Desktop contexts', async () => {
+  const calls = [];
+
+  await runRuntimeSetupStep({ id: 'select_docker_context' }, {
+    brewPath: '/opt/homebrew/bin/brew',
+    runProcess: async (command, args) => {
+      calls.push({ command, args });
+      throw setupError('COMMAND_FAILED', 'docker context switch failed');
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].args, ['context', 'use', 'default']);
 });
 
 test('dockerOptionsForRuntimeSetup preserves env fallback unless default socket is persisted', () => {

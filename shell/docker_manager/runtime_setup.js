@@ -184,6 +184,7 @@ function makeRuntimeSetupPlan(context = {}) {
 
   steps.push({ id: 'start_podman_machine', label: 'Starting runtime machine' });
   steps.push({ id: 'install_podman_helper', label: 'Enabling Docker compatibility' });
+  steps.push({ id: 'select_docker_context', label: 'Selecting Docker compatibility context' });
   steps.push({ id: 'restart_podman_machine', label: 'Restarting runtime machine' });
 
   if (!machine.rootful) {
@@ -434,6 +435,13 @@ function runtimeCommandPath(brewPath, commandName) {
   return binDir ? path.join(binDir, commandName) : commandName;
 }
 
+async function runtimeCommandOrPath(brewPath, commandName, options = {}) {
+  const candidate = runtimeCommandPath(brewPath, commandName);
+  const exists = typeof options.pathExists === 'function' ? options.pathExists : pathExists;
+  if (candidate !== commandName && await exists(candidate)) return candidate;
+  return commandName;
+}
+
 function runtimeProcessEnv(brewPath) {
   const binDir = brewBinDir(brewPath);
   if (!binDir) return process.env;
@@ -574,9 +582,21 @@ async function runRuntimeSetupStep(step, context = {}) {
       const missing = missingFormulae(context.formulae);
       if (!missing.length) return null;
       const env = runtimeProcessEnv(activeBrewPath);
-      return run(activeBrewPath, ['install', ...missing], { env, signal }).catch((error) => {
+      try {
+        return await run(activeBrewPath, ['install', ...missing], { env, signal });
+      } catch (error) {
+        if (error?.code === 'SETUP_CANCELED') throw error;
+        assertRuntimeSetupNotCanceled(signal);
+
+        const formulaeAfterFailure = await readInstalledFormulae(activeBrewPath, run, { signal }).catch((probeError) => {
+          if (probeError?.code === 'SETUP_CANCELED') throw probeError;
+          return null;
+        });
+        assertRuntimeSetupNotCanceled(signal);
+        if (formulaeAfterFailure && missingFormulae(formulaeAfterFailure).length === 0) return null;
+
         throw commandFailureForStep(error, 'PACKAGE_INSTALL_FAILED', 'Runtime package installation failed');
-      });
+      }
     }
 
     case 'init_podman_machine': {
@@ -603,6 +623,16 @@ async function runRuntimeSetupStep(step, context = {}) {
           throw setupError('AUTHORIZATION_CANCELED', 'Runtime setup needs one admin approval', error?.details || {});
         }
         throw commandFailureForStep(error, 'PODMAN_HELPER_FAILED', 'Podman Docker compatibility helper failed');
+      });
+    }
+
+    case 'select_docker_context': {
+      const brewPath = await resolveBrewPath();
+      const env = runtimeProcessEnv(brewPath);
+      const dockerPath = await runtimeCommandOrPath(brewPath, 'docker');
+      return run(dockerPath, ['context', 'use', 'default'], { env, signal }).catch((error) => {
+        if (error?.code === 'SETUP_CANCELED') throw error;
+        return null;
       });
     }
 
@@ -811,6 +841,7 @@ module.exports = {
   runProcess,
   runRuntimeSetup,
   runRuntimeSetupStep,
+  runtimeCommandOrPath,
   sanitizeCommandOutput,
   setupError,
   verifiedRuntimeSetupState,

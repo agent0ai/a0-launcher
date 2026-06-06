@@ -104,6 +104,16 @@ This scope owns:
 - Runtime setup steps must resolve Homebrew-derived command paths lazily and
   only for steps that need them; step-time `findBrewPath` and
   `brew --prefix podman` calls must receive the operation abort signal.
+- Runtime setup package installation may treat a Homebrew install failure as
+  successful only after re-reading installed formulae and confirming every
+  required formula is present. This covers Homebrew link/shadow conflicts that
+  leave the formulae installed but return a failing install command.
+- After installing the Podman macOS helper, runtime setup must best-effort run
+  `docker context use default` so an existing Docker Desktop context does not
+  keep the user-facing Docker CLI pointed at `~/.docker/run/docker.sock` while
+  `/var/run/docker.sock` points to Podman. This context step must not block
+  setup if the Docker CLI cannot switch context; final runtime readiness is
+  still determined by Dockerode verification.
 - Runtime setup command execution must terminate the command tree on
   cancellation. On non-Windows platforms, fixed setup commands run in a detached
   process group and abort sends `SIGTERM` to the negative process id so
@@ -115,8 +125,9 @@ This scope owns:
   and `NONINTERACTIVE=1`; package and machine work uses Homebrew and Podman
   commands selected by the setup plan; native authorization uses
   `/usr/bin/osascript -e <script>` with the helper path derived from
-  `brew --prefix podman`; final runtime verification uses the Docker
-  adapter/Dockerode instead of the Docker CLI.
+  `brew --prefix podman`; Docker CLI context selection uses
+  `docker context use default` when possible; final runtime verification uses
+  the Docker adapter/Dockerode instead of the Docker CLI.
 - Runtime setup must not collect or store sudo passwords. It must not stop,
   rootful-toggle, or otherwise mutate an active external Podman machine; the
   planner blocks that case with `PODMAN_MACHINE_EXISTS`.
