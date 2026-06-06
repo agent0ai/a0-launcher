@@ -45,6 +45,9 @@ This scope owns:
   status, add it to the Docker Manager state shape.
 - Persist user preferences and remote instances through `state_store.js`; do not
   invent parallel files.
+- Runtime setup metadata is stored as top-level `runtimeSetup` with only
+  sanitized fields: `runtimeBackend`, `machineName`, `dockerHostOverride`,
+  `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`.
 - Port preferences are stored as UI and SSH host-port preferences.
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence.

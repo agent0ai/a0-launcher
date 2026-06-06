@@ -60,6 +60,7 @@
 /**
  * @typedef {Object} DockerInterfaceOptions
  * @property {string=} imageRepo
+ * @property {string=} dockerHost
  */
 
 /**
@@ -69,8 +70,8 @@
  */
 
 export class DockerInterface {
-  static #instance = null;
-  static #instancePromise = null;
+  static #instances = new Map();
+  static #instancePromises = new Map();
 
   /**
    * Detect OS + Docker availability.
@@ -147,27 +148,34 @@ export class DockerInterface {
    * @returns {Promise<DockerInterface>}
    */
   static async get(options = {}) {
-    if (this.#instance) return this.#instance;
-    if (this.#instancePromise) return this.#instancePromise;
+    const instanceOptions = this.#normalizeInstanceOptions(options);
+    const key = this.#makeInstanceKey(instanceOptions);
 
-    this.#instancePromise = (async () => {
-      const env = await this.detectEnvironment();
+    const instance = this.#instances.get(key);
+    if (instance) return instance;
+
+    const instancePromise = this.#instancePromises.get(key);
+    if (instancePromise) return instancePromise;
+
+    const promise = (async () => {
+      const env = await this.detectEnvironment({ dockerHost: instanceOptions.dockerHost });
       const { DockerodeDocker } = await import('./impl/DockerodeDocker.mjs');
       const instance = new DockerodeDocker({
         env,
-        imageRepo: options?.imageRepo
+        imageRepo: instanceOptions.imageRepo,
+        dockerHost: instanceOptions.dockerHost
       });
-      this.#instance = instance;
+      this.#instances.set(key, instance);
       return instance;
     })().catch((error) => {
-      this.#instance = null;
+      this.#instances.delete(key);
       throw error;
     }).finally(() => {
-      // Allow retry if construction failed; otherwise keep #instance.
-      this.#instancePromise = null;
+      this.#instancePromises.delete(key);
     });
 
-    return this.#instancePromise;
+    this.#instancePromises.set(key, promise);
+    return promise;
   }
 
   /**
@@ -399,6 +407,16 @@ export class DockerInterface {
    */
   async deleteContainer(_containerId, _options = {}) {
     throw new Error('DockerInterface.deleteContainer is abstract');
+  }
+
+  static #normalizeInstanceOptions(options = {}) {
+    const imageRepo = String(options?.imageRepo || '').trim() || 'agent0ai/agent-zero';
+    const dockerHost = String(options?.dockerHost || '').trim();
+    return { imageRepo, dockerHost };
+  }
+
+  static #makeInstanceKey(options = {}) {
+    return JSON.stringify(this.#normalizeInstanceOptions(options));
   }
 
   static #detectDockerFlavor() {

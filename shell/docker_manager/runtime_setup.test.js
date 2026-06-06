@@ -5,6 +5,9 @@ const {
   chooseBrewPath,
   makeRuntimeSetupPlan,
   sanitizeCommandOutput,
+  normalizeDockerHostOverride,
+  normalizeRuntimeSetupState,
+  MAX_DOCKER_HOST_OVERRIDE_LENGTH,
   DEFAULT_A0_MACHINE_NAME
 } = require('./runtime_setup');
 
@@ -75,4 +78,38 @@ test('planner blocks when a running non-A0 Podman machine appears after a manage
 test('sanitizeCommandOutput redacts obvious password and token lines', () => {
   const output = 'ok\nPASSWORD=secret\napi_token: abc123\nfinished';
   assert.equal(sanitizeCommandOutput(output), 'ok\n[redacted]\n[redacted]\nfinished');
+});
+
+test('normalizeDockerHostOverride accepts only safe Docker host forms', () => {
+  assert.equal(normalizeDockerHostOverride(''), '');
+  assert.equal(normalizeDockerHostOverride(' /var/run/docker.sock '), '/var/run/docker.sock');
+  assert.equal(normalizeDockerHostOverride('unix:///tmp/podman.sock'), 'unix:///tmp/podman.sock');
+  assert.equal(normalizeDockerHostOverride('tcp://127.0.0.1:2375'), 'tcp://127.0.0.1:2375');
+  assert.equal(normalizeDockerHostOverride('http://localhost:2375'), 'http://localhost:2375');
+  assert.equal(normalizeDockerHostOverride('https://localhost:2376'), 'https://localhost:2376');
+  assert.equal(normalizeDockerHostOverride('ssh://localhost'), '');
+  assert.equal(normalizeDockerHostOverride('ftp://localhost'), '');
+  assert.equal(normalizeDockerHostOverride('http://user:pass@localhost:2375'), '');
+  assert.equal(normalizeDockerHostOverride('https://user@localhost:2376'), '');
+  assert.equal(normalizeDockerHostOverride('http://localhost:2375?token=nope'), '');
+  assert.equal(normalizeDockerHostOverride('http://localhost:2375#daemon'), '');
+  assert.equal(normalizeDockerHostOverride(`/${'x'.repeat(MAX_DOCKER_HOST_OVERRIDE_LENGTH)}`), '');
+  assert.equal(normalizeDockerHostOverride('http://[::1'), '');
+});
+
+test('normalizeRuntimeSetupState keeps only safe runtime metadata', () => {
+  assert.deepEqual(normalizeRuntimeSetupState({
+    runtimeBackend: 'podman',
+    machineName: 'a0-launcher',
+    dockerHostOverride: 'unix:///tmp/podman.sock',
+    usesDefaultDockerSocket: false,
+    lastSuccessfulSetupAt: '2026-06-05T00:00:00.000Z',
+    password: 'nope'
+  }), {
+    runtimeBackend: 'podman',
+    machineName: 'a0-launcher',
+    dockerHostOverride: 'unix:///tmp/podman.sock',
+    usesDefaultDockerSocket: false,
+    lastSuccessfulSetupAt: '2026-06-05T00:00:00.000Z'
+  });
 });

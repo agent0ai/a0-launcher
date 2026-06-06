@@ -1,6 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { app } = require('electron');
+const { normalizeRuntimeSetupState } = require('./runtime_setup');
 
 function baseDir() {
   return path.join(app.getPath('userData'), 'docker_manager');
@@ -56,6 +57,18 @@ async function writeRetentionPolicy(retentionPolicy) {
   const state = await readJson(stateFile(), {});
   await writeJson(stateFile(), { ...state, retentionPolicy: policy, updatedAt: new Date().toISOString() });
   return policy;
+}
+
+async function readRuntimeSetup() {
+  const state = await readJson(stateFile(), {});
+  return normalizeRuntimeSetupState(state?.runtimeSetup);
+}
+
+async function writeRuntimeSetup(runtimeSetup) {
+  const state = await readJson(stateFile(), {});
+  const next = normalizeRuntimeSetupState(runtimeSetup);
+  await writeJson(stateFile(), { ...state, runtimeSetup: next, updatedAt: new Date().toISOString() });
+  return next;
 }
 
 async function readInstallabilityCache() {
@@ -282,6 +295,10 @@ module.exports = {
   // Retention policy
   readRetentionPolicy,
   writeRetentionPolicy,
+
+  // Runtime setup metadata
+  readRuntimeSetup,
+  writeRuntimeSetup,
 
   // Port preferences
   readPortPreferences,

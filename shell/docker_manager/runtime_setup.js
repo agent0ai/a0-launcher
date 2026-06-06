@@ -6,6 +6,7 @@ const REQUIRED_FORMULAE = Object.freeze([
   'docker-credential-helper',
   'podman'
 ]);
+const MAX_DOCKER_HOST_OVERRIDE_LENGTH = 2048;
 
 function setupError(code, message, details = {}) {
   const err = new Error(message);
@@ -17,6 +18,38 @@ function setupError(code, message, details = {}) {
 function normalizeMachineName(value) {
   const name = String(value || '').trim();
   return /^[A-Za-z0-9_.-]{1,80}$/.test(name) ? name : '';
+}
+
+function normalizeDockerHostOverride(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.length > MAX_DOCKER_HOST_OVERRIDE_LENGTH) return '';
+  if (raw.startsWith('/')) return raw;
+
+  try {
+    const parsed = new URL(raw);
+    const protocol = (parsed.protocol || '').toLowerCase();
+    if (!['unix:', 'tcp:', 'http:', 'https:'].includes(protocol)) return '';
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) return '';
+    return raw;
+  } catch {
+    return '';
+  }
+}
+
+function normalizeRuntimeSetupState(value = {}) {
+  const input = value && typeof value === 'object' ? value : {};
+  const lastSuccessfulSetupAt = typeof input.lastSuccessfulSetupAt === 'string'
+    ? input.lastSuccessfulSetupAt.trim()
+    : '';
+
+  return {
+    runtimeBackend: input.runtimeBackend === 'podman' ? 'podman' : '',
+    machineName: normalizeMachineName(input.machineName),
+    dockerHostOverride: normalizeDockerHostOverride(input.dockerHostOverride),
+    usesDefaultDockerSocket: !!input.usesDefaultDockerSocket,
+    lastSuccessfulSetupAt: Number.isFinite(Date.parse(lastSuccessfulSetupAt)) ? lastSuccessfulSetupAt : ''
+  };
 }
 
 function chooseBrewPath(options = {}) {
@@ -147,12 +180,15 @@ function sanitizeCommandOutput(output) {
 module.exports = {
   DEFAULT_A0_MACHINE_NAME,
   DEFAULT_PODMAN_MACHINE_NAME,
+  MAX_DOCKER_HOST_OVERRIDE_LENGTH,
   REQUIRED_FORMULAE,
   chooseBrewPath,
   choosePodmanMachine,
   makeRuntimeSetupPlan,
   missingFormulae,
+  normalizeDockerHostOverride,
   normalizeMachines,
+  normalizeRuntimeSetupState,
   sanitizeCommandOutput,
   setupError
 };

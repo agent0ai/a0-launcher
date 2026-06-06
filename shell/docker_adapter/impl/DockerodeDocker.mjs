@@ -102,16 +102,25 @@ export class DockerodeDocker extends DockerInterface {
    * @param {Object=} options
    * @param {import('../DockerInterface.mjs').DockerEnvironmentInfo=} options.env
    * @param {string=} options.imageRepo
+   * @param {string=} options.dockerHost
+   *
+   * `env` must be detected with the same `dockerHost`. Prefer
+   * `DockerInterface.get()` so detection and construction stay aligned.
    */
   constructor(options = {}) {
     super({ imageRepo: options?.imageRepo });
     this.env = options?.env || null;
+    this.dockerHost = (options?.dockerHost || '').trim();
 
     this.docker = new Dockerode(dockerodeOptionsFromEnv(this.env));
     this.registry = new DockerHubRegistry({ userAgent: 'A0-Launcher' });
 
     /** @type {Map<string, any>} */
     this._pulls = new Map();
+  }
+
+  async getEnvironment() {
+    return DockerInterface.detectEnvironment({ dockerHost: this.dockerHost });
   }
 
   async listRemoteTags(imageRepo) {
