@@ -245,7 +245,12 @@ async function refresh() {
       store.storage = state?.storage || null;
       store.portPreferences = state?.portPreferences || null;
       store.retentionPolicy = state?.retentionPolicy || null;
-      if (!store.error) setBanner("", "");
+      const preserveRuntimeSetupFailure = !!lastRuntimeSetupFailureMessage &&
+        store.banner?.type === "error" &&
+        store.banner?.message === lastRuntimeSetupFailureMessage;
+      if (!store.error && !preserveRuntimeSetupFailure) {
+        setBanner("", "");
+      }
     }
 
     store.dockerAvailable = !!inventory?.dockerAvailable;
@@ -881,18 +886,26 @@ function renderTerminalDock(state = snapshot()) {
 }
 
 let lastRuntimeSetupFailureBannerKey = "";
+let lastRuntimeSetupFailureMessage = "";
 
 function maybeSurfaceRuntimeSetupFailure(progress) {
   const status = typeof progress?.status === "string" ? progress.status : "";
   if (progress?.type !== "runtime_setup") return;
   if (status === "running") {
     lastRuntimeSetupFailureBannerKey = "";
+    lastRuntimeSetupFailureMessage = "";
+    return;
+  }
+  if (status === "completed") {
+    lastRuntimeSetupFailureBannerKey = "";
+    lastRuntimeSetupFailureMessage = "";
     return;
   }
   if (status !== "failed") return;
 
   const message = String(progress?.error || progress?.message || "Runtime setup failed.").trim()
     || "Runtime setup failed.";
+  lastRuntimeSetupFailureMessage = message;
   const key = `${progress?.opId || ""}:${message}`;
   if (key === lastRuntimeSetupFailureBannerKey) return;
   lastRuntimeSetupFailureBannerKey = key;
