@@ -57,6 +57,10 @@ This scope owns:
   to the adapter so the default socket is used instead of `process.env.DOCKER_HOST`.
   If no runtime setup/default-socket state is saved, preserve the environment
   fallback.
+- A runtime setup no-op because Docker is already available must preserve the
+  existing runtime metadata as-is. It must not infer or persist
+  `usesDefaultDockerSocket: true` unless setup actually selected or verified the
+  default socket.
 - Port preferences are stored as UI and SSH host-port preferences.
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence.
@@ -83,6 +87,9 @@ This scope owns:
 - Runtime setup progress may include only user-facing `message`, stable
   `setupStep`, and stable `setupCode` strings. Raw stdout/stderr stays inside
   `runtime_setup.js` after redaction.
+- Runtime setup must check for pre-canceled, Docker-ready, and unsupported
+  platform cases before probing Homebrew, package formulae, or Podman machines.
+  Probe commands that do run must receive the operation abort signal.
 - The runtime setup command graph is fixed: Homebrew install uses `/bin/bash`
   with `-c "/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash"`
   and `NONINTERACTIVE=1`; package and machine work uses Homebrew, Podman, and

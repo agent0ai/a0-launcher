@@ -312,25 +312,26 @@ function runProcess(command, args = [], options = {}) {
   });
 }
 
-async function findBrewPath(run = runProcess) {
+async function findBrewPath(run = runProcess, options = {}) {
   const opt = '/opt/homebrew/bin/brew';
   const usr = '/usr/local/bin/brew';
   if (await pathExists(opt)) return opt;
   if (await pathExists(usr)) return usr;
 
   try {
-    const found = await run('/usr/bin/env', ['bash', '-lc', 'command -v brew']);
+    const found = await run('/usr/bin/env', ['bash', '-lc', 'command -v brew'], { signal: options.signal });
     return commandOutputLines(found.stdout)[0] || '';
-  } catch {
+  } catch (error) {
+    if (error?.code === 'SETUP_CANCELED') throw error;
     return '';
   }
 }
 
-async function readInstalledFormulae(brewPath, run = runProcess) {
+async function readInstalledFormulae(brewPath, run = runProcess, options = {}) {
   const brew = String(brewPath || '').trim();
   if (!brew) return {};
 
-  const result = await run(brew, ['list', '--formula', '--quiet']);
+  const result = await run(brew, ['list', '--formula', '--quiet'], { signal: options.signal });
   const installed = new Set(commandOutputLines(result.stdout));
   return Object.fromEntries(REQUIRED_FORMULAE.map((name) => [name, installed.has(name)]));
 }
@@ -370,21 +371,35 @@ function runtimeProcessEnv(brewPath) {
   };
 }
 
-async function readPodmanMachines(run = runProcess, podmanPath = 'podman') {
+async function readPodmanMachines(run = runProcess, podmanPath = 'podman', options = {}) {
   try {
-    const result = await run(podmanPath, ['machine', 'list', '--format', 'json']);
+    const result = await run(podmanPath, ['machine', 'list', '--format', 'json'], { signal: options.signal });
     return parsePodmanMachineList(result.stdout);
-  } catch {
+  } catch (error) {
+    if (error?.code === 'SETUP_CANCELED') throw error;
     return [];
   }
 }
 
 async function collectRuntimeSetupContext(options = {}) {
   const run = options.runProcess || runProcess;
-  const brewPath = await findBrewPath(run);
-  const formulae = await readInstalledFormulae(brewPath, run).catch(() => ({}));
+  const signal = options.signal;
+  if (signal?.aborted) {
+    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
+  }
+  const brewPath = await findBrewPath(run, { signal });
+  if (signal?.aborted) {
+    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
+  }
+  const formulae = await readInstalledFormulae(brewPath, run, { signal }).catch((error) => {
+    if (error?.code === 'SETUP_CANCELED') throw error;
+    return {};
+  });
+  if (signal?.aborted) {
+    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
+  }
   const podmanPath = formulae.podman ? runtimeCommandPath(brewPath, 'podman') : 'podman';
-  const podmanMachines = await readPodmanMachines(run, podmanPath);
+  const podmanMachines = await readPodmanMachines(run, podmanPath, { signal });
 
   return {
     platform: options.platform || process.platform,
@@ -511,10 +526,32 @@ async function runRuntimeSetup(options = {}) {
   const report = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const run = options.runProcess || runProcess;
   const existingRuntimeSetup = normalizeRuntimeSetupState(options.runtimeSetupState);
+  const platform = options.platform || process.platform;
+  if (signal?.aborted) {
+    throw setupError('SETUP_CANCELED', 'Runtime setup was canceled');
+  }
+  if (options.dockerAvailable) {
+    report({ stepId: 'verify_existing_docker', message: 'Docker is ready' });
+    return normalizeRuntimeSetupState({
+      runtimeBackend: existingRuntimeSetup.runtimeBackend,
+      machineName: existingRuntimeSetup.machineName,
+      dockerHostOverride: existingRuntimeSetup.dockerHostOverride,
+      usesDefaultDockerSocket: existingRuntimeSetup.usesDefaultDockerSocket,
+      lastSuccessfulSetupAt: new Date().toISOString()
+    });
+  }
+  if (platform !== 'darwin') {
+    throw setupError(
+      'UNSUPPORTED_PLATFORM',
+      'Runtime setup is only available on macOS',
+      { machineName: '' }
+    );
+  }
   const context = await collectRuntimeSetupContext({
-    dockerAvailable: !!options.dockerAvailable,
-    platform: options.platform,
-    runProcess: run
+    dockerAvailable: false,
+    platform,
+    runProcess: run,
+    signal
   });
   const plan = makeRuntimeSetupPlan(context);
 
@@ -542,9 +579,7 @@ async function runRuntimeSetup(options = {}) {
     runtimeBackend: plan.ready ? existingRuntimeSetup.runtimeBackend : 'podman',
     machineName: plan.ready ? existingRuntimeSetup.machineName : plan.machineName,
     dockerHostOverride: plan.ready ? existingRuntimeSetup.dockerHostOverride : '',
-    usesDefaultDockerSocket: plan.ready
-      ? (existingRuntimeSetup.usesDefaultDockerSocket || !existingRuntimeSetup.dockerHostOverride)
-      : true,
+    usesDefaultDockerSocket: plan.ready ? existingRuntimeSetup.usesDefaultDockerSocket : true,
     lastSuccessfulSetupAt: new Date().toISOString()
   });
 }

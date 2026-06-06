@@ -8,6 +8,9 @@ const {
   normalizeDockerHostOverride,
   normalizeRuntimeSetupState,
   dockerOptionsForRuntimeSetup,
+  readInstalledFormulae,
+  readPodmanMachines,
+  runRuntimeSetup,
   runRuntimeSetupStep,
   setupError,
   HOMEBREW_INSTALL_COMMAND,
@@ -121,6 +124,112 @@ test('dockerOptionsForRuntimeSetup preserves env fallback unless default socket 
     imageRepo: 'agent0ai/agent-zero',
     dockerHost: 'unix:///tmp/podman.sock'
   });
+});
+
+test('runRuntimeSetup no-ops without probing install tooling when Docker is already available', async () => {
+  const progress = [];
+  const result = await runRuntimeSetup({
+    dockerAvailable: true,
+    platform: 'darwin',
+    runtimeSetupState: {},
+    onProgress: (event) => progress.push(event),
+    runProcess: async (command) => {
+      throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command}`);
+    }
+  });
+
+  assert.equal(result.runtimeBackend, '');
+  assert.equal(result.machineName, '');
+  assert.equal(result.dockerHostOverride, '');
+  assert.equal(result.usesDefaultDockerSocket, false);
+  assert.ok(result.lastSuccessfulSetupAt);
+  assert.deepEqual(progress, [{ stepId: 'verify_existing_docker', message: 'Docker is ready' }]);
+});
+
+test('runRuntimeSetup preserves explicit default socket metadata on ready no-op', async () => {
+  const result = await runRuntimeSetup({
+    dockerAvailable: true,
+    platform: 'darwin',
+    runtimeSetupState: {
+      runtimeBackend: 'podman',
+      machineName: 'a0-launcher',
+      dockerHostOverride: '',
+      usesDefaultDockerSocket: true,
+      lastSuccessfulSetupAt: '2026-06-05T00:00:00.000Z'
+    },
+    runProcess: async (command) => {
+      throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command}`);
+    }
+  });
+
+  assert.equal(result.runtimeBackend, 'podman');
+  assert.equal(result.machineName, 'a0-launcher');
+  assert.equal(result.dockerHostOverride, '');
+  assert.equal(result.usesDefaultDockerSocket, true);
+  assert.ok(result.lastSuccessfulSetupAt);
+});
+
+test('runRuntimeSetup rejects unsupported platforms before install-tool probes', async () => {
+  await assert.rejects(
+    runRuntimeSetup({
+      dockerAvailable: false,
+      platform: 'linux',
+      runProcess: async (command) => {
+        throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command}`);
+      }
+    }),
+    (error) => {
+      assert.equal(error.code, 'UNSUPPORTED_PLATFORM');
+      return true;
+    }
+  );
+});
+
+test('runRuntimeSetup rejects pre-canceled setup before install-tool probes', async () => {
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    runRuntimeSetup({
+      dockerAvailable: false,
+      platform: 'darwin',
+      signal: controller.signal,
+      runProcess: async (command) => {
+        throw setupError('UNEXPECTED_COMMAND', `Unexpected command: ${command}`);
+      }
+    }),
+    (error) => {
+      assert.equal(error.code, 'SETUP_CANCELED');
+      return true;
+    }
+  );
+});
+
+test('runtime setup inventory probes pass abort signals to fixed commands', async () => {
+  const controller = new AbortController();
+  const formulae = await readInstalledFormulae('/opt/homebrew/bin/brew', async (command, args, options) => {
+    assert.equal(command, '/opt/homebrew/bin/brew');
+    assert.deepEqual(args, ['list', '--formula', '--quiet']);
+    assert.equal(options.signal, controller.signal);
+    return { code: 0, stdout: 'docker\npodman\n', stderr: '' };
+  }, { signal: controller.signal });
+
+  assert.equal(formulae.docker, true);
+  assert.equal(formulae.podman, true);
+
+  const machines = await readPodmanMachines(async (command, args, options) => {
+    assert.equal(command, 'podman');
+    assert.deepEqual(args, ['machine', 'list', '--format', 'json']);
+    assert.equal(options.signal, controller.signal);
+    return { code: 0, stdout: '[{"Name":"a0-launcher","Running":true}]', stderr: '' };
+  }, 'podman', { signal: controller.signal });
+
+  assert.deepEqual(machines, [{
+    name: 'a0-launcher',
+    running: true,
+    default: false,
+    rootful: false
+  }]);
 });
 
 test('install_podman_helper preserves setup cancellation before authorization cancel mapping', async () => {
