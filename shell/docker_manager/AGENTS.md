@@ -48,6 +48,10 @@ This scope owns:
 - Runtime setup metadata is stored as top-level `runtimeSetup` with only
   sanitized fields: `runtimeBackend`, `machineName`, `dockerHostOverride`,
   `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`.
+- `dockerHostOverride` accepts an empty value, Unix socket paths, `unix:`
+  socket URLs, and root-only `tcp:`, `http:`, or `https:` daemon URLs. Network
+  daemon URLs must not persist ignored path, query, fragment, or credential
+  components.
 - Port preferences are stored as UI and SSH host-port preferences.
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence.

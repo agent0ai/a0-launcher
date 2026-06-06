@@ -31,6 +31,12 @@ function normalizeDockerHostOverride(value) {
     const protocol = (parsed.protocol || '').toLowerCase();
     if (!['unix:', 'tcp:', 'http:', 'https:'].includes(protocol)) return '';
     if (parsed.username || parsed.password || parsed.search || parsed.hash) return '';
+
+    if (protocol === 'tcp:' || protocol === 'http:' || protocol === 'https:') {
+      if (parsed.pathname && parsed.pathname !== '/') return '';
+      return `${protocol}//${parsed.host}`;
+    }
+
     return raw;
   } catch {
     return '';

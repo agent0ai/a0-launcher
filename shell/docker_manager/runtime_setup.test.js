@@ -87,6 +87,12 @@ test('normalizeDockerHostOverride accepts only safe Docker host forms', () => {
   assert.equal(normalizeDockerHostOverride('tcp://127.0.0.1:2375'), 'tcp://127.0.0.1:2375');
   assert.equal(normalizeDockerHostOverride('http://localhost:2375'), 'http://localhost:2375');
   assert.equal(normalizeDockerHostOverride('https://localhost:2376'), 'https://localhost:2376');
+  assert.equal(normalizeDockerHostOverride('tcp://127.0.0.1:2375/'), 'tcp://127.0.0.1:2375');
+  assert.equal(normalizeDockerHostOverride('http://localhost:2375/'), 'http://localhost:2375');
+  assert.equal(normalizeDockerHostOverride('https://localhost:2376/'), 'https://localhost:2376');
+  assert.equal(normalizeDockerHostOverride('tcp://127.0.0.1:2375/not-used'), '');
+  assert.equal(normalizeDockerHostOverride('http://localhost:2375/not-used'), '');
+  assert.equal(normalizeDockerHostOverride('https://localhost:2376/not-used'), '');
   assert.equal(normalizeDockerHostOverride('ssh://localhost'), '');
   assert.equal(normalizeDockerHostOverride('ftp://localhost'), '');
   assert.equal(normalizeDockerHostOverride('http://user:pass@localhost:2375'), '');
@@ -112,4 +118,27 @@ test('normalizeRuntimeSetupState keeps only safe runtime metadata', () => {
     usesDefaultDockerSocket: false,
     lastSuccessfulSetupAt: '2026-06-05T00:00:00.000Z'
   });
+});
+
+test('DockerInterface detection distinguishes omitted Docker host from explicit default', async () => {
+  const { DockerInterface } = await import('../docker_adapter/DockerInterface.mjs');
+  const originalDockerHost = process.env.DOCKER_HOST;
+
+  try {
+    process.env.DOCKER_HOST = 'bad://env-host';
+
+    const omitted = await DockerInterface.detectEnvironment();
+    const explicitDefault = await DockerInterface.detectEnvironment({ dockerHost: '', timeoutMs: 250 });
+
+    assert.equal(omitted.dockerHost.raw, 'bad://env-host');
+    assert.equal(omitted.dockerHost.kind, 'invalid');
+    assert.equal(explicitDefault.dockerHost.raw, '');
+    assert.equal(explicitDefault.dockerHost.kind, 'default');
+  } finally {
+    if (originalDockerHost === undefined) {
+      delete process.env.DOCKER_HOST;
+    } else {
+      process.env.DOCKER_HOST = originalDockerHost;
+    }
+  }
 });

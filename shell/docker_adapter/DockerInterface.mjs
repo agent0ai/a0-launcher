@@ -86,7 +86,7 @@ export class DockerInterface {
         ? Math.max(250, Math.floor(options.timeoutMs))
         : 1500;
 
-    const dockerHostRaw = (options.dockerHost || process.env.DOCKER_HOST || '').trim();
+    const dockerHostRaw = this.#resolveDockerHostRaw(options);
     const dockerHost = this.#parseDockerHost(dockerHostRaw);
 
     /** @type {DockerEnvironmentInfo} */
@@ -411,12 +411,35 @@ export class DockerInterface {
 
   static #normalizeInstanceOptions(options = {}) {
     const imageRepo = String(options?.imageRepo || '').trim() || 'agent0ai/agent-zero';
-    const dockerHost = String(options?.dockerHost || '').trim();
+    const dockerHost = this.#resolveDockerHostRaw(options);
     return { imageRepo, dockerHost };
   }
 
   static #makeInstanceKey(options = {}) {
-    return JSON.stringify(this.#normalizeInstanceOptions(options));
+    const normalized = this.#normalizeInstanceOptions(options);
+    return JSON.stringify({
+      imageRepo: normalized.imageRepo,
+      dockerHost: this.#canonicalDockerHostForKey(normalized.dockerHost)
+    });
+  }
+
+  static #resolveDockerHostRaw(options = {}) {
+    if (Object.prototype.hasOwnProperty.call(options || {}, 'dockerHost')) {
+      return String(options?.dockerHost || '').trim();
+    }
+    return String(process.env.DOCKER_HOST || '').trim();
+  }
+
+  static #canonicalDockerHostForKey(value) {
+    const parsed = this.#parseDockerHost(value);
+    if (parsed.kind === 'default') return 'default';
+    if (parsed.kind === 'unix' || parsed.kind === 'npipe') {
+      return `${parsed.kind}:${parsed.socketPath || ''}`;
+    }
+    if (parsed.kind === 'tcp' || parsed.kind === 'http' || parsed.kind === 'https') {
+      return `net:${parsed.protocol || 'http'}://${parsed.host || ''}:${parsed.port || 2375}`;
+    }
+    return `invalid:${String(value || '').trim()}`;
   }
 
   static #detectDockerFlavor() {
