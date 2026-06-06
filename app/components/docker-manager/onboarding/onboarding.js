@@ -37,9 +37,8 @@ function render(state) {
       : (state?.error || state?.environment?.diagnosticMessage || "Set up the required runtime to run Agent Zero locally.");
   }
   if (detail) {
-    const setupStep = progress?.setupStep || "";
-    detail.classList.toggle("hidden", !setupStep);
-    detail.textContent = setupStep ? `Step: ${setupStep}` : "";
+    detail.classList.add("hidden");
+    detail.textContent = "";
   }
 
   if (actionBtn) {

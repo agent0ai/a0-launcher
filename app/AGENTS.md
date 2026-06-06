@@ -37,8 +37,10 @@ This scope owns:
   progress, start setup, cancel the current operation by op id, and offer the
   Docker Desktop fallback through named actions. Terminal runtime setup failures
   from progress events must remain visible as error banners even if the
-  onboarding panel hides; runtime detection, installation, socket selection, and
-  privileged Docker mechanics remain shell-owned.
+  onboarding panel hides; a later successful refresh or inventory snapshot with
+  Docker available clears that failure sentinel and banner. Runtime detection,
+  installation, socket selection, and privileged Docker mechanics remain
+  shell-owned.
 - Renderer runtime setup state must stay sanitized. The renderer may keep
   `runtimeBackend`, `machineName`, `hasDockerHostOverride`,
   `usesDefaultDockerSocket`, and `lastSuccessfulSetupAt`, but must not store or

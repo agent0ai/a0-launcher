@@ -1,5 +1,21 @@
 function byId(id) { return document.getElementById(id); }
 
+const PROGRESS_TYPE_LABELS = {
+  activate: "Switch version",
+  delete_instance: "Delete instance",
+  install: "Install",
+  rollback: "Rollback",
+  runtime_setup: "Runtime setup",
+  start: "Start instance",
+  stop: "Stop instance",
+  update: "Update"
+};
+
+function progressTypeLabel(type) {
+  const key = String(type || "");
+  return PROGRESS_TYPE_LABELS[key] || "Operation";
+}
+
 function render(state) {
   const contentVersion = byId("contentVersion");
   const appVersion = byId("appVersion");
@@ -36,7 +52,7 @@ function render(state) {
   }
 
   panel.classList.remove("hidden");
-  if (progressTitle) progressTitle.textContent = progress.type || "operation";
+  if (progressTitle) progressTitle.textContent = progressTypeLabel(progress.type);
   if (progressMessage) progressMessage.textContent = progress.message || "Working...";
 }
 

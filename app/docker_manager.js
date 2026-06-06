@@ -185,6 +185,15 @@ function isRuntimeSetupFailureBanner() {
     store.banner?.message === lastRuntimeSetupFailureMessage;
 }
 
+function clearRuntimeSetupFailureBanner() {
+  const shouldClearBanner = isRuntimeSetupFailureBanner();
+  lastRuntimeSetupFailureBannerKey = "";
+  lastRuntimeSetupFailureMessage = "";
+  if (shouldClearBanner) {
+    store.setBanner("", "");
+  }
+}
+
 async function loadMeta() {
   try {
     const v = await window.electronAPI?.getContentVersion?.();
@@ -250,6 +259,12 @@ async function refresh() {
       return;
     }
 
+    const inventoryDockerAvailable = !!inventory?.dockerAvailable;
+    const refreshSucceeded = !isErrorResponse(state);
+    if (refreshSucceeded || inventoryDockerAvailable) {
+      clearRuntimeSetupFailureBanner();
+    }
+
     if (isErrorResponse(state)) {
       store.error = state.message;
       if (!isRuntimeSetupFailureBanner()) {
@@ -268,7 +283,7 @@ async function refresh() {
       }
     }
 
-    store.dockerAvailable = !!inventory?.dockerAvailable;
+    store.dockerAvailable = inventoryDockerAvailable;
     store.environment = inventory?.environment || null;
     store.images = Array.isArray(inventory?.images) ? inventory.images : [];
     store.containers = Array.isArray(inventory?.containers) ? inventory.containers : [];
