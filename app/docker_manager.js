@@ -880,6 +880,25 @@ function renderTerminalDock(state = snapshot()) {
   }
 }
 
+let lastRuntimeSetupFailureBannerKey = "";
+
+function maybeSurfaceRuntimeSetupFailure(progress) {
+  const status = typeof progress?.status === "string" ? progress.status : "";
+  if (progress?.type !== "runtime_setup") return;
+  if (status === "running") {
+    lastRuntimeSetupFailureBannerKey = "";
+    return;
+  }
+  if (status !== "failed") return;
+
+  const message = String(progress?.error || progress?.message || "Runtime setup failed.").trim()
+    || "Runtime setup failed.";
+  const key = `${progress?.opId || ""}:${message}`;
+  if (key === lastRuntimeSetupFailureBannerKey) return;
+  lastRuntimeSetupFailureBannerKey = key;
+  setBanner("error", message);
+}
+
 function initSubscriptions() {
   const api = window.dockerManagerAPI;
   if (!api) return;
@@ -907,6 +926,7 @@ function initSubscriptions() {
       if (status === "completed" || status === "failed" || status === "canceled") {
         schedulePostOperationRefresh();
       }
+      maybeSurfaceRuntimeSetupFailure(progress);
     });
   }
 
