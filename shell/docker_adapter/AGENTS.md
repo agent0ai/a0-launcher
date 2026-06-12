@@ -50,6 +50,12 @@ This scope owns:
   launcher-owned runtime bin directory when the host does not provide one.
 - Linux automatic provisioning uses the host package manager and starts native
   Docker Engine; it must not manage container CPU, memory, or disk sizing.
+- Linux privileged setup prefers `pkexec` for desktop authentication and may use
+  `sudo -n` only when `pkexec` is absent and passwordless sudo is already
+  available.
+- Linux Engine permission repair should add the current user to the existing
+  `docker` group when Docker is installed but the account is not a member yet,
+  then report that a logout/login is required.
 - Concrete implementations live under `impl/` and are loaded on demand.
 - Docker Hub calls should expose digest/content-type/rate-limit metadata without
   forcing renderer or Docker Manager code to parse registry responses directly.

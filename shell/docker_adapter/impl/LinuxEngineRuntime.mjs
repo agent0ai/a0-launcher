@@ -40,6 +40,10 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
   constructor(options = {}) {
     super(options);
     this._packageManager = undefined;
+    this._runCommand = typeof options.runCommand === 'function' ? options.runCommand : run;
+    this._isRootOverride = typeof options.isRoot === 'boolean' ? options.isRoot : null;
+    this._usernameOverride = typeof options.username === 'string' ? options.username : '';
+    this._probeNativeSocket = typeof options.probeNativeSocket === 'function' ? options.probeNativeSocket : null;
   }
 
   async assess() {
@@ -52,6 +56,20 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
         return { state: 'ready', detail: 'Docker Engine is ready.' };
       }
       if (socket === 'EACCES') {
+        if (!(await this.#userBelongsToDockerGroup())) {
+          if (await this.#canRunPrivilegedSetup()) {
+            return {
+              state: 'needs_group_membership',
+              detail: 'Docker is installed, but your user needs Docker access. The launcher can update access, then you will need to log out and back in once.'
+            };
+          }
+          return {
+            state: 'manual_install',
+            manualPackages: [],
+            manualCommand: `sudo usermod -aG docker '${this.#username()}'`,
+            detail: 'Docker is installed, but your user is not in the docker group. Add your user to docker, log out and back in, then return here.'
+          };
+        }
         return {
           state: 'needs_relogin',
           detail: 'Docker is installed, but this desktop session cannot access it yet. Log out and back in once, then return here.'
@@ -80,13 +98,13 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
       };
     }
 
-    if (!this.#isRoot() && !(await this.#binaryExists('pkexec'))) {
+    if (!(await this.#canRunPrivilegedSetup())) {
       return {
         state: 'manual_install',
         packageManager: pm.id,
         manualPackages: [...MANUAL_PACKAGES],
         manualCommand: this.#installScript(pm),
-        detail: 'Automatic setup needs pkexec for the system authentication dialog. Install Docker Engine manually, then return here.'
+        detail: 'Automatic setup needs a system authentication dialog or passwordless sudo. Install Docker Engine manually, then return here.'
       };
     }
 
@@ -107,6 +125,28 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
     if (assessment.state === 'engine_stopped') {
       await this.start(options);
       return { endpoint: this.endpoint() };
+    }
+
+    if (assessment.state === 'needs_group_membership') {
+      options.onProgress?.('Updating Docker access');
+      const updated = await this.#runPrivileged(this.#dockerGroupScript(), {
+        timeoutMs: 120000,
+        signal: options.signal
+      });
+
+      if (updated.code === 126 || updated.code === 127) {
+        throw makeError('RUNTIME_AUTH_DECLINED', 'Authentication was cancelled.');
+      }
+      if (updated.code !== 0) {
+        throw makeError('RUNTIME_PROVISION_FAILED', 'Docker access could not be updated.', {
+          stderr: tail(updated.stderr || updated.stdout)
+        });
+      }
+
+      throw makeError(
+        'RUNTIME_NEEDS_RELOGIN',
+        'Docker access was updated. Log out and back in once so your user gains access, then return here.'
+      );
     }
 
     if (assessment.state === 'needs_relogin') {
@@ -228,7 +268,7 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
     const safe = String(name || '').replace(/[^A-Za-z0-9_.-]/g, '');
     if (!safe) return false;
     try {
-      const result = await run('sh', ['-c', `command -v ${safe}`], { timeoutMs: 5000 });
+      const result = await this._runCommand('sh', ['-c', `command -v ${safe}`], { timeoutMs: 5000 });
       return result.code === 0 && !!result.stdout.trim();
     } catch {
       return false;
@@ -240,7 +280,7 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
   }
 
   #startScript() {
-    return 'if command -v systemctl >/dev/null 2>&1 && systemctl enable --now docker; then exit 0; fi; if command -v service >/dev/null 2>&1; then service docker start; else exit 1; fi';
+    return 'if command -v systemctl >/dev/null 2>&1 && systemctl enable --now docker; then true; elif command -v service >/dev/null 2>&1; then service docker start; else exit 1; fi';
   }
 
   #dockerGroupScript() {
@@ -251,12 +291,24 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
 
   async #runPrivileged(script, options = {}) {
     if (this.#isRoot()) {
-      return await run('sh', ['-c', script], options);
+      return await this._runCommand('sh', ['-c', script], options);
     }
-    return await run('pkexec', ['sh', '-c', script], options);
+    if (await this.#binaryExists('pkexec')) {
+      return await this._runCommand('pkexec', ['sh', '-c', script], options);
+    }
+    if (await this.#canUsePasswordlessSudo()) {
+      return await this._runCommand('sudo', ['-n', 'sh', '-c', script], options);
+    }
+    throw makeError(
+      'RUNTIME_MANUAL_INSTALL',
+      'Automatic setup needs a system authentication dialog or passwordless sudo.'
+    );
   }
 
   async #probeNativeSocket() {
+    if (this._probeNativeSocket) {
+      return await this._probeNativeSocket();
+    }
     const net = await import('node:net');
     return await new Promise((resolve) => {
       const socket = net.connect({ path: '/var/run/docker.sock' });
@@ -295,11 +347,37 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
   }
 
   #isRoot() {
+    if (this._isRootOverride !== null) return this._isRootOverride;
     return typeof process.getuid === 'function' && process.getuid() === 0;
   }
 
+  async #canRunPrivilegedSetup() {
+    if (this.#isRoot()) return true;
+    if (await this.#binaryExists('pkexec')) return true;
+    return await this.#canUsePasswordlessSudo();
+  }
+
+  async #canUsePasswordlessSudo() {
+    try {
+      const result = await this._runCommand('sudo', ['-n', 'true'], { timeoutMs: 5000 });
+      return result.code === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async #userBelongsToDockerGroup() {
+    try {
+      const result = await this._runCommand('id', ['-nG', this.#username()], { timeoutMs: 5000 });
+      if (result.code !== 0) return false;
+      return String(result.stdout || '').split(/\s+/).includes('docker');
+    } catch {
+      return false;
+    }
+  }
+
   #username() {
-    const user = (process.env.SUDO_USER || os.userInfo().username || '').trim();
+    const user = (this._usernameOverride || process.env.SUDO_USER || os.userInfo().username || '').trim();
     if (!/^[A-Za-z_][A-Za-z0-9_.-]*\$?$/.test(user)) {
       throw makeError('INVALID_USERNAME', 'Refusing to run privileged setup for an unusual username.');
     }

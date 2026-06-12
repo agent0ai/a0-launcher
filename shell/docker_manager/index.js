@@ -16,6 +16,7 @@ const DEFAULT_GITHUB_REPO = 'agent0ai/agent-zero';
 
 const IMAGE_REPO_ENV_VAR = 'A0_BACKEND_IMAGE_REPO';
 const GITHUB_REPO_ENV_VAR = 'A0_BACKEND_GITHUB_REPO';
+const UI_READY_TIMEOUT_MS = 5 * 60_000;
 
 const CANONICAL_LOCAL_TAGS = Object.freeze(['local', 'development', 'main']);
 
@@ -167,10 +168,14 @@ function emptyDerivedState(runtime = null) {
 }
 
 function normalizeRuntimeAssessment(assessment, env = null) {
-  const state = typeof assessment?.state === 'string' ? assessment.state : 'unsupported';
+  let state = typeof assessment?.state === 'string' ? assessment.state : 'unsupported';
   const detail = typeof assessment?.detail === 'string' ? assessment.detail : 'Automatic runtime setup is not available.';
+  if (state === 'unsupported' && /user needs Docker access|not in the docker group/i.test(detail)) {
+    state = 'needs_group_membership';
+  }
   const actionByState = {
     not_provisioned: 'install',
+    needs_group_membership: 'install',
     engine_stopped: 'start',
     manual_install: 'manual',
     unsupported: 'manual',
@@ -184,7 +189,7 @@ function normalizeRuntimeAssessment(assessment, env = null) {
     detail,
     dockerFlavor: typeof env?.dockerFlavor === 'string' ? env.dockerFlavor : null,
     dockerHost: typeof env?.dockerHost?.raw === 'string' ? env.dockerHost.raw : null,
-    canProvision: state === 'not_provisioned' || state === 'engine_stopped',
+    canProvision: state === 'not_provisioned' || state === 'needs_group_membership' || state === 'engine_stopped',
     action: actionByState[state] || ''
   };
 
@@ -1126,7 +1131,7 @@ async function provisionRuntime() {
           signal: controller.signal,
           onProgress: (message, progress = null) => updateOperationProgress({ message, progress })
         });
-      } else if (assessment?.state === 'not_provisioned') {
+      } else if (assessment?.state === 'not_provisioned' || assessment?.state === 'needs_group_membership') {
         await provisioner.provision({
           signal: controller.signal,
           onProgress: (message, progress = null) => updateOperationProgress({ message, progress })
@@ -1469,7 +1474,7 @@ async function startActiveInstance() {
 
       updateOperationProgress({ message: 'Starting (waiting for UI)', progress: null });
       const waitRes = await waitForUiReachable(docker, active.containerId, {
-        timeoutMs: 60_000,
+        timeoutMs: UI_READY_TIMEOUT_MS,
         intervalMs: 450,
         attemptTimeoutMs: 350,
         onTick: (seconds) => {
@@ -1649,7 +1654,7 @@ async function updateToLatest(dataLossAck) {
       updateOperationProgress({ message: 'Starting new version (waiting for UI)', progress: null });
       if (createdNew && createdNew.containerId) {
         const waitRes = await waitForUiReachable(docker, createdNew.containerId, {
-          timeoutMs: 60_000,
+          timeoutMs: UI_READY_TIMEOUT_MS,
           intervalMs: 450,
           attemptTimeoutMs: 350,
           onTick: (seconds) => {
@@ -1770,7 +1775,7 @@ async function activateRetainedInstance(containerId, dataLossAck) {
 
       updateOperationProgress({ message: 'Starting selected version (waiting for UI)', progress: null });
       const waitRes = await waitForUiReachable(docker, id, {
-        timeoutMs: 60_000,
+        timeoutMs: UI_READY_TIMEOUT_MS,
         intervalMs: 450,
         attemptTimeoutMs: 350,
         onTick: (seconds) => {
@@ -1878,7 +1883,7 @@ async function activateTag(tag, dataLossAck, options = {}) {
       updateOperationProgress({ message: 'Starting selected version (waiting for UI)', progress: null });
       if (createdNew && createdNew.containerId) {
         const waitRes = await waitForUiReachable(docker, createdNew.containerId, {
-          timeoutMs: 60_000,
+          timeoutMs: UI_READY_TIMEOUT_MS,
           intervalMs: 450,
           attemptTimeoutMs: 350,
           onTick: (seconds) => {

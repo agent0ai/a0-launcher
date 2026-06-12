@@ -13,7 +13,7 @@ import path from 'node:path';
 
 /**
  * @typedef {Object} AssessResult
- * @property {"ready"|"engine_stopped"|"needs_relogin"|"not_provisioned"|"manual_install"|"unsupported"} state
+ * @property {"ready"|"engine_stopped"|"needs_relogin"|"needs_group_membership"|"not_provisioned"|"manual_install"|"unsupported"} state
  * @property {string} detail
  * @property {string=} packageManager
  * @property {string[]=} manualPackages

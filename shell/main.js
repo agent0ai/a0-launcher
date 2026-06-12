@@ -1298,7 +1298,7 @@ function sanitizeDockerManagerState(state) {
 
   if (isPlainObject(state?.runtime)) {
     const r = state.runtime;
-    const allowedRuntimeStates = new Set(['ready', 'engine_stopped', 'needs_relogin', 'not_provisioned', 'manual_install', 'unsupported']);
+    const allowedRuntimeStates = new Set(['ready', 'engine_stopped', 'needs_relogin', 'needs_group_membership', 'not_provisioned', 'manual_install', 'unsupported']);
     const allowedRuntimeActions = new Set(['', 'install', 'start', 'manual', 'refresh']);
     const runtimeState = typeof r.state === 'string' && allowedRuntimeStates.has(r.state) ? r.state : 'unsupported';
     const runtime = {
