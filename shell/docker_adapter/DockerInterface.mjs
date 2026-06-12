@@ -7,6 +7,8 @@
  * - Concrete implementations live in `./impl/*` and are loaded on demand (DI-002).
  */
 
+import os from 'node:os';
+
 /**
  * @typedef {Object} DockerHostInfo
  * @property {string} raw
@@ -24,7 +26,7 @@
  * @property {string} arch
  * @property {DockerHostInfo} dockerHost
  * @property {boolean} dockerAvailable
- * @property {"docker_desktop"|"docker_engine"|"unknown"} dockerFlavor
+ * @property {"docker_desktop"|"docker_engine"|"colima"|"wsl_engine"|"unknown"} dockerFlavor
  * @property {string|null} daemonVersion
  * @property {string|null} diagnosticCode
  * @property {string|null} diagnosticMessage
@@ -60,6 +62,8 @@
 /**
  * @typedef {Object} DockerInterfaceOptions
  * @property {string=} imageRepo
+ * @property {string=} dockerHost
+ * @property {boolean=} forceRefresh
  */
 
 /**
@@ -85,60 +89,59 @@ export class DockerInterface {
         ? Math.max(250, Math.floor(options.timeoutMs))
         : 1500;
 
-    const dockerHostRaw = (options.dockerHost || process.env.DOCKER_HOST || '').trim();
-    const dockerHost = this.#parseDockerHost(dockerHostRaw);
-
-    /** @type {DockerEnvironmentInfo} */
-    const info = {
-      platform: process.platform,
-      arch: process.arch,
-      dockerHost,
-      dockerAvailable: false,
-      dockerFlavor: this.#detectDockerFlavor(),
-      daemonVersion: null,
-      diagnosticCode: null,
-      diagnosticMessage: null,
-      diagnosticDetails: null
-    };
-
-    if (dockerHost.kind === 'invalid') {
-      info.diagnosticCode = 'INVALID_DOCKER_HOST';
-      info.diagnosticMessage = dockerHost.error || 'Invalid DOCKER_HOST';
-      return info;
-    }
+    const explicitDockerHostRaw = (options.dockerHost || process.env.DOCKER_HOST || '').trim();
+    const candidates = explicitDockerHostRaw ? [explicitDockerHostRaw] : this.#candidateDockerHosts();
 
     let Dockerode;
     try {
       const imported = await import('dockerode');
       Dockerode = imported?.default || imported;
     } catch (error) {
+      const info = this.#baseEnvironmentInfo(this.#parseDockerHost(explicitDockerHostRaw));
       info.diagnosticCode = 'DOCKERODE_MISSING';
       info.diagnosticMessage = 'dockerode dependency is not available';
       info.diagnosticDetails = { message: error?.message || String(error) };
       return info;
     }
 
-    const docker = new Dockerode(this.#dockerodeOptionsFromHost(dockerHost, timeoutMs));
+    let bestFailure = null;
 
-    try {
-      await this.#withTimeout(Promise.resolve(docker.ping()), timeoutMs);
-      info.dockerAvailable = true;
+    for (const candidate of candidates) {
+      const dockerHost = this.#parseDockerHost(candidate);
+      const info = this.#baseEnvironmentInfo(dockerHost);
 
-      try {
-        const v = await this.#withTimeout(Promise.resolve(docker.version()), timeoutMs);
-        info.daemonVersion = typeof v?.Version === 'string' ? v.Version : null;
-      } catch {
-        // best-effort only
+      if (dockerHost.kind === 'invalid') {
+        info.diagnosticCode = 'INVALID_DOCKER_HOST';
+        info.diagnosticMessage = dockerHost.error || 'Invalid DOCKER_HOST';
+        if (explicitDockerHostRaw) return info;
+        bestFailure = this.#preferDiagnostic(bestFailure, info);
+        continue;
       }
 
-      return info;
-    } catch (error) {
-      const normalized = this.#normalizeDockerodeError(error);
-      info.diagnosticCode = normalized.code;
-      info.diagnosticMessage = normalized.message;
-      info.diagnosticDetails = normalized.details;
-      return info;
+      const docker = new Dockerode(this.#dockerodeOptionsFromHost(dockerHost, timeoutMs));
+
+      try {
+        await this.#withTimeout(Promise.resolve(docker.ping()), timeoutMs);
+        info.dockerAvailable = true;
+
+        try {
+          const v = await this.#withTimeout(Promise.resolve(docker.version()), timeoutMs);
+          info.daemonVersion = typeof v?.Version === 'string' ? v.Version : null;
+        } catch {
+          // best-effort only
+        }
+
+        return info;
+      } catch (error) {
+        const normalized = this.#normalizeDockerodeError(error);
+        info.diagnosticCode = normalized.code;
+        info.diagnosticMessage = normalized.message;
+        info.diagnosticDetails = normalized.details;
+        bestFailure = this.#preferDiagnostic(bestFailure, info);
+      }
     }
+
+    return bestFailure || this.#baseEnvironmentInfo(this.#parseDockerHost(explicitDockerHostRaw));
   }
 
   /**
@@ -147,11 +150,12 @@ export class DockerInterface {
    * @returns {Promise<DockerInterface>}
    */
   static async get(options = {}) {
+    if (options?.forceRefresh) this.reset();
     if (this.#instance) return this.#instance;
     if (this.#instancePromise) return this.#instancePromise;
 
     this.#instancePromise = (async () => {
-      const env = await this.detectEnvironment();
+      const env = await this.detectEnvironment({ dockerHost: options?.dockerHost });
       const { DockerodeDocker } = await import('./impl/DockerodeDocker.mjs');
       const instance = new DockerodeDocker({
         env,
@@ -170,6 +174,11 @@ export class DockerInterface {
     return this.#instancePromise;
   }
 
+  static reset() {
+    this.#instance = null;
+    this.#instancePromise = null;
+  }
+
   /**
    * @param {DockerInterfaceOptions=} options
    */
@@ -181,7 +190,8 @@ export class DockerInterface {
    * @returns {Promise<DockerEnvironmentInfo>}
    */
   async getEnvironment() {
-    return DockerInterface.detectEnvironment();
+    const dockerHost = typeof this.env?.dockerHost?.raw === 'string' ? this.env.dockerHost.raw : '';
+    return DockerInterface.detectEnvironment(this.env?.dockerAvailable && dockerHost ? { dockerHost } : {});
   }
 
   /**
@@ -401,10 +411,94 @@ export class DockerInterface {
     throw new Error('DockerInterface.deleteContainer is abstract');
   }
 
-  static #detectDockerFlavor() {
+  static #baseEnvironmentInfo(dockerHost) {
+    return {
+      platform: process.platform,
+      arch: process.arch,
+      dockerHost,
+      dockerAvailable: false,
+      dockerFlavor: this.#detectDockerFlavor(dockerHost),
+      daemonVersion: null,
+      diagnosticCode: null,
+      diagnosticMessage: null,
+      diagnosticDetails: null
+    };
+  }
+
+  static #candidateDockerHosts() {
+    const home = os.homedir();
+    const unique = (items) => {
+      const seen = new Set();
+      return items.filter((item) => {
+        const value = String(item || '').trim();
+        if (!value || seen.has(value)) return false;
+        seen.add(value);
+        return true;
+      });
+    };
+
+    if (process.platform === 'darwin') {
+      return unique([
+        `unix://${home}/.colima/a0/docker.sock`,
+        `unix://${home}/.colima/default/docker.sock`,
+        `unix://${home}/.docker/run/docker.sock`,
+        'unix:///var/run/docker.sock'
+      ]);
+    }
+
+    if (process.platform === 'win32') {
+      return unique([
+        'npipe:////./pipe/docker_engine',
+        'tcp://127.0.0.1:23750'
+      ]);
+    }
+
+    if (process.platform === 'linux') {
+      const uid = typeof process.getuid === 'function' ? process.getuid() : '';
+      const runtimeDir = process.env.XDG_RUNTIME_DIR || (uid !== '' ? `/run/user/${uid}` : '');
+      return unique([
+        'unix:///var/run/docker.sock',
+        `unix://${home}/.docker/desktop/docker.sock`,
+        runtimeDir ? `unix://${runtimeDir}/docker.sock` : ''
+      ]);
+    }
+
+    return [''];
+  }
+
+  static #detectDockerFlavor(hostInfo = null) {
+    const raw = `${hostInfo?.raw || ''} ${hostInfo?.socketPath || ''}`.toLowerCase();
+    if (raw.includes('/.colima/')) return 'colima';
+    if (raw.includes('/.docker/desktop/') || raw.includes('/.docker/run/docker.sock')) return 'docker_desktop';
+    if (hostInfo?.kind === 'tcp' && hostInfo.host === '127.0.0.1' && Number(hostInfo.port) === 23750) return 'wsl_engine';
     if (process.platform === 'darwin' || process.platform === 'win32') return 'docker_desktop';
     if (process.platform === 'linux') return 'docker_engine';
     return 'unknown';
+  }
+
+  static #preferDiagnostic(current, candidate) {
+    if (!current) return candidate;
+    if (!candidate) return current;
+    return this.#diagnosticRank(candidate) > this.#diagnosticRank(current) ? candidate : current;
+  }
+
+  static #diagnosticRank(info) {
+    switch (info?.diagnosticCode) {
+      case 'INVALID_DOCKER_HOST':
+        return 60;
+      case 'PERMISSION_DENIED':
+        return 50;
+      case 'DAEMON_UNAVAILABLE':
+        return 40;
+      case 'UNAUTHORIZED':
+        return 35;
+      case 'DOCKER_ERROR':
+        return 25;
+      case 'DOCKER_NOT_FOUND':
+        return 15;
+      default:
+        return 0;
+    }
   }
 
   /**

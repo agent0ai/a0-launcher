@@ -57,6 +57,9 @@ This scope owns:
 - `electronAPI` owns shell metadata: status/error listeners, app/content version,
   and icon data URL.
 - `dockerManagerAPI` owns all Docker Manager calls.
+- Runtime setup IPC is a named Docker Manager intent. The renderer may request
+  setup/start, but assessment and privileged mechanics stay in
+  `shell/docker_manager` and `shell/docker_adapter`.
 - Long-running Docker operations should return an accepted operation id and
   report progress through Docker Manager events instead of blocking the renderer.
 - Error responses should use `dockerManager.toErrorResponse()` so renderer code

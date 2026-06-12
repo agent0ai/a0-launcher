@@ -14,8 +14,8 @@ for the renderer.
 This scope owns:
 
 - `index.js`: Docker Manager service, state assembly, install/sync/start/stop,
-  activation, rollback, retained-instance, remote-instance, port, storage, and
-  progress operations.
+  activation, rollback, retained-instance, remote-instance, port, storage,
+  runtime setup, and progress operations.
 - `state_store.js`: persisted launcher state under Electron `userData`.
 - `releases_client.js`: GitHub release discovery for Agent Zero backend
   versions.
@@ -48,6 +48,13 @@ This scope owns:
 - Storage-volume operations must remain separate from retained-instance
   activation/removal.
 - Long-running operations return an operation id and emit progress.
+- Runtime setup is additive and reuse-first: existing Docker Desktop, native
+  Engine, and rootless endpoints are used before Linux Engine provisioning is
+  offered.
+- Linux runtime setup may install/start Docker Engine, then report
+  `needs_relogin` when docker group access cannot apply to the current desktop
+  session yet. Do not introduce CPU, memory, or disk sizing controls for native
+  Linux Engine.
 - Progress messages should be user-oriented: `Starting selected version`, not
   raw Docker implementation chatter.
 - Cancellation should be best-effort and explicit about whether the active Docker

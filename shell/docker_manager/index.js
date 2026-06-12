@@ -2,9 +2,10 @@ const semver = require('semver');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs/promises');
 const http = require('node:http');
+const path = require('node:path');
 const { app } = require('electron');
 
-const { getDocker } = require('../docker_adapter/getDocker');
+const { getDocker, resetDocker } = require('../docker_adapter/getDocker');
 const releasesClient = require('./releases_client');
 const stateStore = require('./state_store');
 const retention = require('./retention');
@@ -143,6 +144,102 @@ function buildDigestHint(publishedDigest, localDigest) {
   const loc = shortDigest(localDigest);
   if (!pub || !loc) return null;
   return `Published: ${pub} / Local: ${loc}`;
+}
+
+function emptyDerivedState(runtime = null) {
+  return {
+    versions: [],
+    retainedInstances: [],
+    remoteInstances: [],
+    retentionPolicy: { keepCount: 1 },
+    portPreferences: { ui: 8880, ssh: 55022 },
+    uiUrl: null,
+    lastSyncedAt: null,
+    offline: false,
+    storage: {
+      dockerRootDir: null,
+      freeBytes: null,
+      usedBytes: null,
+      estimateAfterUpdateBytes: null
+    },
+    runtime
+  };
+}
+
+function normalizeRuntimeAssessment(assessment, env = null) {
+  const state = typeof assessment?.state === 'string' ? assessment.state : 'unsupported';
+  const detail = typeof assessment?.detail === 'string' ? assessment.detail : 'Automatic runtime setup is not available.';
+  const actionByState = {
+    not_provisioned: 'install',
+    engine_stopped: 'start',
+    manual_install: 'manual',
+    unsupported: 'manual',
+    needs_relogin: 'refresh',
+    ready: ''
+  };
+
+  const runtime = {
+    platform: process.platform,
+    state,
+    detail,
+    dockerFlavor: typeof env?.dockerFlavor === 'string' ? env.dockerFlavor : null,
+    dockerHost: typeof env?.dockerHost?.raw === 'string' ? env.dockerHost.raw : null,
+    canProvision: state === 'not_provisioned' || state === 'engine_stopped',
+    action: actionByState[state] || ''
+  };
+
+  if (typeof assessment?.packageManager === 'string') runtime.packageManager = assessment.packageManager;
+  if (Array.isArray(assessment?.manualPackages)) {
+    runtime.manualPackages = assessment.manualPackages.filter((item) => typeof item === 'string');
+  }
+  if (typeof assessment?.manualCommand === 'string') runtime.manualCommand = assessment.manualCommand;
+
+  return runtime;
+}
+
+async function getRuntimeProvisioner() {
+  const { RuntimeProvisioner } = await import('../docker_adapter/RuntimeProvisioner.mjs');
+  return await RuntimeProvisioner.forPlatform({
+    managedDir: path.join(app.getPath('userData'), 'runtime')
+  });
+}
+
+async function assessRuntime(env = null) {
+  if (env?.dockerAvailable) {
+    return normalizeRuntimeAssessment({ state: 'ready', detail: 'Runtime is ready.' }, env);
+  }
+
+  const provisioner = await getRuntimeProvisioner();
+  if (!provisioner) {
+    return normalizeRuntimeAssessment({
+      state: 'unsupported',
+      detail: 'Automatic runtime setup is not available on this system. Install Docker Desktop or Docker Engine, then refresh.'
+    }, env);
+  }
+
+  try {
+    const assessment = await provisioner.assess();
+    return normalizeRuntimeAssessment(assessment, env);
+  } catch (error) {
+    return normalizeRuntimeAssessment({
+      state: 'unsupported',
+      detail: error?.message || 'Automatic runtime setup is not available on this system.'
+    }, env);
+  }
+}
+
+async function buildUnavailableState(runtime) {
+  const [retentionPolicy, portPreferences, remoteInstances] = await Promise.all([
+    stateStore.readRetentionPolicy().catch(() => ({ keepCount: 1 })),
+    stateStore.readPortPreferences().catch(() => ({ ui: 8880, ssh: 55022 })),
+    stateStore.readRemoteInstances().catch(() => [])
+  ]);
+  return {
+    ...emptyDerivedState(runtime),
+    retentionPolicy,
+    portPreferences,
+    remoteInstances
+  };
 }
 
 function bestEffortUiUrlFromInspect(inspect) {
@@ -448,11 +545,9 @@ async function buildDerivedState(options = {}) {
   const docker = await getDocker({ imageRepo });
 
   const env = await docker.getEnvironment();
+  const runtime = await assessRuntime(env);
   if (!env?.dockerAvailable) {
-    const err = new Error(env?.diagnosticMessage || 'Required runtime is not available');
-    err.code = env?.diagnosticCode || 'RUNTIME_UNAVAILABLE';
-    err.details = { env };
-    throw err;
+    return await buildUnavailableState(runtime);
   }
 
   const [retentionPolicy, portPreferences, remoteInstances, installabilityCache, releasesResult, localImages, containers, freeBytes, remoteTags] =
@@ -807,7 +902,8 @@ async function buildDerivedState(options = {}) {
     uiUrl,
     lastSyncedAt,
     offline,
-    storage
+    storage,
+    runtime
   };
 }
 
@@ -997,6 +1093,79 @@ async function setPortPreferences(portPreferences) {
   const prefs = await stateStore.writePortPreferences(portPreferences);
   await refreshDockerManager({ forceRefresh: false });
   return prefs;
+}
+
+async function provisionRuntime() {
+  requireNoRunningOperation();
+  const opId = beginOperation('runtime_setup', null);
+
+  (async () => {
+    const controller = new AbortController();
+    _abortControllers.set(opId, controller);
+
+    try {
+      const provisioner = await getRuntimeProvisioner();
+      if (!provisioner) {
+        const err = new Error('Automatic runtime setup is not available on this system.');
+        err.code = 'RUNTIME_UNSUPPORTED';
+        throw err;
+      }
+
+      updateOperationProgress({ message: 'Checking runtime', progress: null });
+      const assessment = await provisioner.assess();
+
+      if (assessment?.state === 'ready') {
+        updateOperationProgress({ message: 'Runtime ready', progress: 100 });
+        finishOperation('completed', null);
+        resetDocker();
+        return;
+      }
+
+      if (assessment?.state === 'engine_stopped') {
+        await provisioner.start({
+          signal: controller.signal,
+          onProgress: (message, progress = null) => updateOperationProgress({ message, progress })
+        });
+      } else if (assessment?.state === 'not_provisioned') {
+        await provisioner.provision({
+          signal: controller.signal,
+          onProgress: (message, progress = null) => updateOperationProgress({ message, progress })
+        });
+      } else if (assessment?.state === 'needs_relogin') {
+        const err = new Error(assessment.detail || 'Log out and back in once, then return here.');
+        err.code = 'RUNTIME_NEEDS_RELOGIN';
+        throw err;
+      } else if (assessment?.state === 'manual_install') {
+        const err = new Error(assessment.detail || 'Manual Docker installation is required.');
+        err.code = 'RUNTIME_MANUAL_INSTALL';
+        err.details = {
+          packageManager: assessment.packageManager,
+          packages: assessment.manualPackages,
+          manualCommand: assessment.manualCommand
+        };
+        throw err;
+      } else {
+        const err = new Error(assessment?.detail || 'Automatic runtime setup is not available on this system.');
+        err.code = 'RUNTIME_UNSUPPORTED';
+        throw err;
+      }
+
+      resetDocker();
+      updateOperationProgress({ message: 'Runtime ready', progress: 100 });
+      finishOperation('completed', null);
+    } catch (error) {
+      const message = mapDockerInterfaceErrorToUiMessage(error) || error?.message || 'Runtime setup failed';
+      finishOperation('failed', message);
+    } finally {
+      _abortControllers.delete(opId);
+      resetDocker();
+      await refreshDockerManager({ forceRefresh: false }).catch(() => {});
+    }
+  })().catch((error) => {
+    logDockerManagerError('provisionRuntime.unhandled', error, { opId });
+  });
+
+  return { opId };
 }
 
 async function addRemoteInstance(remoteInstance) {
@@ -1801,6 +1970,7 @@ async function getDockerInventory() {
   const remoteInstances = await stateStore.readRemoteInstances();
   const docker = await getDocker({ imageRepo });
   const env = await docker.getEnvironment();
+  const runtime = await assessRuntime(env);
 
   // Even when the ping-based env detection reports unavailable, attempt listing
   // so that Docker setups where ping fails but operations work are not blocked.
@@ -1828,6 +1998,7 @@ async function getDockerInventory() {
   return {
     dockerAvailable,
     environment: env || null,
+    runtime,
     images,
     containers,
     volumes,
@@ -1896,6 +2067,7 @@ module.exports = {
   stopActiveInstance,
   setRetentionPolicy,
   setPortPreferences,
+  provisionRuntime,
   addRemoteInstance,
   deleteRemoteInstance,
   getRemoteInstance,

@@ -16,7 +16,7 @@ This scope owns:
 - `docker-manager-store.js`: mutable renderer store and default state shape.
 - `status-header/`: title, release metadata, refresh, API Dashboard, and
   operation progress.
-- `onboarding/`: Docker availability guidance and setup actions.
+- `onboarding/`: Docker/runtime availability guidance and setup actions.
 - `sidebar/`: tab navigation and `dm:nav` event publication.
 - `official-versions/`: install/version cards, activation dialog, port/env
   overrides, data-loss acknowledgement, and update/switch actions.
@@ -37,6 +37,10 @@ This scope owns:
   exists, then subscribe to future updates.
 - Components should not call `window.dockerManagerAPI` directly. Use
   `window.dockerManagerActions`.
+- Onboarding renders runtime setup from `state.runtime`. It should distinguish
+  installable Linux Engine setup, stopped daemons, relogin-required states, and
+  manual install fallback without exposing package-manager details as the main
+  path.
 - Sidebar navigation publishes `dm:nav`; tab content activation remains owned by
   the renderer coordinator, not individual tab content components.
 - Empty, loading, error, success, and disabled states must be explicit enough

@@ -16,9 +16,12 @@ This scope owns:
   Dockerode option normalization, singleton construction, and shared typedefs.
 - `getDocker.js`: CommonJS bridge that dynamically imports the ESM interface for
   `shell/docker_manager`.
+- `RuntimeProvisioner.mjs`: platform provisioner base and shared process helpers.
 - `impl/DockerodeDocker.mjs`: Dockerode-backed concrete implementation.
 - `impl/DockerHubRegistry.mjs`: Docker Hub registry and manifest/digest access.
 - `impl/DockerodeLogProcessor.mjs`: Docker pull/log stream processing.
+- `impl/LinuxEngineRuntime.mjs`: Linux native Docker Engine assessment, daemon
+  start, and package-manager bootstrap mechanics.
 - `LOG_PROCESSOR.md`: explanatory implementation notes for log processing.
 
 ## Local Contracts
@@ -27,8 +30,16 @@ This scope owns:
   `getDocker.js`.
 - Environment detection should be best-effort and return structured diagnostics
   rather than throwing for ordinary "Docker unavailable" cases.
+- Environment detection should probe likely platform endpoints when
+  `DOCKER_HOST` is unset, including Linux native Engine, Docker Desktop for
+  Linux, and rootless sockets.
 - `DOCKER_HOST` parsing must preserve enough detail to diagnose Unix socket,
   named pipe, TCP, HTTP, HTTPS, and invalid host configurations.
+- Runtime provisioners are consulted only after the Docker Manager has tried to
+  reuse an existing Docker endpoint. They should classify repairable states
+  before proposing installation.
+- Linux automatic provisioning uses the host package manager and starts native
+  Docker Engine; it must not manage container CPU, memory, or disk sizing.
 - Concrete implementations live under `impl/` and are loaded on demand.
 - Docker Hub calls should expose digest/content-type/rate-limit metadata without
   forcing renderer or Docker Manager code to parse registry responses directly.

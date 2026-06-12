@@ -3,5 +3,9 @@ async function getDocker(options = {}) {
   return DockerInterface.get(options);
 }
 
-module.exports = { getDocker };
+async function resetDocker() {
+  const { DockerInterface } = await import('./DockerInterface.mjs');
+  DockerInterface.reset();
+}
 
+module.exports = { getDocker, resetDocker };

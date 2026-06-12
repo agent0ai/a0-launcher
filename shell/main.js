@@ -1296,6 +1296,28 @@ function sanitizeDockerManagerState(state) {
     outState.storage = storage;
   }
 
+  if (isPlainObject(state?.runtime)) {
+    const r = state.runtime;
+    const allowedRuntimeStates = new Set(['ready', 'engine_stopped', 'needs_relogin', 'not_provisioned', 'manual_install', 'unsupported']);
+    const allowedRuntimeActions = new Set(['', 'install', 'start', 'manual', 'refresh']);
+    const runtimeState = typeof r.state === 'string' && allowedRuntimeStates.has(r.state) ? r.state : 'unsupported';
+    const runtime = {
+      platform: typeof r.platform === 'string' ? r.platform : process.platform,
+      state: runtimeState,
+      detail: typeof r.detail === 'string' ? r.detail : '',
+      canProvision: !!r.canProvision,
+      action: typeof r.action === 'string' && allowedRuntimeActions.has(r.action) ? r.action : ''
+    };
+    if (typeof r.dockerFlavor === 'string' || r.dockerFlavor === null) runtime.dockerFlavor = r.dockerFlavor;
+    if (typeof r.dockerHost === 'string' || r.dockerHost === null) runtime.dockerHost = r.dockerHost;
+    if (typeof r.packageManager === 'string') runtime.packageManager = r.packageManager;
+    if (Array.isArray(r.manualPackages) && r.manualPackages.every((item) => typeof item === 'string')) {
+      runtime.manualPackages = r.manualPackages;
+    }
+    if (typeof r.manualCommand === 'string') runtime.manualCommand = r.manualCommand;
+    outState.runtime = runtime;
+  }
+
   return outState;
 }
 
@@ -1416,6 +1438,18 @@ ipcMain.handle('docker-manager:setPortPreferences', async (_event, body) => {
     const ssh = body.ssh;
     const prefs = await dockerManager.setPortPreferences({ ui, ssh });
     return { ui: prefs.ui, ssh: prefs.ssh };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:provisionRuntime', async () => {
+  try {
+    const accepted = await dockerManager.provisionRuntime();
+    if (!accepted || typeof accepted.opId !== 'string') {
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Runtime setup did not return an opId' });
+    }
+    return { opId: accepted.opId };
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

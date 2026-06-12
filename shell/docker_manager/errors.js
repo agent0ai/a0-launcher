@@ -17,6 +17,20 @@ function mapDockerInterfaceErrorToUiMessage(error) {
       return 'The required runtime is not available. Please install it and try again.';
     case 'INVALID_DOCKER_HOST':
       return 'The runtime configuration is invalid. Please check your environment settings and try again.';
+    case 'RUNTIME_NOT_PROVISIONED':
+      return 'The Agent Zero runtime is not set up yet.';
+    case 'RUNTIME_PROVISION_FAILED':
+      return 'The runtime could not be set up. Please try again.';
+    case 'RUNTIME_START_FAILED':
+      return 'The runtime could not be started. Please try again.';
+    case 'RUNTIME_NEEDS_RELOGIN':
+      return 'Docker is installed. Log out and back in once, then return here.';
+    case 'RUNTIME_MANUAL_INSTALL':
+      return 'A few Docker packages need to be installed first.';
+    case 'RUNTIME_AUTH_DECLINED':
+      return 'Authentication was cancelled. Nothing was changed.';
+    case 'RUNTIME_UNSUPPORTED':
+      return 'Automatic runtime setup is not available on this system.';
 
     case 'REGISTRY_RATE_LIMIT':
       return 'Update checks are temporarily unavailable. Please try again later.';

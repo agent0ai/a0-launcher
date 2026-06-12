@@ -99,6 +99,7 @@ function snapshot() {
     volumes: Array.isArray(store.volumes) ? store.volumes : [],
     retainedInstances: Array.isArray(store.retainedInstances) ? store.retainedInstances : [],
     storage: store.storage || null,
+    runtime: store.runtime || null,
     progress: store.progress || null,
     portPreferences: store.portPreferences || null,
     retentionPolicy: store.retentionPolicy || null,
@@ -231,6 +232,7 @@ async function refresh() {
       store.retainedInstances = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
       store.remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
       store.storage = state?.storage || null;
+      store.runtime = state?.runtime || null;
       store.portPreferences = state?.portPreferences || null;
       store.retentionPolicy = state?.retentionPolicy || null;
       if (!store.error) setBanner("", "");
@@ -238,6 +240,7 @@ async function refresh() {
 
     store.dockerAvailable = !!inventory?.dockerAvailable;
     store.environment = inventory?.environment || null;
+    store.runtime = state?.runtime || inventory?.runtime || null;
     store.images = Array.isArray(inventory?.images) ? inventory.images : [];
     store.containers = Array.isArray(inventory?.containers) ? inventory.containers : [];
     if (Array.isArray(inventory?.remoteInstances)) store.remoteInstances = inventory.remoteInstances;
@@ -364,6 +367,19 @@ async function openDockerDownload() {
     }
   }
   window.open("https://www.docker.com/products/docker-desktop/", "_blank");
+}
+
+async function provisionRuntime() {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.provisionRuntime !== "function") {
+    return openDockerDownload();
+  }
+
+  return runDockerOperation(
+    "Runtime setup",
+    () => api.provisionRuntime(),
+    "Runtime setup requested."
+  );
 }
 
 let postOperationRefreshTimer = 0;
@@ -511,6 +527,7 @@ window.dockerManagerActions = {
   removeVolume,
   pruneVolumes,
   openDockerDownload,
+  provisionRuntime,
   startActive,
   stopActive,
   activateTag,
@@ -653,6 +670,7 @@ function initSubscriptions() {
         store.retainedInstances = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
         store.remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
         store.storage = state?.storage || null;
+        store.runtime = state?.runtime || null;
         store.portPreferences = state?.portPreferences || null;
         store.retentionPolicy = state?.retentionPolicy || null;
         emitState();
