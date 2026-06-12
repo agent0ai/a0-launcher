@@ -1315,6 +1315,7 @@ function sanitizeDockerManagerState(state) {
       runtime.manualPackages = r.manualPackages;
     }
     if (typeof r.manualCommand === 'string') runtime.manualCommand = r.manualCommand;
+    if (typeof r.manualUrl === 'string' && /^https?:\/\//i.test(r.manualUrl)) runtime.manualUrl = r.manualUrl;
     outState.runtime = runtime;
   }
 
