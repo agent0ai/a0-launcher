@@ -19,6 +19,7 @@ This scope owns:
 - `state_store.js`: persisted launcher state under Electron `userData`.
 - `releases_client.js`: GitHub release discovery for Agent Zero backend
   versions.
+- `release_tags.js`: shared validation and ordering for Agent Zero release tags.
 - `retention.js`: retained instance pruning policy.
 - `errors.js`: stable UI-facing error response and Docker diagnostic mapping.
 
@@ -29,8 +30,9 @@ This scope owns:
   `A0_BACKEND_IMAGE_REPO`.
 - Backend GitHub repo defaults to `agent0ai/agent-zero` and may be overridden by
   `A0_BACKEND_GITHUB_REPO`.
-- Installable tags must be safe tags and limited to semver release tags,
-  `testing`, or canonical local tags (`local`, `development`, `main`).
+- Installable tags must be safe tags and limited to semver-like release tags
+  (`vX.Y` or `vX.Y.Z`), `testing`, or canonical local tags (`local`,
+  `development`, `main`).
 - Activation can target installed local builds, but still must reject unsafe tag
   strings.
 - UI URLs should be derived from inspected port bindings and verified where

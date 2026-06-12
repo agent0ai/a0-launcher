@@ -1,4 +1,3 @@
-const semver = require('semver');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs/promises');
 const http = require('node:http');
@@ -10,6 +9,7 @@ const releasesClient = require('./releases_client');
 const stateStore = require('./state_store');
 const retention = require('./retention');
 const { toErrorResponse, mapDockerInterfaceErrorToUiMessage } = require('./errors');
+const { isSemverReleaseTag } = require('./release_tags');
 
 const DEFAULT_IMAGE_REPO = 'agent0ai/agent-zero';
 const DEFAULT_GITHUB_REPO = 'agent0ai/agent-zero';
@@ -65,13 +65,6 @@ function isSafeTag(tag) {
   // Avoid separators that could form repo refs or paths.
   if (t.includes(':') || t.includes('/') || /\s/.test(t)) return false;
   return /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(t);
-}
-
-function isSemverReleaseTag(tag) {
-  const t = (tag || '').trim();
-  if (!t.startsWith('v')) return false;
-  const cleaned = semver.valid(t.slice(1));
-  return !!cleaned;
 }
 
 function isTestingTag(tag) {

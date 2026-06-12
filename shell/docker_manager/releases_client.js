@@ -1,7 +1,10 @@
 const { net } = require('electron');
-const semver = require('semver');
 
 const stateStore = require('./state_store');
+const {
+  compareReleaseTagsDescending,
+  isSemverReleaseTag
+} = require('./release_tags');
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -12,12 +15,6 @@ function nowIso() {
 function isoToMs(value) {
   const ms = Date.parse(value || '');
   return Number.isFinite(ms) ? ms : NaN;
-}
-
-function isSemverTag(tag) {
-  const t = (tag || '').trim();
-  if (!t.startsWith('v')) return false;
-  return !!semver.valid(t.slice(1));
 }
 
 function extractNextLink(linkHeaderValue) {
@@ -88,7 +85,7 @@ function normalizeOfficialReleases(rawReleases) {
     if (r.prerelease) continue;
 
     const tag = typeof r.tag_name === 'string' ? r.tag_name.trim() : '';
-    if (!isSemverTag(tag)) continue;
+    if (!isSemverReleaseTag(tag)) continue;
 
     out.push({
       tag,
@@ -98,7 +95,16 @@ function normalizeOfficialReleases(rawReleases) {
     });
   }
 
-  out.sort((a, b) => semver.rcompare(a.tag.slice(1), b.tag.slice(1)));
+  out.sort((a, b) => {
+    const versionOrder = compareReleaseTagsDescending(a.tag, b.tag);
+    if (versionOrder !== 0) return versionOrder;
+
+    const ap = Date.parse(a.publishedAt || '');
+    const bp = Date.parse(b.publishedAt || '');
+    const ams = Number.isFinite(ap) ? ap : 0;
+    const bms = Number.isFinite(bp) ? bp : 0;
+    return bms - ams;
+  });
   return out;
 }
 
@@ -141,7 +147,6 @@ async function listOfficialReleases(options = {}) {
 }
 
 module.exports = {
+  normalizeOfficialReleases,
   listOfficialReleases
 };
-
-
