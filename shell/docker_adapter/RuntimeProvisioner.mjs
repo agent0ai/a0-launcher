@@ -18,6 +18,7 @@ import path from 'node:path';
  * @property {string=} packageManager
  * @property {string[]=} manualPackages
  * @property {string=} manualCommand
+ * @property {string=} manualUrl
  */
 
 export class RuntimeProvisioner {
@@ -39,6 +40,10 @@ export class RuntimeProvisioner {
     if (platform === 'darwin') {
       const { ColimaRuntime } = await import('./impl/ColimaRuntime.mjs');
       return new ColimaRuntime(options);
+    }
+    if (platform === 'win32') {
+      const { WindowsWslRuntime } = await import('./impl/WindowsWslRuntime.mjs');
+      return new WindowsWslRuntime(options);
     }
     if (platform !== 'linux') return null;
     const { LinuxEngineRuntime } = await import('./impl/LinuxEngineRuntime.mjs');

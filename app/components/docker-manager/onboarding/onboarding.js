@@ -9,6 +9,7 @@ function runtimeMessage(runtime, fallback) {
 }
 
 function actionForRuntime(runtime) {
+  const openGuide = () => window.dockerManagerActions?.openDockerDownload?.(runtime?.manualUrl || "");
   if (!runtime || typeof runtime !== "object") {
     return { label: "Download Docker", handler: () => window.dockerManagerActions?.openDockerDownload?.() };
   }
@@ -21,7 +22,7 @@ function actionForRuntime(runtime) {
   if (runtime.action === "refresh" || runtime.state === "needs_relogin") {
     return { label: "Refresh", handler: () => window.dockerManagerActions?.refresh?.() };
   }
-  return { label: "Open Install Guide", handler: () => window.dockerManagerActions?.openDockerDownload?.() };
+  return { label: "Open Install Guide", handler: openGuide };
 }
 
 function render(state) {

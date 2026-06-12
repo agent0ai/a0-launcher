@@ -191,6 +191,7 @@ function normalizeRuntimeAssessment(assessment, env = null) {
     runtime.manualPackages = assessment.manualPackages.filter((item) => typeof item === 'string');
   }
   if (typeof assessment?.manualCommand === 'string') runtime.manualCommand = assessment.manualCommand;
+  if (typeof assessment?.manualUrl === 'string') runtime.manualUrl = assessment.manualUrl;
 
   return runtime;
 }

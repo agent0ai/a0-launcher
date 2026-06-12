@@ -7,17 +7,91 @@ import { test } from 'node:test';
 import { RuntimeProvisioner } from './RuntimeProvisioner.mjs';
 import { ColimaRuntime, selectLatestDockerCliAsset } from './impl/ColimaRuntime.mjs';
 import { LinuxEngineRuntime } from './impl/LinuxEngineRuntime.mjs';
+import { WindowsWslRuntime } from './impl/WindowsWslRuntime.mjs';
 
 test('RuntimeProvisioner.forPlatform selects runtime implementations by platform', async () => {
   const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
   try {
     const macRuntime = await RuntimeProvisioner.forPlatform({ managedDir, platform: 'darwin' });
     const linuxRuntime = await RuntimeProvisioner.forPlatform({ managedDir, platform: 'linux' });
-    const unsupportedRuntime = await RuntimeProvisioner.forPlatform({ managedDir, platform: 'win32' });
+    const windowsRuntime = await RuntimeProvisioner.forPlatform({ managedDir, platform: 'win32' });
+    const unsupportedRuntime = await RuntimeProvisioner.forPlatform({ managedDir, platform: 'freebsd' });
 
     assert.ok(macRuntime instanceof ColimaRuntime);
     assert.ok(linuxRuntime instanceof LinuxEngineRuntime);
+    assert.ok(windowsRuntime instanceof WindowsWslRuntime);
     assert.equal(unsupportedRuntime, null);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime assess directs Windows clients to Docker Desktop', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: false,
+      runCommand: fakeWindowsCommandRunner()
+    });
+
+    const assessment = await runtime.assess();
+
+    assert.equal(assessment.state, 'manual_install');
+    assert.match(assessment.detail, /Docker Desktop/i);
+    assert.match(assessment.manualUrl, /docker\.com/);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime assess explains WSL setup on Windows Server without features', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: true,
+      runCommand: fakeWindowsCommandRunner({
+        binaries: ['wsl.exe'],
+        features: {
+          'Microsoft-Windows-Subsystem-Linux': 'Disabled',
+          VirtualMachinePlatform: 'Disabled'
+        }
+      })
+    });
+
+    const assessment = await runtime.assess();
+
+    assert.equal(assessment.state, 'manual_install');
+    assert.match(assessment.detail, /Docker Desktop is not supported on Windows Server/i);
+    assert.match(assessment.detail, /wsl\.exe --install --no-distribution/i);
+    assert.match(assessment.manualCommand, /wsl\.exe --install --no-distribution/i);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime assess calls out nested virtualization when WSL has no distro', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: true,
+      runCommand: fakeWindowsCommandRunner({
+        binaries: ['wsl.exe'],
+        features: {
+          'Microsoft-Windows-Subsystem-Linux': 'Enabled',
+          VirtualMachinePlatform: 'Enabled'
+        },
+        wslList: 'Windows Subsystem for Linux has no installed distributions.'
+      })
+    });
+
+    const assessment = await runtime.assess();
+
+    assert.equal(assessment.state, 'manual_install');
+    assert.match(assessment.detail, /nested virtualization/i);
+    assert.match(assessment.manualUrl, /learn\.microsoft\.com/);
   } finally {
     await rm(managedDir, { recursive: true, force: true });
   }
@@ -194,6 +268,35 @@ function fakeLinuxCommandRunner({ binaries = [], groups = [], passwordlessSudo =
     }
     if (cmd === 'id' && args?.[0] === '-nG') {
       return { code: 0, stdout: `${groups.join(' ')}\n`, stderr: '' };
+    }
+    return { code: 1, stdout: '', stderr: '' };
+  };
+}
+
+function fakeWindowsCommandRunner({ binaries = [], features = {}, productType = 3, wslList = '' } = {}) {
+  const present = new Set(binaries);
+  return async (cmd, args) => {
+    if (cmd === 'where.exe') {
+      const binary = args?.[0] || '';
+      return {
+        code: present.has(binary) ? 0 : 1,
+        stdout: present.has(binary) ? `C:\\Windows\\System32\\${binary}\r\n` : '',
+        stderr: ''
+      };
+    }
+    if (cmd === 'powershell.exe') {
+      const script = String(args?.[args.length - 1] || '');
+      if (/Win32_OperatingSystem\)\.ProductType/.test(script)) {
+        return { code: 0, stdout: `${productType}\r\n`, stderr: '' };
+      }
+      const featureMatch = script.match(/FeatureName '([^']+)'/);
+      if (featureMatch) {
+        const state = features[featureMatch[1]] || 'Unknown';
+        return { code: 0, stdout: `${state}\r\n`, stderr: '' };
+      }
+    }
+    if (cmd === 'wsl.exe' && args?.[0] === '-l') {
+      return { code: 0, stdout: wslList, stderr: '' };
     }
     return { code: 1, stdout: '', stderr: '' };
   };

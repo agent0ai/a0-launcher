@@ -350,9 +350,12 @@ async function pruneVolumes() {
   }
 }
 
-async function openDockerDownload() {
+async function openDockerDownload(url = "") {
+  const targetUrl = typeof url === "string" && /^https?:\/\//i.test(url)
+    ? url
+    : "https://www.docker.com/products/docker-desktop/";
   const api = window.dockerManagerAPI;
-  if (api && typeof api.installDocker === "function") {
+  if (!url && api && typeof api.installDocker === "function") {
     try {
       const res = await api.installDocker();
       if (isErrorResponse(res)) {
@@ -366,7 +369,7 @@ async function openDockerDownload() {
       return;
     }
   }
-  window.open("https://www.docker.com/products/docker-desktop/", "_blank");
+  window.open(targetUrl, "_blank");
 }
 
 async function provisionRuntime() {

@@ -27,6 +27,8 @@ This scope owns:
   start mechanics.
 - `impl/LinuxEngineRuntime.mjs`: Linux native Docker Engine assessment, daemon
   start, and package-manager bootstrap mechanics.
+- `impl/WindowsWslRuntime.mjs`: Windows Docker Desktop versus Windows Server
+  WSL2/nested-virtualization assessment.
 - `LOG_PROCESSOR.md`: explanatory implementation notes for log processing.
 
 ## Local Contracts
@@ -56,6 +58,9 @@ This scope owns:
 - Linux Engine permission repair should add the current user to the existing
   `docker` group when Docker is installed but the account is not a member yet,
   then report that a logout/login is required.
+- Windows assessment must not direct Windows Server users to Docker Desktop.
+  Docker Desktop is for client Windows; Windows Server needs an existing Docker
+  endpoint or a WSL2-backed Linux Docker Engine with nested virtualization.
 - Concrete implementations live under `impl/` and are loaded on demand.
 - Docker Hub calls should expose digest/content-type/rate-limit metadata without
   forcing renderer or Docker Manager code to parse registry responses directly.
