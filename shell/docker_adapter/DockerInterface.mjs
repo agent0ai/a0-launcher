@@ -470,6 +470,7 @@ export class DockerInterface {
     const raw = `${hostInfo?.raw || ''} ${hostInfo?.socketPath || ''}`.toLowerCase();
     if (raw.includes('/.colima/')) return 'colima';
     if (raw.includes('/.docker/desktop/') || raw.includes('/.docker/run/docker.sock')) return 'docker_desktop';
+    if (hostInfo?.kind === 'npipe') return 'docker_desktop';
     if (hostInfo?.kind === 'tcp' && hostInfo.host === '127.0.0.1' && Number(hostInfo.port) === 23750) return 'wsl_engine';
     if (process.platform === 'darwin' || process.platform === 'win32') return 'docker_desktop';
     if (process.platform === 'linux') return 'docker_engine';
@@ -539,6 +540,13 @@ export class DockerInterface {
       return { raw, kind: 'unix', socketPath: raw };
     }
 
+    const canonicalNpipe = raw.match(/^npipe:(?:\/\/\/\/\.|\/\/\.)\/(.*)$/i);
+    if (canonicalNpipe) {
+      const pipePath = decodeURIComponent(canonicalNpipe[1] || '').replace(/^\/+/, '');
+      if (!pipePath) return { raw, kind: 'invalid', error: 'Missing npipe path in DOCKER_HOST' };
+      return { raw, kind: 'npipe', socketPath: `//./${pipePath}` };
+    }
+
     // `unix://`, `npipe://`, `tcp://`, `http(s)://`
     try {
       const u = new URL(raw);
@@ -553,6 +561,9 @@ export class DockerInterface {
       if (protocol === 'npipe:') {
         // Example: npipe:////./pipe/docker_engine
         let p = decodeURIComponent(u.pathname || '');
+        if (u.hostname) {
+          p = `//${u.hostname}/${p.replace(/^\/+/, '')}`;
+        }
         if (!p) return { raw, kind: 'invalid', error: 'Missing npipe path in DOCKER_HOST' };
         if (p.startsWith('////')) p = `//${p.slice(4)}`;
         return { raw, kind: 'npipe', socketPath: p };

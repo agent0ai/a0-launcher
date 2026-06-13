@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
+import { DockerInterface } from './DockerInterface.mjs';
 import { RuntimeProvisioner } from './RuntimeProvisioner.mjs';
 import { ColimaRuntime, selectLatestDockerCliAsset } from './impl/ColimaRuntime.mjs';
 import { LinuxEngineRuntime } from './impl/LinuxEngineRuntime.mjs';
@@ -97,6 +98,25 @@ test('WindowsWslRuntime assess calls out nested virtualization when WSL has no d
   }
 });
 
+test('DockerInterface classifies Windows npipe and loopback WSL endpoints', async () => {
+  const dockerDesktop = await DockerInterface.detectEnvironment({
+    dockerHost: 'npipe:////./pipe/docker_engine',
+    timeoutMs: 250
+  });
+  assert.equal(dockerDesktop.dockerHost.kind, 'npipe');
+  assert.equal(dockerDesktop.dockerHost.socketPath, '//./pipe/docker_engine');
+  assert.equal(dockerDesktop.dockerFlavor, 'docker_desktop');
+
+  const wslEngine = await DockerInterface.detectEnvironment({
+    dockerHost: 'tcp://127.0.0.1:23750',
+    timeoutMs: 250
+  });
+  assert.equal(wslEngine.dockerHost.kind, 'tcp');
+  assert.equal(wslEngine.dockerHost.host, '127.0.0.1');
+  assert.equal(wslEngine.dockerHost.port, 23750);
+  assert.equal(wslEngine.dockerFlavor, 'wsl_engine');
+});
+
 test('selectLatestDockerCliAsset chooses the newest static macOS Docker CLI tarball', () => {
   const html = `
     <a href="docker-29.4.2.tgz">docker-29.4.2.tgz</a>
@@ -150,6 +170,7 @@ test('LinuxEngineRuntime assess requires manual install without pkexec or passwo
     const runtime = new LinuxEngineRuntime({
       managedDir,
       isRoot: false,
+      username: 'a0user',
       runCommand: fakeLinuxCommandRunner({
         binaries: ['apt-get'],
         passwordlessSudo: false
