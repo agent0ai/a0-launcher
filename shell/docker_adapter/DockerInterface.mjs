@@ -70,6 +70,7 @@ import os from 'node:os';
  * @typedef {Object} DetectEnvironmentOptions
  * @property {number=} timeoutMs
  * @property {string=} dockerHost
+ * @property {boolean=} enableWindowsWslProxy
  */
 
 export class DockerInterface {
@@ -116,6 +117,10 @@ export class DockerInterface {
         if (explicitDockerHostRaw) return info;
         bestFailure = this.#preferDiagnostic(bestFailure, info);
         continue;
+      }
+
+      if (options.enableWindowsWslProxy !== false) {
+        await this.#prepareDockerHost(dockerHost).catch(() => {});
       }
 
       const docker = new Dockerode(this.#dockerodeOptionsFromHost(dockerHost, timeoutMs));
@@ -475,6 +480,13 @@ export class DockerInterface {
     if (process.platform === 'darwin' || process.platform === 'win32') return 'docker_desktop';
     if (process.platform === 'linux') return 'docker_engine';
     return 'unknown';
+  }
+
+  static async #prepareDockerHost(hostInfo) {
+    if (process.platform !== 'win32') return;
+    if (hostInfo?.kind !== 'tcp' || hostInfo.host !== '127.0.0.1' || Number(hostInfo.port) !== 23750) return;
+    const { ensureWindowsWslDockerProxy } = await import('./impl/WindowsWslDockerProxy.mjs');
+    await ensureWindowsWslDockerProxy();
   }
 
   static #preferDiagnostic(current, candidate) {

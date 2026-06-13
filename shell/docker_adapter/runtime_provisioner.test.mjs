@@ -27,7 +27,7 @@ test('RuntimeProvisioner.forPlatform selects runtime implementations by platform
   }
 });
 
-test('WindowsWslRuntime assess directs Windows clients to Docker Desktop', async () => {
+test('WindowsWslRuntime assess directs Windows clients without WSL to runtime install guidance', async () => {
   const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
   try {
     const runtime = new WindowsWslRuntime({
@@ -40,7 +40,84 @@ test('WindowsWslRuntime assess directs Windows clients to Docker Desktop', async
 
     assert.equal(assessment.state, 'manual_install');
     assert.match(assessment.detail, /Docker Desktop/i);
-    assert.match(assessment.manualUrl, /docker\.com/);
+    assert.match(assessment.detail, /WSL2/i);
+    assert.match(assessment.manualCommand, /wsl\.exe --install --no-distribution/i);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime assess detects installed Docker Desktop on Windows clients', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: false,
+      runCommand: fakeWindowsCommandRunner({
+        dockerDesktopPath: 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'
+      })
+    });
+
+    const assessment = await runtime.assess();
+
+    assert.equal(assessment.state, 'engine_stopped');
+    assert.equal(assessment.mode, 'docker_desktop');
+    assert.match(assessment.detail, /Docker Desktop is installed/i);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime assess detects Docker Desktop when WSL2 is incomplete', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: false,
+      runCommand: fakeWindowsCommandRunner({
+        binaries: ['wsl.exe'],
+        dockerDesktopPath: 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe',
+        features: {
+          'Microsoft-Windows-Subsystem-Linux': 'Enabled',
+          VirtualMachinePlatform: 'Disabled'
+        }
+      })
+    });
+
+    const assessment = await runtime.assess();
+
+    assert.equal(assessment.state, 'engine_stopped');
+    assert.equal(assessment.mode, 'docker_desktop');
+    assert.match(assessment.detail, /Docker Desktop is installed/i);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime assess detects WSL Docker Engine on Windows clients', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: false,
+      runCommand: fakeWindowsCommandRunner({
+        binaries: ['wsl.exe'],
+        features: {
+          'Microsoft-Windows-Subsystem-Linux': 'Enabled',
+          VirtualMachinePlatform: 'Enabled'
+        },
+        wslList: '  NAME      STATE           VERSION\n* Ubuntu    Running         2\n',
+        wslDockerInstalled: true,
+        wslDockerReady: true
+      })
+    });
+
+    const assessment = await runtime.assess();
+
+    assert.equal(assessment.state, 'engine_stopped');
+    assert.equal(assessment.mode, 'wsl_engine');
+    assert.equal(assessment.distro, 'Ubuntu');
+    assert.match(assessment.detail, /loopback bridge/i);
   } finally {
     await rm(managedDir, { recursive: true, force: true });
   }
@@ -101,7 +178,8 @@ test('WindowsWslRuntime assess calls out nested virtualization when WSL has no d
 test('DockerInterface classifies Windows npipe and loopback WSL endpoints', async () => {
   const dockerDesktop = await DockerInterface.detectEnvironment({
     dockerHost: 'npipe:////./pipe/docker_engine',
-    timeoutMs: 250
+    timeoutMs: 250,
+    enableWindowsWslProxy: false
   });
   assert.equal(dockerDesktop.dockerHost.kind, 'npipe');
   assert.equal(dockerDesktop.dockerHost.socketPath, '//./pipe/docker_engine');
@@ -109,7 +187,8 @@ test('DockerInterface classifies Windows npipe and loopback WSL endpoints', asyn
 
   const wslEngine = await DockerInterface.detectEnvironment({
     dockerHost: 'tcp://127.0.0.1:23750',
-    timeoutMs: 250
+    timeoutMs: 250,
+    enableWindowsWslProxy: false
   });
   assert.equal(wslEngine.dockerHost.kind, 'tcp');
   assert.equal(wslEngine.dockerHost.host, '127.0.0.1');
@@ -294,7 +373,16 @@ function fakeLinuxCommandRunner({ binaries = [], groups = [], passwordlessSudo =
   };
 }
 
-function fakeWindowsCommandRunner({ binaries = [], features = {}, productType = 3, wslList = '' } = {}) {
+function fakeWindowsCommandRunner({
+  binaries = [],
+  features = {},
+  productType = 3,
+  wslList = '',
+  dockerDesktopPath = '',
+  wslDockerInstalled = false,
+  wslDockerReady = false,
+  wslPythonInstalled = true
+} = {}) {
   const present = new Set(binaries);
   return async (cmd, args) => {
     if (cmd === 'where.exe') {
@@ -310,6 +398,9 @@ function fakeWindowsCommandRunner({ binaries = [], features = {}, productType = 
       if (/Win32_OperatingSystem\)\.ProductType/.test(script)) {
         return { code: 0, stdout: `${productType}\r\n`, stderr: '' };
       }
+      if (/Docker Desktop\.exe/.test(script)) {
+        return { code: 0, stdout: dockerDesktopPath ? `${dockerDesktopPath}\r\n` : '', stderr: '' };
+      }
       const featureMatch = script.match(/FeatureName '([^']+)'/);
       if (featureMatch) {
         const state = features[featureMatch[1]] || 'Unknown';
@@ -318,6 +409,21 @@ function fakeWindowsCommandRunner({ binaries = [], features = {}, productType = 
     }
     if (cmd === 'wsl.exe' && args?.[0] === '-l') {
       return { code: 0, stdout: wslList, stderr: '' };
+    }
+    if (cmd === 'wsl.exe' && args?.includes('--exec')) {
+      const script = String(args?.[args.length - 1] || '');
+      if (/command -v docker/.test(script)) {
+        return { code: wslDockerInstalled ? 0 : 1, stdout: wslDockerInstalled ? '/usr/bin/docker\n' : '', stderr: '' };
+      }
+      if (/command -v dockerd/.test(script)) {
+        return { code: wslDockerInstalled ? 0 : 1, stdout: wslDockerInstalled ? '/usr/bin/dockerd\n' : '', stderr: '' };
+      }
+      if (/command -v python3/.test(script)) {
+        return { code: wslPythonInstalled ? 0 : 1, stdout: wslPythonInstalled ? '/usr/bin/python3\n' : '', stderr: '' };
+      }
+      if (/docker info/.test(script)) {
+        return { code: wslDockerReady ? 0 : 1, stdout: '', stderr: '' };
+      }
     }
     return { code: 1, stdout: '', stderr: '' };
   };
