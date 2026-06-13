@@ -1354,6 +1354,15 @@ function sendDockerManagerEvent(channel, payload) {
   wc.send(channel, payload);
 }
 
+function scheduleRuntimeSetupResume() {
+  if (typeof dockerManager.resumeRuntimeSetupIfPending !== 'function') return;
+  setTimeout(() => {
+    dockerManager.resumeRuntimeSetupIfPending().catch((error) => {
+      console.error('[docker-manager] runtime setup resume failed', error);
+    });
+  }, 1500);
+}
+
 dockerManager.events.on('state', (state) => {
   lastDockerManagerState = state;
   if (tray) scheduleTrayMenuUpdate();
@@ -1765,6 +1774,7 @@ app.whenReady().then(async () => {
     // Small delay for visual feedback
     await new Promise(resolve => setTimeout(resolve, 800));
     await loadAppContent();
+    scheduleRuntimeSetupResume();
   }
 });
 

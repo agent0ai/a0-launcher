@@ -66,6 +66,9 @@ This scope owns:
 - Windows WSL Engine support must keep unauthenticated Docker API exposure on
   Windows loopback only. Do not bind Docker TCP on WSL public or non-loopback
   interfaces.
+- Windows WSL loopback detection may need a longer first probe than other
+  Docker endpoints because starting the bridge can cold-start WSL. Keep that
+  extra wait scoped to `127.0.0.1:23750`.
 - Windows client WSL onboarding details should stay Agent Zero-first for normal
   users. Reserve explicit Docker Desktop naming for Docker Desktop reuse or
   repair states, and keep low-level Docker Engine wording out of the primary
@@ -73,6 +76,14 @@ This scope owns:
 - Windows client WSL feature installation may use a user-approved UAC prompt via
   `wsl.exe --install --no-distribution`; it must report restart/follow-up states
   instead of claiming Docker is ready immediately.
+- After the WSL feature reboot, Windows client assessment must be able to
+  continue from ordinary user context. Do not rely only on admin-only optional
+  feature queries; infer feature readiness from `wsl.exe` status/list output
+  when it reports WSL2 is available but no distro is installed.
+- On Windows 10, `wsl.exe --install -d Ubuntu --no-launch` may install the
+  Ubuntu Appx package without registering a WSL distro. The Windows client setup
+  path should use the Ubuntu launcher root-registration path when available so
+  users are not forced through an interactive Unix user setup.
 - Windows client WSL Docker Engine setup may install Docker Engine packages
   inside an existing Ubuntu WSL2 distro using Docker's official apt repository.
   Include the Python bridge dependency and keep Docker API access on the

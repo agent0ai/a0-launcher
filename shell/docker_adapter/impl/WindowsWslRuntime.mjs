@@ -41,9 +41,11 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
       };
     }
 
+    const distroList = await this.#wslList();
+    const wslUsable = this.#wslListShowsUsableFeatures(distroList);
     const wslFeature = await this.#optionalFeatureState('Microsoft-Windows-Subsystem-Linux');
     const vmPlatform = await this.#optionalFeatureState('VirtualMachinePlatform');
-    if (wslFeature !== 'Enabled' || vmPlatform !== 'Enabled') {
+    if (!wslUsable && (wslFeature !== 'Enabled' || vmPlatform !== 'Enabled')) {
       return {
         state: 'manual_install',
         detail: 'Docker Desktop is not supported on Windows Server. Enable WSL2 with wsl.exe --install --no-distribution, restart Windows, then provide a Linux-container Docker Engine endpoint.',
@@ -52,8 +54,7 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
       };
     }
 
-    const distroList = await this.#wslList();
-    if (/has no installed distributions|no installed distributions/i.test(distroList)) {
+    if (/WSL_E_DEFAULT_DISTRO_NOT_FOUND|has no installed distributions|no installed distributions|non ha distribuzioni installate/i.test(distroList)) {
       return {
         state: 'manual_install',
         detail: 'WSL2 is enabled, but no Linux Docker Engine is available yet. Install a WSL distro with Docker Engine. If WSL2 cannot start, this VM needs nested virtualization or Hyper-V support from the host provider.',
@@ -143,12 +144,14 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
       return this.#wslFeatureSetupAssessment('Set up the local Agent Zero runtime. Windows may ask for approval and may require a restart.');
     }
 
-    const distros = await this.#wslDistros();
+    const distroList = await this.#wslList();
+    const distros = this.#parseWslDistros(distroList);
     const distro = this.#selectWslDistro(distros);
     if (!distro) {
+      const wslUsable = this.#wslListShowsUsableFeatures(distroList);
       const wslFeature = await this.#optionalFeatureState('Microsoft-Windows-Subsystem-Linux');
       const vmPlatform = await this.#optionalFeatureState('VirtualMachinePlatform');
-      if (wslFeature !== 'Enabled' || vmPlatform !== 'Enabled') {
+      if (!wslUsable && (wslFeature !== 'Enabled' || vmPlatform !== 'Enabled')) {
         if (dockerDesktopInstalled) return this.#dockerDesktopStoppedAssessment();
         return this.#wslFeatureSetupAssessment('Set up the local Agent Zero runtime. Windows may ask for approval and may require a restart.');
       }
@@ -259,12 +262,12 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
     return cleanCommandText(`${result.stdout || ''}\n${result.stderr || ''}`);
   }
 
-  async #wslDistros() {
-    const text = await this.#wslList();
+  #parseWslDistros(text) {
     const distros = [];
     for (const rawLine of text.split(/\r?\n/)) {
       const line = rawLine.trim();
       if (!line || /^NAME\s+STATE\s+VERSION$/i.test(line)) continue;
+      if (/^(default\s+(distribution|version)|distribuzione\s+predefinita|versione\s+predefinita)\s*:/i.test(line)) continue;
       const defaultDistro = line.startsWith('*');
       const clean = line.replace(/^\*\s*/, '').trim();
       const parts = clean.split(/\s+/);
@@ -276,6 +279,20 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
       distros.push({ name, state, version, default: defaultDistro });
     }
     return distros;
+  }
+
+  async #wslDistros() {
+    return this.#parseWslDistros(await this.#wslList());
+  }
+
+  #wslListShowsUsableFeatures(text) {
+    const value = String(text || '');
+    if (/WSL_E_WSL_OPTIONAL_COMPONENT_REQUIRED/i.test(value)) return false;
+    if (/WSL_E_DEFAULT_DISTRO_NOT_FOUND/i.test(value)) return true;
+    if (/has no installed distributions|no installed distributions/i.test(value)) return true;
+    if (/non ha distribuzioni installate/i.test(value)) return true;
+    if (/^\s*\*?\s*NAME\s+STATE\s+VERSION\b/im.test(value)) return true;
+    return false;
   }
 
   #selectWslDistro(distros) {
@@ -365,7 +382,10 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
         stderr: cleanCommandText(result.stderr)
       });
     }
-    const distroReady = await this.#wslRootCommandOk(DEFAULT_WSL_DISTRO, 'true');
+    let distroReady = await this.#wslRootCommandOk(DEFAULT_WSL_DISTRO, 'true');
+    if (!distroReady && await this.#registerUbuntuPackageAsRoot(options)) {
+      distroReady = await this.#wslRootCommandOk(DEFAULT_WSL_DISTRO, 'true');
+    }
     if (!distroReady) {
       return {
         state: 'needs_followup',
@@ -374,6 +394,31 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
     }
     await this.#installAndStartWslDocker(DEFAULT_WSL_DISTRO, options);
     return;
+  }
+
+  async #registerUbuntuPackageAsRoot(options = {}) {
+    const launcher = await this.#ubuntuLauncherBinary();
+    if (!launcher) return false;
+    options.onProgress?.(`Preparing ${DEFAULT_WSL_DISTRO}`);
+    const result = await this._runCommand(
+      launcher,
+      ['install', '--root'],
+      { timeoutMs: Math.min(options.timeoutMs || 5 * 60 * 1000, 5 * 60 * 1000), signal: options.signal }
+    ).catch((error) => ({
+      code: -1,
+      stdout: '',
+      stderr: error?.message || String(error)
+    }));
+    if (result.code === 0) return true;
+    const output = cleanCommandText(`${result.stdout || ''}\n${result.stderr || ''}`);
+    return /already installed|gi[aà]\s+installato/i.test(output);
+  }
+
+  async #ubuntuLauncherBinary() {
+    for (const binary of ['ubuntu.exe', 'ubuntu2404.exe', 'ubuntu2204.exe', 'ubuntu2004.exe']) {
+      if (await this.#binaryExists(binary)) return binary;
+    }
+    return '';
   }
 
   async #installAndStartWslDocker(distro, options = {}) {

@@ -119,18 +119,22 @@ export class DockerInterface {
         continue;
       }
 
+      const candidateTimeoutMs = this.#isWindowsWslProxyHost(dockerHost)
+        ? Math.max(timeoutMs, 10000)
+        : timeoutMs;
+
       if (options.enableWindowsWslProxy !== false) {
         await this.#prepareDockerHost(dockerHost).catch(() => {});
       }
 
-      const docker = new Dockerode(this.#dockerodeOptionsFromHost(dockerHost, timeoutMs));
+      const docker = new Dockerode(this.#dockerodeOptionsFromHost(dockerHost, candidateTimeoutMs));
 
       try {
-        await this.#withTimeout(Promise.resolve(docker.ping()), timeoutMs);
+        await this.#withTimeout(Promise.resolve(docker.ping()), candidateTimeoutMs);
         info.dockerAvailable = true;
 
         try {
-          const v = await this.#withTimeout(Promise.resolve(docker.version()), timeoutMs);
+          const v = await this.#withTimeout(Promise.resolve(docker.version()), candidateTimeoutMs);
           info.daemonVersion = typeof v?.Version === 'string' ? v.Version : null;
         } catch {
           // best-effort only
@@ -482,9 +486,13 @@ export class DockerInterface {
     return 'unknown';
   }
 
+  static #isWindowsWslProxyHost(hostInfo) {
+    return process.platform === 'win32' && hostInfo?.kind === 'tcp' && hostInfo.host === '127.0.0.1' && Number(hostInfo.port) === 23750;
+  }
+
   static async #prepareDockerHost(hostInfo) {
     if (process.platform !== 'win32') return;
-    if (hostInfo?.kind !== 'tcp' || hostInfo.host !== '127.0.0.1' || Number(hostInfo.port) !== 23750) return;
+    if (!this.#isWindowsWslProxyHost(hostInfo)) return;
     const { ensureWindowsWslDockerProxy } = await import('./impl/WindowsWslDockerProxy.mjs');
     await ensureWindowsWslDockerProxy();
   }

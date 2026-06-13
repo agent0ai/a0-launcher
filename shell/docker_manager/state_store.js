@@ -124,6 +124,46 @@ async function writePortPreferences(portPreferences) {
   return prefs;
 }
 
+function normalizeRuntimeSetupResume(value) {
+  if (!value || typeof value !== 'object' || value.pending !== true) return null;
+  return {
+    pending: true,
+    reason: typeof value.reason === 'string' ? value.reason : '',
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : '',
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : ''
+  };
+}
+
+async function readRuntimeSetupResume() {
+  const state = await readJson(stateFile(), {});
+  return normalizeRuntimeSetupResume(state?.runtimeSetupResume);
+}
+
+async function writeRuntimeSetupResume(runtimeSetupResume) {
+  const now = new Date().toISOString();
+  const state = await readJson(stateFile(), {});
+  const current = normalizeRuntimeSetupResume(state?.runtimeSetupResume);
+  const reason = typeof runtimeSetupResume?.reason === 'string' ? runtimeSetupResume.reason : '';
+  const marker = {
+    pending: true,
+    reason,
+    createdAt: current?.createdAt || now,
+    updatedAt: now
+  };
+  await writeJson(stateFile(), { ...state, runtimeSetupResume: marker, updatedAt: now });
+  return marker;
+}
+
+async function clearRuntimeSetupResume() {
+  const state = await readJson(stateFile(), {});
+  if (!state || typeof state !== 'object' || !('runtimeSetupResume' in state)) return false;
+  const next = { ...state };
+  delete next.runtimeSetupResume;
+  next.updatedAt = new Date().toISOString();
+  await writeJson(stateFile(), next);
+  return true;
+}
+
 function remoteInstanceError(message = 'Invalid remote instance') {
   const err = new Error(message);
   err.code = 'INVALID_REMOTE_INSTANCE';
@@ -291,6 +331,11 @@ module.exports = {
   readRemoteInstances,
   writeRemoteInstance,
   deleteRemoteInstance,
+
+  // Runtime setup resume
+  readRuntimeSetupResume,
+  writeRuntimeSetupResume,
+  clearRuntimeSetupResume,
 
   // Installability cache
   readInstallabilityCache,

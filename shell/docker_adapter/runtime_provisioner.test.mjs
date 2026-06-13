@@ -162,6 +162,67 @@ test('WindowsWslRuntime provision installs Ubuntu when WSL2 has no distro', asyn
   }
 });
 
+test('WindowsWslRuntime resumes to distro setup after WSL feature reboot', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: false,
+      runCommand: fakeWindowsCommandRunner({
+        binaries: ['wsl.exe'],
+        wslList: [
+          'Default Version: 2',
+          'Windows Subsystem for Linux has no installed distributions.',
+          'Error code: Wsl/WSL_E_DEFAULT_DISTRO_NOT_FOUND'
+        ].join('\n')
+      })
+    });
+
+    const assessment = await runtime.assess();
+
+    assert.equal(assessment.state, 'not_provisioned');
+    assert.equal(assessment.mode, 'wsl_distribution');
+    assert.equal(assessment.setupActionLabel, 'Set Up Agent Zero');
+    assert.match(assessment.manualCommand, /wsl\.exe --install -d Ubuntu --no-launch/i);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime registers installed Ubuntu package as root when WSL install leaves no distro', async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  const calls = [];
+  const proxyCalls = [];
+  try {
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: false,
+      ensureProxy: async (options) => {
+        proxyCalls.push(options);
+      },
+      runCommand: fakeWindowsCommandRunner({
+        binaries: ['wsl.exe', 'ubuntu.exe'],
+        calls,
+        features: {
+          'Microsoft-Windows-Subsystem-Linux': 'Enabled',
+          VirtualMachinePlatform: 'Enabled'
+        },
+        wslList: 'Windows Subsystem for Linux has no installed distributions.',
+        wslRootReady: false,
+        ubuntuInstallRootRegisters: true
+      })
+    });
+
+    await runtime.provision();
+
+    assert.ok(calls.some((call) => call.cmd === 'ubuntu.exe' && call.args?.[0] === 'install' && call.args?.[1] === '--root'));
+    assert.ok(calls.some((call) => call.cmd === 'wsl.exe' && /docker-ce docker-ce-cli containerd\.io/.test(String(call.args?.at(-1)))));
+    assert.deepEqual(proxyCalls, [{ distro: 'Ubuntu' }]);
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
 test('WindowsWslRuntime provision installs Docker Engine inside an existing WSL distro', async () => {
   const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
   const calls = [];
@@ -497,9 +558,11 @@ function fakeWindowsCommandRunner({
   wslDockerInstalled = false,
   wslDockerReady = false,
   wslPythonInstalled = true,
-  wslRootReady = false
+  wslRootReady = false,
+  ubuntuInstallRootRegisters = false
 } = {}) {
   const present = new Set(binaries);
+  let ubuntuRootRegistered = false;
   return async (cmd, args) => {
     calls.push({ cmd, args: Array.isArray(args) ? [...args] : args });
     if (cmd === 'where.exe') {
@@ -533,11 +596,15 @@ function fakeWindowsCommandRunner({
     if (cmd === 'wsl.exe' && args?.[0] === '--install') {
       return { code: wslInstallDistroCode, stdout: '', stderr: '' };
     }
+    if (/^ubuntu(2404|2204|2004)?\.exe$/i.test(cmd) && args?.[0] === 'install' && args?.[1] === '--root') {
+      if (ubuntuInstallRootRegisters) ubuntuRootRegistered = true;
+      return { code: ubuntuInstallRootRegisters ? 0 : 1, stdout: '', stderr: ubuntuInstallRootRegisters ? '' : 'install failed' };
+    }
     if (cmd === 'wsl.exe' && args?.includes('--exec')) {
       const script = String(args?.[args.length - 1] || '');
       if (args?.includes('-u') && args?.includes('root')) {
         if (script.trim() === 'true') {
-          return { code: wslRootReady ? 0 : 1, stdout: '', stderr: '' };
+          return { code: wslRootReady || ubuntuRootRegistered ? 0 : 1, stdout: '', stderr: '' };
         }
         if (/docker-ce docker-ce-cli containerd\.io/.test(script)) {
           return { code: wslDockerInstallCode, stdout: '', stderr: '' };

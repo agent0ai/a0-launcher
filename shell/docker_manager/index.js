@@ -2,6 +2,8 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { app } = require('electron');
 
 const { getDocker, resetDocker } = require('../docker_adapter/getDocker');
@@ -17,6 +19,9 @@ const DEFAULT_GITHUB_REPO = 'agent0ai/agent-zero';
 const IMAGE_REPO_ENV_VAR = 'A0_BACKEND_IMAGE_REPO';
 const GITHUB_REPO_ENV_VAR = 'A0_BACKEND_GITHUB_REPO';
 const UI_READY_TIMEOUT_MS = 5 * 60_000;
+const RUNTIME_SETUP_RESUME_ARG = '--a0-resume-runtime-setup';
+const RUNTIME_SETUP_RUNONCE_VALUE = 'AgentZeroLauncherResumeRuntimeSetup';
+const execFileAsync = promisify(execFile);
 
 const CANONICAL_LOCAL_TAGS = Object.freeze(['local', 'development', 'main']);
 
@@ -37,6 +42,61 @@ function logDockerManagerError(op, error, details = {}) {
       // ignore
     }
   }
+}
+
+function quoteWindowsCommandArg(value) {
+  return `"${String(value || '').replace(/"/g, '\\"')}"`;
+}
+
+function runtimeResumeLaunchCommand() {
+  const parts = [quoteWindowsCommandArg(process.execPath)];
+  if (process.defaultApp && process.argv[1]) {
+    parts.push(quoteWindowsCommandArg(process.argv[1]));
+  }
+  parts.push(RUNTIME_SETUP_RESUME_ARG);
+  return parts.join(' ');
+}
+
+async function registerRuntimeSetupRunOnce() {
+  if (process.platform !== 'win32') return;
+  await execFileAsync('reg.exe', [
+    'add',
+    'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce',
+    '/v',
+    RUNTIME_SETUP_RUNONCE_VALUE,
+    '/t',
+    'REG_SZ',
+    '/d',
+    runtimeResumeLaunchCommand(),
+    '/f'
+  ]).catch((error) => {
+    logDockerManagerError('runtimeSetup.registerRunOnce', error);
+  });
+}
+
+async function clearRuntimeSetupRunOnce() {
+  if (process.platform !== 'win32') return;
+  await execFileAsync('reg.exe', [
+    'delete',
+    'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce',
+    '/v',
+    RUNTIME_SETUP_RUNONCE_VALUE,
+    '/f'
+  ]).catch(() => {});
+}
+
+async function markRuntimeSetupResume(assessment = null) {
+  await stateStore.writeRuntimeSetupResume({
+    reason: typeof assessment?.mode === 'string' ? assessment.mode : ''
+  });
+  if (assessment?.requiresRestart === true) {
+    await registerRuntimeSetupRunOnce();
+  }
+}
+
+async function clearRuntimeSetupResume() {
+  await stateStore.clearRuntimeSetupResume().catch(() => false);
+  await clearRuntimeSetupRunOnce();
 }
 
 function normalizeRepo(value) {
@@ -1102,8 +1162,9 @@ async function setPortPreferences(portPreferences) {
 async function provisionRuntime() {
   requireNoRunningOperation();
   const opId = beginOperation('runtime_setup', null);
-  const finishRuntimeFollowup = (result) => {
+  const finishRuntimeFollowup = async (result, assessment) => {
     if (!result || typeof result !== 'object' || typeof result.detail !== 'string') return false;
+    await markRuntimeSetupResume(assessment);
     resetDocker();
     updateOperationProgress({ message: result.detail, progress: 100 });
     finishOperation('completed', null);
@@ -1126,6 +1187,7 @@ async function provisionRuntime() {
       const assessment = await provisioner.assess();
 
       if (assessment?.state === 'ready') {
+        await clearRuntimeSetupResume();
         updateOperationProgress({ message: 'Runtime ready', progress: 100 });
         finishOperation('completed', null);
         resetDocker();
@@ -1137,13 +1199,13 @@ async function provisionRuntime() {
           signal: controller.signal,
           onProgress: (message, progress = null) => updateOperationProgress({ message, progress })
         });
-        if (finishRuntimeFollowup(result)) return;
+        if (await finishRuntimeFollowup(result, assessment)) return;
       } else if (assessment?.state === 'not_provisioned' || assessment?.state === 'needs_group_membership') {
         const result = await provisioner.provision({
           signal: controller.signal,
           onProgress: (message, progress = null) => updateOperationProgress({ message, progress })
         });
-        if (finishRuntimeFollowup(result)) return;
+        if (await finishRuntimeFollowup(result, assessment)) return;
       } else if (assessment?.state === 'needs_relogin') {
         const err = new Error(assessment.detail || 'Log out and back in once, then return here.');
         err.code = 'RUNTIME_NEEDS_RELOGIN';
@@ -1164,6 +1226,7 @@ async function provisionRuntime() {
       }
 
       resetDocker();
+      await clearRuntimeSetupResume();
       updateOperationProgress({ message: 'Runtime ready', progress: 100 });
       finishOperation('completed', null);
     } catch (error) {
@@ -1179,6 +1242,25 @@ async function provisionRuntime() {
   });
 
   return { opId };
+}
+
+async function resumeRuntimeSetupIfPending() {
+  const marker = await stateStore.readRuntimeSetupResume().catch(() => null);
+  if (!marker?.pending) return { resumed: false, reason: 'not_pending' };
+  if (_currentOperation?.status === 'running') return { resumed: false, reason: 'operation_running' };
+
+  const state = await refreshDockerManager({ forceRefresh: true });
+  const runtime = state?.runtime;
+  if (!runtime || runtime.state === 'ready') {
+    await clearRuntimeSetupResume();
+    return { resumed: false, reason: 'runtime_ready' };
+  }
+
+  if (!runtime.canProvision || runtime.requiresAdmin === true || !['install', 'start'].includes(runtime.action)) {
+    return { resumed: false, reason: 'waiting_for_user', runtime };
+  }
+
+  return { resumed: true, ...(await provisionRuntime()) };
 }
 
 async function addRemoteInstance(remoteInstance) {
@@ -2081,6 +2163,7 @@ module.exports = {
   setRetentionPolicy,
   setPortPreferences,
   provisionRuntime,
+  resumeRuntimeSetupIfPending,
   addRemoteInstance,
   deleteRemoteInstance,
   getRemoteInstance,

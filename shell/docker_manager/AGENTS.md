@@ -55,6 +55,9 @@ This scope owns:
 - Runtime setup is additive and reuse-first: existing Docker Desktop, native
   Engine, and rootless endpoints are used before Linux Engine provisioning is
   offered.
+- Runtime setup may persist a `runtimeSetupResume` marker under the Docker
+  Manager state file so reboot-required Windows setup can relaunch once and
+  continue when the next step no longer needs elevation.
 - Windows WSL setup may complete an intermediate step such as feature enablement
   or distro installation. Preserve the follow-up message instead of reporting
   the runtime as ready prematurely.
