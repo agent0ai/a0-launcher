@@ -69,6 +69,9 @@ This scope owns:
 - Windows WSL Engine support must also keep the selected WSL distro alive while
   the launcher-owned loopback bridge is active; otherwise WSL can idle-stop and
   Docker marks healthy Linux containers as exited.
+- Windows WSL keepalive helpers must carry a launcher-specific marker and clean
+  up their child sleep process on shutdown so app restarts do not leave orphaned
+  WSL helper loops.
 - Windows WSL loopback detection may need a longer first probe than other
   Docker endpoints because starting the bridge can cold-start WSL. Keep that
   extra wait scoped to `127.0.0.1:23750`.

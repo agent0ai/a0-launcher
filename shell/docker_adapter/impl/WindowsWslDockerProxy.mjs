@@ -4,12 +4,15 @@ import net from 'node:net';
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 23750;
 const DEFAULT_SOCKET = '/var/run/docker.sock';
+const WSL_KEEPALIVE_MARKER = 'a0-launcher-wsl-keepalive';
+const WSL_KEEPALIVE_PKILL_PATTERN = 'a0-launcher-wsl-[k]eepalive';
 
 let proxyServer = null;
 let proxyPromise = null;
 let proxyDistro = '';
 let keepAliveProcess = null;
 let keepAliveDistro = '';
+let keepAliveSpawnCommand = null;
 let cleanupRegistered = false;
 
 const PYTHON_UNIX_SOCKET_BRIDGE = String.raw`
@@ -52,12 +55,24 @@ socket_to_stdout()
 `;
 
 const WSL_KEEPALIVE_SCRIPT = String.raw`
-trap 'exit 0' TERM INT
+sleep_pid=''
+cleanup() {
+  if [ -n "$sleep_pid" ]; then
+    kill "$sleep_pid" >/dev/null 2>&1 || true
+    wait "$sleep_pid" >/dev/null 2>&1 || true
+  fi
+  exit 0
+}
+trap cleanup TERM INT
 while :; do
   sleep 2147483647 &
-  wait $!
+  sleep_pid=$!
+  wait "$sleep_pid" >/dev/null 2>&1 || true
+  sleep_pid=''
 done
 `;
+
+const WSL_KEEPALIVE_CLEANUP_SCRIPT = `pkill -TERM -f '${WSL_KEEPALIVE_PKILL_PATTERN}' >/dev/null 2>&1 || true`;
 
 export function isWindowsWslProxyEndpoint(hostInfo) {
   return (
@@ -177,7 +192,7 @@ export function ensureWindowsWslKeepAlive(options = {}) {
 
   const args = [];
   if (selectedDistro) args.push('-d', selectedDistro);
-  args.push('-u', 'root', '--exec', 'sh', '-lc', WSL_KEEPALIVE_SCRIPT);
+  args.push('-u', 'root', '--exec', 'sh', '-lc', WSL_KEEPALIVE_SCRIPT, WSL_KEEPALIVE_MARKER);
 
   const spawnCommand = typeof options.spawnCommand === 'function' ? options.spawnCommand : spawn;
   const child = spawnCommand('wsl.exe', args, {
@@ -188,30 +203,66 @@ export function ensureWindowsWslKeepAlive(options = {}) {
 
   keepAliveProcess = child;
   keepAliveDistro = selectedDistro;
+  keepAliveSpawnCommand = spawnCommand;
   registerProcessCleanup();
 
   child.on?.('close', () => {
     if (keepAliveProcess === child) {
       keepAliveProcess = null;
       keepAliveDistro = '';
+      keepAliveSpawnCommand = null;
     }
   });
   child.on?.('error', () => {
     if (keepAliveProcess === child) {
       keepAliveProcess = null;
       keepAliveDistro = '';
+      keepAliveSpawnCommand = null;
     }
   });
 
   return { started: true, reused: false, distro: selectedDistro || null };
 }
 
-export function stopWindowsWslKeepAlive() {
+export function stopWindowsWslKeepAlive(options = {}) {
   const child = keepAliveProcess;
+  const selectedDistro = keepAliveDistro;
+  const spawnCommand = typeof options.spawnCommand === 'function'
+    ? options.spawnCommand
+    : keepAliveSpawnCommand;
   keepAliveProcess = null;
   keepAliveDistro = '';
+  keepAliveSpawnCommand = null;
+  if (!child && !selectedDistro) {
+    return { stopped: false, cleanup: { started: false, reason: 'not_running' } };
+  }
   if (child && !child.killed) {
     child.kill();
+  }
+  const cleanup = cleanupWindowsWslKeepAlive({ distro: selectedDistro, spawnCommand });
+  return { stopped: !!child, cleanup };
+}
+
+function cleanupWindowsWslKeepAlive({ distro = '', spawnCommand = spawn } = {}) {
+  if (process.platform !== 'win32') {
+    return { started: false, reason: 'unsupported_platform' };
+  }
+
+  const selectedDistro = String(distro || '').trim();
+  const args = [];
+  if (selectedDistro) args.push('-d', selectedDistro);
+  args.push('-u', 'root', '--exec', 'sh', '-lc', WSL_KEEPALIVE_CLEANUP_SCRIPT);
+
+  try {
+    const child = (typeof spawnCommand === 'function' ? spawnCommand : spawn)('wsl.exe', args, {
+      stdio: 'ignore',
+      windowsHide: true,
+      detached: true
+    });
+    child.unref?.();
+    return { started: true, distro: selectedDistro || null };
+  } catch (error) {
+    return { started: false, reason: 'spawn_failed', message: error?.message || String(error) };
   }
 }
 

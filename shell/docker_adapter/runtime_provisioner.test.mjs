@@ -392,7 +392,9 @@ test('WindowsWslDockerProxy keepalive holds the selected WSL distro open', { ski
     assert.ok(calls[0].args.includes('root'));
     assert.ok(calls[0].args.includes('--exec'));
     assert.ok(calls[0].args.includes('sh'));
-    assert.match(calls[0].args.at(-1), /sleep 2147483647/);
+    assert.match(calls[0].args.at(-2), /sleep 2147483647/);
+    assert.match(calls[0].args.at(-2), /kill "\$sleep_pid"/);
+    assert.equal(calls[0].args.at(-1), 'a0-launcher-wsl-keepalive');
     assert.deepEqual(calls[0].options.stdio, 'ignore');
     assert.equal(calls[0].options.windowsHide, true);
     assert.equal(child.unrefCalled, true);
@@ -401,6 +403,14 @@ test('WindowsWslDockerProxy keepalive holds the selected WSL distro open', { ski
   }
 
   assert.equal(child.killed, true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].cmd, 'wsl.exe');
+  assert.deepEqual(calls[1].args.slice(0, 2), ['-d', 'Ubuntu']);
+  assert.match(calls[1].args.at(-1), /pkill -TERM/);
+  assert.match(calls[1].args.at(-1), /a0-launcher-wsl-\[k\]eepalive/);
+  assert.deepEqual(calls[1].options.stdio, 'ignore');
+  assert.equal(calls[1].options.windowsHide, true);
+  assert.equal(calls[1].options.detached, true);
 });
 
 test('selectLatestDockerCliAsset chooses the newest static macOS Docker CLI tarball', () => {
