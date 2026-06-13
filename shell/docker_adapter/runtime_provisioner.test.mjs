@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { DockerInterface } from './DockerInterface.mjs';
 import { RuntimeProvisioner } from './RuntimeProvisioner.mjs';
 import { ColimaRuntime, selectLatestDockerCliAsset } from './impl/ColimaRuntime.mjs';
 import { LinuxEngineRuntime } from './impl/LinuxEngineRuntime.mjs';
+import { ensureWindowsWslKeepAlive, stopWindowsWslKeepAlive } from './impl/WindowsWslDockerProxy.mjs';
 import { WindowsWslRuntime } from './impl/WindowsWslRuntime.mjs';
 
 test('RuntimeProvisioner.forPlatform selects runtime implementations by platform', async () => {
@@ -368,6 +370,39 @@ test('DockerInterface classifies Windows npipe and loopback WSL endpoints', asyn
   assert.equal(wslEngine.dockerFlavor, 'wsl_engine');
 });
 
+test('WindowsWslDockerProxy keepalive holds the selected WSL distro open', { skip: process.platform !== 'win32' }, () => {
+  stopWindowsWslKeepAlive();
+  const calls = [];
+  const child = new FakeChildProcess();
+  const spawnCommand = (cmd, args, options) => {
+    calls.push({ cmd, args, options });
+    return child;
+  };
+
+  try {
+    const first = ensureWindowsWslKeepAlive({ distro: 'Ubuntu', spawnCommand });
+    const second = ensureWindowsWslKeepAlive({ distro: 'Ubuntu', spawnCommand });
+
+    assert.deepEqual(first, { started: true, reused: false, distro: 'Ubuntu' });
+    assert.deepEqual(second, { started: true, reused: true, distro: 'Ubuntu' });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].cmd, 'wsl.exe');
+    assert.deepEqual(calls[0].args.slice(0, 2), ['-d', 'Ubuntu']);
+    assert.ok(calls[0].args.includes('-u'));
+    assert.ok(calls[0].args.includes('root'));
+    assert.ok(calls[0].args.includes('--exec'));
+    assert.ok(calls[0].args.includes('sh'));
+    assert.match(calls[0].args.at(-1), /sleep 2147483647/);
+    assert.deepEqual(calls[0].options.stdio, 'ignore');
+    assert.equal(calls[0].options.windowsHide, true);
+    assert.equal(child.unrefCalled, true);
+  } finally {
+    stopWindowsWslKeepAlive();
+  }
+
+  assert.equal(child.killed, true);
+});
+
 test('selectLatestDockerCliAsset chooses the newest static macOS Docker CLI tarball', () => {
   const html = `
     <a href="docker-29.4.2.tgz">docker-29.4.2.tgz</a>
@@ -543,6 +578,20 @@ function fakeLinuxCommandRunner({ binaries = [], groups = [], passwordlessSudo =
     }
     return { code: 1, stdout: '', stderr: '' };
   };
+}
+
+class FakeChildProcess extends EventEmitter {
+  killed = false;
+  unrefCalled = false;
+
+  unref() {
+    this.unrefCalled = true;
+  }
+
+  kill() {
+    this.killed = true;
+    this.emit('close', null);
+  }
 }
 
 function fakeWindowsCommandRunner({
