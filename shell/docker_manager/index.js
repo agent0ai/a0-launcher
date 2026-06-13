@@ -48,10 +48,21 @@ function quoteWindowsCommandArg(value) {
   return `"${String(value || '').replace(/"/g, '\\"')}"`;
 }
 
+function runtimeResumeDefaultAppArg(argv = []) {
+  if (!Array.isArray(argv)) return '';
+  for (const arg of argv.slice(1)) {
+    const value = String(arg || '').trim();
+    if (!value || value.startsWith('-')) continue;
+    return value;
+  }
+  return '';
+}
+
 function runtimeResumeLaunchCommand() {
   const parts = [quoteWindowsCommandArg(process.execPath)];
-  if (process.defaultApp && process.argv[1]) {
-    parts.push(quoteWindowsCommandArg(process.argv[1]));
+  const defaultAppArg = process.defaultApp ? runtimeResumeDefaultAppArg(process.argv) : '';
+  if (defaultAppArg) {
+    parts.push(quoteWindowsCommandArg(defaultAppArg));
   }
   parts.push(RUNTIME_SETUP_RESUME_ARG);
   return parts.join(' ');

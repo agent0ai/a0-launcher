@@ -58,6 +58,9 @@ This scope owns:
 - Runtime setup may persist a `runtimeSetupResume` marker under the Docker
   Manager state file so reboot-required Windows setup can relaunch once and
   continue when the next step no longer needs elevation.
+- Windows RunOnce resume commands must work for both packaged apps and local
+  default-app Electron launches. If Electron injects flags before the app path,
+  skip those flags and preserve the first non-option app path.
 - Windows WSL setup may complete an intermediate step such as feature enablement
   or distro installation. Preserve the follow-up message instead of reporting
   the runtime as ready prematurely.
