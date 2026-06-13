@@ -39,6 +39,9 @@ This scope owns:
   practical before opening.
 - Start, switch, and activation flows should give the Agent Zero UI enough time
   to finish a slow first boot before rolling back a newly-created container.
+- UI readiness probes should also allow enough time for a local Agent Zero HTTP
+  response to produce headers on slower Windows/WSL loopback paths; avoid
+  per-attempt timeouts that create false failed starts while the UI is reachable.
 - Prefer structured state over renderer-side inference. If the UI needs a
   status, add it to the Docker Manager state shape.
 - Persist user preferences and remote instances through `state_store.js`; do not

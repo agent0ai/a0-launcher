@@ -19,6 +19,7 @@ const DEFAULT_GITHUB_REPO = 'agent0ai/agent-zero';
 const IMAGE_REPO_ENV_VAR = 'A0_BACKEND_IMAGE_REPO';
 const GITHUB_REPO_ENV_VAR = 'A0_BACKEND_GITHUB_REPO';
 const UI_READY_TIMEOUT_MS = 5 * 60_000;
+const UI_READY_ATTEMPT_TIMEOUT_MS = 2_000;
 const RUNTIME_SETUP_RESUME_ARG = '--a0-resume-runtime-setup';
 const RUNTIME_SETUP_RUNONCE_VALUE = 'AgentZeroLauncherResumeRuntimeSetup';
 const execFileAsync = promisify(execFile);
@@ -410,7 +411,7 @@ async function waitForHttpPort(host, port, options = {}) {
   const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : 60_000;
   const intervalMs = Number.isFinite(Number(options.intervalMs)) ? Number(options.intervalMs) : 450;
   const attemptTimeoutMs =
-    Number.isFinite(Number(options.attemptTimeoutMs)) ? Number(options.attemptTimeoutMs) : 350;
+    Number.isFinite(Number(options.attemptTimeoutMs)) ? Number(options.attemptTimeoutMs) : UI_READY_ATTEMPT_TIMEOUT_MS;
   const onTick = typeof options.onTick === 'function' ? options.onTick : null;
 
   const startedAt = Date.now();
@@ -677,7 +678,7 @@ async function buildDerivedState(options = {}) {
       if (candidate) {
         const hp = parseHostPortFromLocalUrl(candidate);
         if (hp) {
-          const ok = await isHttpPortReachable(hp.host, hp.port, 350);
+          const ok = await isHttpPortReachable(hp.host, hp.port, UI_READY_ATTEMPT_TIMEOUT_MS);
           uiUrl = ok ? candidate : null;
         }
       }
@@ -1577,7 +1578,7 @@ async function startActiveInstance() {
       const waitRes = await waitForUiReachable(docker, active.containerId, {
         timeoutMs: UI_READY_TIMEOUT_MS,
         intervalMs: 450,
-        attemptTimeoutMs: 350,
+        attemptTimeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
         onTick: (seconds) => {
           const s = Number.isFinite(Number(seconds)) && seconds > 0 ? ` - ${Math.floor(seconds)}s` : '';
           updateOperationProgress({ message: `Starting (waiting for UI${s})`, progress: null });
@@ -1757,7 +1758,7 @@ async function updateToLatest(dataLossAck) {
         const waitRes = await waitForUiReachable(docker, createdNew.containerId, {
           timeoutMs: UI_READY_TIMEOUT_MS,
           intervalMs: 450,
-          attemptTimeoutMs: 350,
+          attemptTimeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
           onTick: (seconds) => {
             const s = Number.isFinite(Number(seconds)) && seconds > 0 ? ` - ${Math.floor(seconds)}s` : '';
             updateOperationProgress({ message: `Starting new version (waiting for UI${s})`, progress: null });
@@ -1878,7 +1879,7 @@ async function activateRetainedInstance(containerId, dataLossAck) {
       const waitRes = await waitForUiReachable(docker, id, {
         timeoutMs: UI_READY_TIMEOUT_MS,
         intervalMs: 450,
-        attemptTimeoutMs: 350,
+        attemptTimeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
         onTick: (seconds) => {
           const s = Number.isFinite(Number(seconds)) && seconds > 0 ? ` - ${Math.floor(seconds)}s` : '';
           updateOperationProgress({ message: `Starting selected version (waiting for UI${s})`, progress: null });
@@ -1986,7 +1987,7 @@ async function activateTag(tag, dataLossAck, options = {}) {
         const waitRes = await waitForUiReachable(docker, createdNew.containerId, {
           timeoutMs: UI_READY_TIMEOUT_MS,
           intervalMs: 450,
-          attemptTimeoutMs: 350,
+          attemptTimeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
           onTick: (seconds) => {
             const s = Number.isFinite(Number(seconds)) && seconds > 0 ? ` - ${Math.floor(seconds)}s` : '';
             updateOperationProgress({ message: `Starting selected version (waiting for UI${s})`, progress: null });
@@ -2143,7 +2144,7 @@ async function getContainerUiUrl(containerId) {
   const hp = parseHostPortFromLocalUrl(candidate);
   if (!hp) return null;
 
-  const ok = await isHttpPortReachable(hp.host, hp.port, 500);
+  const ok = await isHttpPortReachable(hp.host, hp.port, UI_READY_ATTEMPT_TIMEOUT_MS);
   return ok ? candidate : null;
 }
 
