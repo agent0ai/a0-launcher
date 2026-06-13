@@ -40,8 +40,10 @@ This scope owns:
   open/select/close/reload/detach and report viewport bounds, but URL
   resolution, URL validation, web contents lifecycle, and detached windows stay
   in `shell/main.js`.
-- Local development content is selected by `A0_LAUNCHER_LOCAL_REPO` or
-  `A0_LAUNCHER_USE_LOCAL_CONTENT`.
+- Local development content is selected by `A0_LAUNCHER_LOCAL_REPO`,
+  `A0_LAUNCHER_USE_LOCAL_CONTENT`, or the first non-option app path in a
+  default-app Electron launch. The default-app path matters for Windows RunOnce
+  runtime setup resumes, where the original environment variables may be gone.
 - Non-local content comes from the configured GitHub Release `content.json`
   asset and is unpacked under Electron `userData`.
 - Release bundles may contain legacy string file entries or structured

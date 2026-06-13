@@ -63,12 +63,24 @@ function getGithubRepo() {
   return DEFAULT_GITHUB_REPO;
 }
 
+function defaultAppRepoArg(argv = process.argv) {
+  if (!process.defaultApp) return '';
+  for (const rawArg of Array.isArray(argv) ? argv.slice(1) : []) {
+    const arg = String(rawArg || '').trim();
+    if (!arg || arg.startsWith('-')) continue;
+    return arg;
+  }
+  return '';
+}
+
 function resolveLocalRepoDir() {
   const rawPath = (process.env[LOCAL_REPO_ENV_VAR] || '').trim();
   const useLocalFromCwd = isTruthyEnv(process.env[USE_LOCAL_CONTENT_ENV_VAR]);
+  const defaultAppPath = defaultAppRepoArg();
 
   const candidates = [];
   if (rawPath) candidates.push(path.resolve(process.cwd(), rawPath));
+  if (defaultAppPath) candidates.push(path.resolve(process.cwd(), defaultAppPath));
   if (useLocalFromCwd) candidates.push(process.cwd());
 
   for (const dir of candidates) {
