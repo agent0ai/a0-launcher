@@ -1148,8 +1148,41 @@ function findA0CliBinary() {
 
 function findDockerCliBinary() {
   const binary = process.platform === 'win32' ? 'docker.exe' : 'docker';
+  const overrides = [
+    existingFilePath(process.env.A0_DOCKER_CLI_PATH),
+    existingFilePath(process.env.DOCKER_CLI_PATH)
+  ].filter(Boolean);
+  if (overrides.length) return overrides[0];
+
   const pathCommand = findCommandOnPath(binary);
   if (pathCommand) return pathCommand;
+
+  const home = os.homedir();
+  const candidates = process.platform === 'win32'
+    ? [
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Docker', 'Docker', 'resources', 'bin', 'docker.exe'),
+        path.join(process.env.ProgramW6432 || 'C:\\Program Files', 'Docker', 'Docker', 'resources', 'bin', 'docker.exe'),
+        path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Docker', 'resources', 'bin', 'docker.exe'),
+        'C:\\ProgramData\\DockerDesktop\\version-bin\\docker.exe'
+      ]
+    : process.platform === 'darwin'
+      ? [
+          '/opt/homebrew/bin/docker',
+          '/usr/local/bin/docker',
+          '/usr/bin/docker',
+          '/Applications/Docker.app/Contents/Resources/bin/docker',
+          path.join(home, 'Applications', 'Docker.app', 'Contents', 'Resources', 'bin', 'docker')
+        ]
+      : [
+          '/usr/bin/docker',
+          '/usr/local/bin/docker',
+          '/snap/bin/docker'
+        ];
+
+  for (const candidate of candidates) {
+    const existing = existingFilePath(candidate);
+    if (existing) return existing;
+  }
 
   const err = new Error('Docker CLI was not found. Finish Docker setup, then try again.');
   err.code = 'TERMINAL_UNAVAILABLE';

@@ -70,6 +70,9 @@ This scope owns:
 - Docker Hub sign-in recovery is a named shell-owned intent. The renderer may
   request it, but `shell/main.js` must launch a visible wrapper around the real
   `docker login` flow instead of exposing generic command execution.
+- Docker CLI discovery for that sign-in flow should honor explicit
+  `A0_DOCKER_CLI_PATH` or `DOCKER_CLI_PATH` overrides, then `PATH`, then known
+  Docker Desktop, Homebrew, Linux package, and Snap locations before failing.
 - Windows client WSL setup may request UAC through an explicit runtime setup
   action. Keep that path narrowly scoped to WSL feature/distro setup; do not add
   generic command execution IPC.
