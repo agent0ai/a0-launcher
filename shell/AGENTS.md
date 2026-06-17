@@ -51,6 +51,10 @@ This scope owns:
   environment variables may be gone.
 - Non-local content comes from the configured GitHub Release `content.json`
   asset and is unpacked under Electron `userData`.
+- Startup begins in a transparent, frameless splash window that shows only the
+  launcher icon. Before app content opens, `shell/main.js` sends the splash
+  exit event, replaces that splash with the normal framed app window, then
+  loads `a0app://content/index.html`.
 - Release bundles may contain legacy string file entries or structured
   `{ encoding, data }` entries. The loader must preserve `utf8` text and decode
   `base64` binary assets while rejecting unsafe paths.

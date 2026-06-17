@@ -111,6 +111,8 @@ const LOCAL_INDEX_FILE = USING_LOCAL_CONTENT ? path.join(LOCAL_REPO_DIR, 'app', 
 const GITHUB_REPO = getGithubRepo();
 const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 const CONTENT_ASSET_NAME = 'content.json';
+const SPLASH_ENTRY_ANIMATION_MS = 1600;
+const SPLASH_EXIT_ANIMATION_MS = 180;
 
 if (USING_LOCAL_CONTENT) {
   console.log(`Using local dev content: ${LOCAL_INDEX_FILE}`);
@@ -132,6 +134,12 @@ let instanceTabs = new Map();
 let activeInstanceTabId = '';
 let instanceTabBounds = null;
 let instanceTabSeq = 0;
+let mainWindowMode = '';
+let mainWindowCreatedAt = 0;
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 /**
  * Fetch the latest release info from GitHub
@@ -413,6 +421,7 @@ async function loadAppContent() {
 
   try {
     await fs.access(indexPath);
+    await ensureAppWindowForContent();
     mainWindow.loadURL('a0app://content/index.html');
   } catch {
     // Fallback: show error in loading page
@@ -427,19 +436,37 @@ async function loadAppContent() {
 /**
  * Create the main browser window
  */
-function createWindow() {
+function attachWindowDiagnostics(windowRef) {
+  windowRef.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.log(`[did-fail-load] code=${code} desc=${desc} url=${url}`);
+  });
+  windowRef.webContents.on('console-message', (_e, level, message) => {
+    if (level >= 2) console.log(`[renderer-error] ${message}`);
+  });
+}
+
+function createWindow(mode = 'splash') {
   const iconPath = path.join(__dirname, 'assets',
     process.platform === 'win32' ? 'icon.ico' : 'icon.png'
   );
+  const isSplash = mode === 'splash';
 
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
+  const windowRef = new BrowserWindow({
+    width: isSplash ? 360 : 1280,
+    height: isSplash ? 300 : 800,
+    minWidth: isSplash ? 360 : 800,
+    minHeight: isSplash ? 300 : 600,
     title: 'A0 Launcher',
     icon: iconPath,
     show: false,
+    frame: !isSplash,
+    transparent: isSplash,
+    resizable: !isSplash,
+    maximizable: !isSplash,
+    fullscreenable: !isSplash,
+    hasShadow: !isSplash,
+    backgroundColor: isSplash ? '#00000000' : undefined,
+    skipTaskbar: isSplash,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -447,37 +474,70 @@ function createWindow() {
       sandbox: true
     }
   });
+  mainWindow = windowRef;
+  mainWindowMode = mode;
+  mainWindowCreatedAt = Date.now();
+  attachWindowDiagnostics(windowRef);
 
-  // Load loading screen first
-  mainWindow.loadFile(path.join(__dirname, 'loading.html'));
+  if (isSplash) {
+    windowRef.loadFile(path.join(__dirname, 'loading.html'));
+  }
 
-  mainWindow.once('ready-to-show', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+  windowRef.once('ready-to-show', () => {
+    if (!windowRef.isDestroyed()) windowRef.show();
   });
 
   // With a tray present, closing the window hides it on desktop tray platforms.
   // On macOS, allow the window to close so the app can quit cleanly and avoid
   // idle Electron helper processes.
-  mainWindow.on('close', (e) => {
+  windowRef.on('close', (e) => {
+    if (isSplash) return;
     if (isQuitting) return;
     if (!tray || process.platform === 'darwin') return;
     e.preventDefault();
-    mainWindow.hide();
+    windowRef.hide();
   });
 
-  mainWindow.on('closed', () => {
-    cleanupInstanceTabs();
-    mainWindow = null;
+  windowRef.on('closed', () => {
+    if (mainWindow === windowRef) {
+      if (!isSplash) cleanupInstanceTabs();
+      mainWindow = null;
+      mainWindowMode = '';
+    }
     if (tray) scheduleTrayMenuUpdate();
   });
 
   const updateTrayForWindow = () => {
     if (tray) scheduleTrayMenuUpdate();
   };
-  mainWindow.on('show', updateTrayForWindow);
-  mainWindow.on('hide', updateTrayForWindow);
-  mainWindow.on('minimize', updateTrayForWindow);
-  mainWindow.on('restore', updateTrayForWindow);
+  windowRef.on('show', updateTrayForWindow);
+  windowRef.on('hide', updateTrayForWindow);
+  windowRef.on('minimize', updateTrayForWindow);
+  windowRef.on('restore', updateTrayForWindow);
+}
+
+async function playSplashExitAnimation(splashWindow) {
+  if (!splashWindow || splashWindow.isDestroyed()) return;
+  const remainingEntryMs = SPLASH_ENTRY_ANIMATION_MS - Math.max(0, Date.now() - mainWindowCreatedAt);
+  if (remainingEntryMs > 0) await wait(remainingEntryMs);
+  try {
+    splashWindow.webContents.send('launcher-opening-app');
+  } catch {
+    return;
+  }
+  await wait(SPLASH_EXIT_ANIMATION_MS);
+}
+
+async function ensureAppWindowForContent() {
+  if (mainWindowMode !== 'splash') return;
+
+  const splashWindow = mainWindow;
+  await playSplashExitAnimation(splashWindow);
+  createWindow('app');
+
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
 }
 
 function isWindowShown() {
@@ -2223,14 +2283,6 @@ app.whenReady().then(async () => {
   });
   createWindow();
   createTray();
-
-  // DEBUG: capture renderer-side errors in terminal
-  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
-    console.log(`[did-fail-load] code=${code} desc=${desc} url=${url}`);
-  });
-  mainWindow.webContents.on('console-message', (_e, level, message) => {
-    if (level >= 2) console.log(`[renderer-error] ${message}`);
-  });
 
   // Wait a moment for loading screen to render
   await new Promise(resolve => setTimeout(resolve, 500));

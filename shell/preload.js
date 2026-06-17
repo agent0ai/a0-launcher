@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Store listener references for cleanup
 let statusListener = null;
 let errorListener = null;
+let launcherOpeningAppListener = null;
 
 contextBridge.exposeInMainWorld('electronAPI', {
   onStatusUpdate: (callback) => {
@@ -30,10 +31,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('update-error', errorListener);
       errorListener = null;
     }
+    if (launcherOpeningAppListener) {
+      ipcRenderer.removeListener('launcher-opening-app', launcherOpeningAppListener);
+      launcherOpeningAppListener = null;
+    }
   },
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getContentVersion: () => ipcRenderer.invoke('get-content-version'),
-  getShellIconDataUrl: () => ipcRenderer.invoke('get-shell-icon-data-url')
+  getShellIconDataUrl: () => ipcRenderer.invoke('get-shell-icon-data-url'),
+  onLauncherOpeningApp: (callback) => {
+    if (launcherOpeningAppListener) {
+      ipcRenderer.removeListener('launcher-opening-app', launcherOpeningAppListener);
+    }
+    launcherOpeningAppListener = (_event) => callback();
+    ipcRenderer.on('launcher-opening-app', launcherOpeningAppListener);
+  }
 });
 
 contextBridge.exposeInMainWorld('dockerManagerAPI', {
