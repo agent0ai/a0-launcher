@@ -204,6 +204,72 @@ function imageRefForTag(imageRepo, tag) {
   return `${imageRepo}:${tag}`;
 }
 
+function splitImageAndTag(imageValue, tagValue) {
+  let image = String(imageValue || '').trim();
+  let tag = String(tagValue || '').trim();
+  const lastSlash = image.lastIndexOf('/');
+  const lastColon = image.lastIndexOf(':');
+  let embeddedTag = '';
+  if (lastColon > lastSlash) {
+    embeddedTag = image.slice(lastColon + 1).trim();
+    image = image.slice(0, lastColon).trim();
+  }
+  return { image, tag: tag || embeddedTag || 'latest' };
+}
+
+function assertCustomImageRepo(value) {
+  const repo = String(value || '').trim().toLowerCase();
+  const invalid = () => {
+    const err = new Error('Invalid image name');
+    err.code = 'INVALID_IMAGE';
+    throw err;
+  };
+
+  if (!repo || repo.length > 255) invalid();
+  if (/[\s@]/.test(repo) || /^[a-z][a-z0-9+.-]*:\/\//i.test(repo)) invalid();
+  if (repo.startsWith('/') || repo.endsWith('/') || repo.includes('//')) invalid();
+
+  const parts = repo.split('/');
+  if (!parts.length || parts.length > 8) invalid();
+  const componentPattern = /^[a-z0-9]+(?:(?:[._-]+)[a-z0-9]+)*$/;
+  const firstPattern = /^[a-z0-9]+(?:(?:[._-]+)[a-z0-9]+)*(?::[0-9]{1,5})?$/;
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    if (!part) invalid();
+    if (i === 0 && part.includes(':')) {
+      if (!firstPattern.test(part)) invalid();
+      const port = Number(part.slice(part.lastIndexOf(':') + 1));
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) invalid();
+      continue;
+    }
+    if (!componentPattern.test(part)) invalid();
+  }
+
+  return repo;
+}
+
+function assertCustomImageTag(value) {
+  const tag = String(value || 'latest').trim();
+  if (!isSafeTag(tag)) {
+    const err = new Error('Invalid image tag');
+    err.code = 'INVALID_TAG';
+    throw err;
+  }
+  return tag;
+}
+
+function assertCustomImageSpec(options = {}) {
+  const raw = options && typeof options === 'object' ? options : {};
+  const split = splitImageAndTag(raw.image, raw.tag);
+  const imageRepo = assertCustomImageRepo(split.image);
+  const tag = assertCustomImageTag(split.tag);
+  return {
+    imageRepo,
+    tag,
+    imageRef: imageRefForTag(imageRepo, tag)
+  };
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -1188,6 +1254,58 @@ function parseEnvText(value) {
   return env;
 }
 
+function parseMountsText(value) {
+  const raw = typeof value === 'string' ? value : '';
+  const entries = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (entries.length > 32) {
+    const err = new Error('Too many mounts');
+    err.code = 'INVALID_MOUNTS';
+    throw err;
+  }
+
+  const binds = [];
+  for (const entry of entries) {
+    if (entry.startsWith('#')) continue;
+    if (/[\x00-\x1F\x7F]/.test(entry)) {
+      const err = new Error('Invalid mount');
+      err.code = 'INVALID_MOUNTS';
+      throw err;
+    }
+
+    const parts = entry.split(':');
+    if (parts.length < 2 || parts.length > 3) {
+      const err = new Error(`Invalid mount: ${entry}`);
+      err.code = 'INVALID_MOUNTS';
+      throw err;
+    }
+
+    const source = parts[0].trim();
+    const target = parts[1].trim();
+    const mode = (parts[2] || 'rw').trim();
+    const namedVolume = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(source);
+    const hostPath = source.startsWith('/') && !source.includes('..');
+    if (!source || (!namedVolume && !hostPath)) {
+      const err = new Error(`Invalid mount source: ${source || entry}`);
+      err.code = 'INVALID_MOUNTS';
+      throw err;
+    }
+    if (!target.startsWith('/') || target.includes('..')) {
+      const err = new Error(`Invalid mount target: ${target || entry}`);
+      err.code = 'INVALID_MOUNTS';
+      throw err;
+    }
+    if (mode !== 'ro' && mode !== 'rw') {
+      const err = new Error(`Invalid mount mode: ${mode || entry}`);
+      err.code = 'INVALID_MOUNTS';
+      throw err;
+    }
+
+    binds.push(`${source}:${target}:${mode}`);
+  }
+
+  return binds;
+}
+
 function normalizeActivationOptions(options = {}, tag = '') {
   const raw = options && typeof options === 'object' ? options : {};
   const fallbackName = sanitizeInstanceName(`agent-zero-${tag || 'instance'}`);
@@ -1196,6 +1314,22 @@ function normalizeActivationOptions(options = {}, tag = '') {
     instanceName: sanitizeInstanceName(raw.instanceName, fallbackName),
     portMappings: hasPortMappings ? parsePortMappings(raw.portMappings) : null,
     env: parseEnvText(raw.envText)
+  };
+}
+
+function normalizeCustomImageOptions(options = {}) {
+  const raw = options && typeof options === 'object' ? options : {};
+  const spec = assertCustomImageSpec(raw);
+  const imageTail = spec.imageRepo.split('/').filter(Boolean).pop() || 'image';
+  const fallbackName = sanitizeInstanceName(`${imageTail}-${spec.tag}`, 'agent-zero-dev');
+  const hasPortMappings = typeof raw.portMappings === 'string' && raw.portMappings.trim();
+  return {
+    ...spec,
+    instanceName: sanitizeInstanceName(raw.instanceName, fallbackName),
+    portMappings: hasPortMappings ? parsePortMappings(raw.portMappings) : parsePortMappings('0:80'),
+    env: parseEnvText(raw.envText),
+    binds: parseMountsText(raw.mountsText),
+    pull: raw.pull !== false
   };
 }
 
@@ -1469,6 +1603,80 @@ async function createAndStartActiveContainer(docker, imageRepo, tag, portPrefere
   return { containerId, name: activeName };
 }
 
+function buildPortExposure(mappings) {
+  const exposedPorts = {};
+  const portBindings = {};
+  for (const mapping of mappings || []) {
+    const key = mapping.key || `${mapping.containerPort}/tcp`;
+    exposedPorts[key] = {};
+    portBindings[key] = [{ HostIp: '127.0.0.1', HostPort: String(mapping.hostPort) }];
+  }
+  return { exposedPorts, portBindings };
+}
+
+function preferredUiMapping(mappings) {
+  const candidates = Array.isArray(mappings) ? mappings : [];
+  const preferredContainerPorts = [80, 7860, 3000, 8080, 5000, 9000, 9001, 9002];
+  for (const port of preferredContainerPorts) {
+    const found = candidates.find((mapping) => Number(mapping.containerPort) === port);
+    if (found) return found;
+  }
+  return candidates.find((mapping) => Number(mapping.containerPort) !== 22) || candidates[0] || null;
+}
+
+function developerContainerName(instanceName) {
+  const suffix = Date.now().toString(36);
+  const base = sanitizeInstanceName(`a0-dev-${instanceName || 'image'}`, 'a0-dev-image').slice(0, 48);
+  return sanitizeInstanceName(`${base}-${suffix}`, `a0-dev-${suffix}`);
+}
+
+async function createAndStartDeveloperContainer(docker, options) {
+  const mappings = Array.isArray(options?.portMappings) ? options.portMappings : parsePortMappings('0:80');
+  const { exposedPorts, portBindings } = buildPortExposure(mappings);
+  const uiMapping = preferredUiMapping(mappings);
+  const sshMapping = mappings.find((mapping) => Number(mapping.containerPort) === 22) || null;
+  const containerName = developerContainerName(options?.instanceName);
+  const portMapLabel = mappings.map((m) => `${m.hostPort}:${m.containerPort}`).join(',');
+
+  const createOptions = {
+    name: containerName,
+    Image: options.imageRef,
+    ExposedPorts: exposedPorts,
+    Labels: {
+      'a0.launcher.managed': 'true',
+      'a0.launcher.role': 'developer',
+      'a0.launcher.versionTag': options.tag,
+      'a0.launcher.instanceName': options.instanceName,
+      'a0.launcher.imageRepo': options.imageRepo,
+      'a0.launcher.imageRef': options.imageRef,
+      'a0.launcher.port.map': portMapLabel,
+      'a0.launcher.port.ui': String(uiMapping?.hostPort ?? ''),
+      'a0.launcher.port.ssh': String(sshMapping?.hostPort ?? '')
+    },
+    HostConfig: {
+      PortBindings: portBindings
+    }
+  };
+
+  if (Array.isArray(options?.env) && options.env.length) {
+    createOptions.Env = options.env;
+  }
+  if (Array.isArray(options?.binds) && options.binds.length) {
+    createOptions.HostConfig.Binds = options.binds;
+  }
+
+  const created = await docker.createContainer(createOptions);
+  const containerId = created?.containerId;
+  if (!containerId) {
+    const err = new Error('Failed to create container');
+    err.code = 'CREATE_FAILED';
+    throw err;
+  }
+
+  await docker.startContainer(containerId);
+  return { containerId, name: containerName };
+}
+
 async function enforceRetention(docker, imageRepo, policy) {
   const keep = effectiveRetentionCount(policy);
   const containers = await docker.listContainers(imageRepo);
@@ -1669,6 +1877,44 @@ async function stopLocalInstance(containerId) {
       updateOperationProgress({ progress: 100, message: 'Stopped' });
     } catch (error) {
       const message = mapDockerInterfaceErrorToUiMessage(error) || 'Stop failed';
+      finishOperation('failed', message);
+    } finally {
+      await refreshDockerManager({ forceRefresh: false }).catch(() => {});
+    }
+  })().catch(() => {});
+
+  return { opId };
+}
+
+async function startLocalInstance(containerId) {
+  const imageRepo = getBackendImageRepo();
+  const id = assertContainerId(containerId);
+
+  requireNoRunningOperation();
+  const opId = beginOperation('start', null);
+
+  (async () => {
+    try {
+      updateOperationProgress({ message: 'Starting', progress: null });
+      const docker = await getManagedDocker(imageRepo);
+      const containers = await docker.listContainers(imageRepo);
+      const target = (containers || []).find((c) => c && c.containerId === id) || null;
+
+      if (!target || !target.containerId) {
+        const err = new Error('Instance not found');
+        err.code = 'INSTANCE_NOT_FOUND';
+        throw err;
+      }
+
+      const state = (target.state || '').toLowerCase();
+      if (state !== 'running') {
+        await docker.startContainer(target.containerId);
+      }
+
+      finishOperation('completed', null);
+      updateOperationProgress({ progress: 100, message: 'Started' });
+    } catch (error) {
+      const message = mapDockerInterfaceErrorToUiMessage(error) || 'Start failed';
       finishOperation('failed', message);
     } finally {
       await refreshDockerManager({ forceRefresh: false }).catch(() => {});
@@ -2205,6 +2451,67 @@ async function activateTag(tag, dataLossAck, options = {}) {
   return { opId, ack };
 }
 
+async function runCustomImage(options = {}) {
+  const imageRepo = getBackendImageRepo();
+  const custom = normalizeCustomImageOptions(options);
+
+  requireNoRunningOperation();
+  const opId = beginOperation('developer_run', custom.imageRef);
+
+  (async () => {
+    /** @type {any} */
+    let docker = null;
+    try {
+      docker = await getManagedDocker(imageRepo);
+
+      if (custom.pull) {
+        const controller = new AbortController();
+        _abortControllers.set(opId, controller);
+        updateOperationProgress({
+          message: 'Downloading custom image',
+          progress: null,
+          downloadProgress: 0,
+          extractProgress: 0,
+          canCancel: true
+        });
+        const pullResult = await docker.pullImage(custom.imageRef, {
+          signal: controller.signal,
+          onProgress: (evt) => {
+            const dl =
+              typeof evt?.downloadProgress === 'number' && Number.isFinite(evt.downloadProgress) ? evt.downloadProgress : null;
+            const ex =
+              typeof evt?.extractProgress === 'number' && Number.isFinite(evt.extractProgress) ? evt.extractProgress : null;
+            const message =
+              typeof dl === 'number' && dl < 100 ? 'Downloading custom image' : typeof ex === 'number' && ex < 100 ? 'Extracting custom image' : 'Downloading custom image';
+            updateOperationProgress({ progress: dl, downloadProgress: dl, extractProgress: ex, message, canCancel: true });
+          }
+        });
+        _abortControllers.delete(opId);
+        if (pullResult?.status === 'aborted_client') {
+          finishOperation('canceled', 'Canceled');
+          return;
+        }
+      }
+
+      updateOperationProgress({ message: 'Creating developer container', progress: null, canCancel: false });
+      await createAndStartDeveloperContainer(docker, custom);
+      finishOperation('completed', null);
+      updateOperationProgress({ progress: 100, message: 'Started' });
+    } catch (error) {
+      logDockerManagerError('runCustomImage', error, { opId, imageRef: custom.imageRef });
+      const message = mapDockerInterfaceErrorToUiMessage(error) || error?.message || 'Custom image run failed';
+      finishOperation('failed', message, error?.code || null);
+    } finally {
+      _abortControllers.delete(opId);
+      await refreshDockerManager({ forceRefresh: false }).catch(() => {});
+    }
+  })().catch((error) => {
+    logDockerManagerError('runCustomImage.unhandled', error, { opId, imageRef: custom.imageRef });
+  });
+
+  return { opId };
+}
+
 async function cancelOperation(opId) {
   const id = (opId || '').trim();
   if (!id) {
@@ -2343,6 +2650,7 @@ module.exports = {
   // Operations (implemented in later tasks)
   installOrSync,
   startActiveInstance,
+  startLocalInstance,
   stopActiveInstance,
   stopLocalInstance,
   setRetentionPolicy,
@@ -2358,6 +2666,7 @@ module.exports = {
   updateToLatest,
   activateRetainedInstance,
   activateTag,
+  runCustomImage,
   cancelOperation,
   getDockerInventory,
   removeVolume,

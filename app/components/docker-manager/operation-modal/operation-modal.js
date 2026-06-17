@@ -34,6 +34,7 @@ function operationHeadline(progress = null) {
     start: { running: "Starting Agent Zero", failed: "Start failed", canceled: "Start canceled" },
     stop: { running: "Stopping Agent Zero", failed: "Stop failed", canceled: "Stop canceled" },
     delete_instance: { running: "Deleting Agent Zero instance", failed: "Delete failed", canceled: "Delete canceled" },
+    developer_run: { running: "Running developer image", failed: "Developer image failed", canceled: "Developer image canceled" },
     operation: { running: "Working on Agent Zero", failed: "Operation failed", canceled: "Operation canceled" }
   };
   const entry = labels[type] || labels.operation;
@@ -55,7 +56,7 @@ function runningAction(progress = null) {
     return { primary: { kind: "wait", label: operationHeadline(progress), disabled: true }, secondary: null };
   }
   const type = asText(progress?.type);
-  const cancelLabel = type === "install" || type === "update" ? "Cancel download" : "Cancel";
+  const cancelLabel = type === "install" || type === "update" || type === "developer_run" ? "Cancel download" : "Cancel";
   return {
     primary: { kind: "wait", label: operationHeadline(progress), disabled: true },
     secondary: { kind: "cancel", label: cancelLabel, disabled: false }

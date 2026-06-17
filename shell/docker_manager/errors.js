@@ -61,6 +61,10 @@ function mapDockerInterfaceErrorToUiMessage(error) {
       return 'Invalid port mapping. Use host:container, for example 3000:80, or 0:80 to let Docker choose a local port.';
     case 'INVALID_ENV_VARS':
       return 'Invalid environment variables. Use KEY=value lines.';
+    case 'INVALID_IMAGE':
+      return 'Invalid Docker image name.';
+    case 'INVALID_MOUNTS':
+      return 'Invalid mount. Use source:/container/path with optional :ro or :rw.';
     case 'INVALID_REMOTE_INSTANCE':
       return 'Enter a valid remote instance URL.';
     case 'INVALID_DATA_LOSS_ACK':
@@ -78,10 +82,11 @@ function mapDockerInterfaceErrorToUiMessage(error) {
     case 'NO_ACTIVE_INSTANCE':
       return 'No active instance is available.';
     case 'CREATE_FAILED':
-      return 'Unable to start the selected version.';
+      return 'Unable to create the container.';
     case 'CONFLICT':
       return 'Unable to start due to a conflict (ports or name already in use).';
     case 'INVALID_TAG':
+      return 'Invalid Docker image tag.';
     case 'TAG_NOT_ALLOWED':
       return 'That version is not supported.';
 

@@ -55,6 +55,9 @@ This scope owns:
   help.
 - Use `Instances`, not `Sessions`, in visible copy.
 - Use `Storage volumes` when referring to Docker volumes.
+- Keep developer-only Docker controls in the Advanced tab. They may compose and
+  run custom images through named Docker Manager actions, but renderer code must
+  not expose generic command execution.
 - Keep install, activation, rollback, and destructive-storage flows explicit
   about risk without adding Docker jargon where a user decision is enough.
 - Toast feedback for modal actions must remain visible above blocking modal

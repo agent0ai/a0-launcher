@@ -28,8 +28,8 @@ This scope owns:
   actions.
 - `local-testing/`: local containers, per-instance action menus, remote
   instance CRUD, and instance opening.
-- `retained-instances/`: retained rollback containers and storage-volume cleanup.
-- `storage-summary/`: storage overview metrics.
+- `advanced/`: developer-mode custom image runner, Docker Compose composer,
+  diagnostics, and storage-volume maintenance.
 - `settings/`: port preferences and retention policy controls.
 - `instance-tabs/`: browser-style tab chrome, Home tab, active-tab controls,
   empty state, and viewport bounds reporting for shell-owned Agent Zero UI
@@ -93,13 +93,18 @@ This scope owns:
   variables as the explicit escape hatch.
 - Port mappings and environment text stay advanced activation inputs. They
   should not become a required path for normal users.
+- The Advanced tab may expose developer-mode custom image, tag, environment,
+  port, mount, and editable Compose-file controls. Keep it opt-in, validate
+  through Docker Manager IPC, and never expose a generic command runner or a
+  runtime-candidate browser.
 - The Instances tab owns both local Docker containers and saved remote
   instances. Visible copy must say `Instances`, not `Sessions`.
-- Local instance cards keep `Open UI` as the visible primary action. Secondary
-  management actions such as `Open A0 CLI`, `Stop`, and `Delete` belong in the
-  card overflow menu so they always apply to the specific instance shown.
-- Retained instances are rollback candidates; storage-volume cleanup must remain
-  clearly separate from instance start/stop actions.
+- Local instance cards keep `Open UI` or `Start` as the visible primary action.
+  Secondary management actions such as `Open A0 CLI`, `Stop`, and `Delete`
+  belong in the card overflow menu so they always apply to the specific instance
+  shown.
+- Retained instances are rollback candidates; storage-volume cleanup belongs in
+  Advanced and must remain clearly separate from instance start/stop actions.
 - Storage UI must say `Storage volumes` when referring to Docker volumes.
 - Settings owns persistence for preferred UI/SSH ports and retained-instance
   count. Do not scatter those controls into install or instance cards.

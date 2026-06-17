@@ -122,6 +122,11 @@ This scope owns:
   registry credentials from `DOCKER_CONFIG` or `~/.docker/config.json`, including
   configured credential helpers, so the launcher honors a successful
   shell-owned `docker login`.
+- `impl/DockerodeDocker.mjs` may surface launcher-managed container labels as
+  structured metadata and may include containers labeled
+  `a0.launcher.role=developer` in `listContainers()` even when their image repo
+  differs from the default Agent Zero repo. Keep UI language and product
+  decisions in `shell/docker_manager` or the renderer.
 - Log processing should normalize stream events into stable progress messages and
   preserve enough detail for cancellation/failure diagnosis.
 

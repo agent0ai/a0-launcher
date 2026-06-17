@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   refresh: () => ipcRenderer.invoke('docker-manager:refresh'),
   installOrSync: (tag) => ipcRenderer.invoke('docker-manager:install', { tag }),
   startActive: () => ipcRenderer.invoke('docker-manager:startActive'),
+  startLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:startLocalInstance', { containerId }),
   stopActive: () => ipcRenderer.invoke('docker-manager:stopActive'),
   stopLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:stopLocalInstance', { containerId }),
   setRetentionPolicy: (keepCount) => ipcRenderer.invoke('docker-manager:setRetentionPolicy', { keepCount }),
@@ -132,6 +133,18 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
       instanceName: typeof opts.instanceName === 'string' ? opts.instanceName : '',
       portMappings: typeof opts.portMappings === 'string' ? opts.portMappings : '',
       envText: typeof opts.envText === 'string' ? opts.envText : ''
+    });
+  },
+  runCustomImage: (options) => {
+    const opts = options && typeof options === 'object' ? options : {};
+    return ipcRenderer.invoke('docker-manager:runCustomImage', {
+      image: typeof opts.image === 'string' ? opts.image : '',
+      tag: typeof opts.tag === 'string' ? opts.tag : '',
+      instanceName: typeof opts.instanceName === 'string' ? opts.instanceName : '',
+      portMappings: typeof opts.portMappings === 'string' ? opts.portMappings : '',
+      envText: typeof opts.envText === 'string' ? opts.envText : '',
+      mountsText: typeof opts.mountsText === 'string' ? opts.mountsText : '',
+      pull: opts.pull !== false
     });
   },
   activateRetainedInstance: (containerId, dataLossAck) =>

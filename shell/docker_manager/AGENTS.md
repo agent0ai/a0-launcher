@@ -15,7 +15,7 @@ This scope owns:
 
 - `index.js`: Docker Manager service, state assembly, install/sync/start/stop,
   activation, rollback, retained-instance, remote-instance, port, storage,
-  runtime setup, and progress operations.
+  developer custom-image runs, runtime setup, and progress operations.
 - `state_store.js`: persisted launcher state under Electron `userData`.
 - `releases_client.js`: GitHub release discovery for Agent Zero backend
   versions.
@@ -35,6 +35,10 @@ This scope owns:
   canonical local tags (`local`, `development`, `main`).
 - Activation can target installed local builds, but still must reject unsafe tag
   strings.
+- Developer custom-image runs may target safe arbitrary Docker image
+  repositories and tags. Validate image names, tags, environment variables,
+  port mappings, and mounts before Dockerode sees them; label created containers
+  with `a0.launcher.role=developer` so the Instances tab can manage them.
 - UI URLs should be derived from inspected port bindings and verified where
   practical before opening.
 - Start, switch, and activation flows should give the Agent Zero UI enough time
@@ -93,7 +97,7 @@ This scope owns:
   Linux Engine.
 - Progress messages should be user-oriented: `Starting selected version`, not
   raw Docker implementation chatter.
-- Per-container stop/delete actions from the Instances card menu still belong
+- Per-container start/stop/delete actions from the Instances card menu still belong
   in this product layer. They must target the requested container id, return an
   operation id, refresh state afterward, and keep storage-volume deletion
   separate from container deletion.

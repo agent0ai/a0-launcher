@@ -258,6 +258,7 @@ function renderDockerInstance(list, c, state) {
   const actions = document.createElement("div");
   actions.className = "dm-card-actions";
   const isActiveInstance = c?.labels?.["a0.launcher.role"] === "active" || String(c?.containerName || "").includes("-active__");
+  const isDeveloperInstance = c?.labels?.["a0.launcher.role"] === "developer";
   const isRunning = st === "running";
 
   if (isRunning) {
@@ -281,6 +282,16 @@ function renderDockerInstance(list, c, state) {
     startBtn.disabled = operationRunning;
     startBtn.addEventListener("click", () => {
       window.dockerManagerActions?.startActive?.();
+    });
+    actions.appendChild(startBtn);
+  } else if (isDeveloperInstance) {
+    const startBtn = document.createElement("button");
+    startBtn.className = "button confirm";
+    startBtn.type = "button";
+    startBtn.textContent = "Start";
+    startBtn.disabled = operationRunning;
+    startBtn.addEventListener("click", () => {
+      window.dockerManagerActions?.startLocalInstance?.(containerId);
     });
     actions.appendChild(startBtn);
   }

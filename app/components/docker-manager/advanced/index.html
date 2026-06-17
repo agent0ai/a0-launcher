@@ -1,0 +1,97 @@
+<body>
+  <section class="section sv-card dm-advanced-page">
+    <div class="sv-card-head sv-card-head-row">
+      <div>
+        <h2 class="section-title sv-section-heading">Advanced</h2>
+        <div id="advancedSubtitle" class="sv-subtitle">Developer tools and diagnostics</div>
+      </div>
+    </div>
+
+    <div class="dm-advanced-grid">
+      <section class="dm-advanced-panel dm-advanced-panel-wide" aria-labelledby="developerModeTitle">
+        <div class="dm-advanced-panel-head">
+          <div>
+            <h3 id="developerModeTitle" class="dm-advanced-title">Developer mode</h3>
+            <div class="sv-subtitle">Custom images, tags, environment, ports, and mounts</div>
+          </div>
+          <label class="dm-toggle-line">
+            <input id="developerModeToggle" type="checkbox">
+            <span id="developerModeState">Off</span>
+          </label>
+        </div>
+
+        <div class="dm-advanced-form">
+          <div class="dm-field">
+            <label for="advancedImageInput">Image</label>
+            <input id="advancedImageInput" class="dm-text-input" type="text" autocomplete="off" placeholder="agent0ai/agent-zero">
+          </div>
+          <div class="dm-field">
+            <label for="advancedTagInput">Tag</label>
+            <input id="advancedTagInput" class="dm-text-input" type="text" autocomplete="off" placeholder="latest">
+          </div>
+          <div class="dm-field">
+            <label for="advancedInstanceNameInput">Instance name</label>
+            <input id="advancedInstanceNameInput" class="dm-text-input" type="text" maxlength="64" autocomplete="off" placeholder="agent-zero-dev">
+          </div>
+          <label class="dm-checkbox-line">
+            <input id="advancedPullToggle" type="checkbox" checked>
+            <span>Pull before run</span>
+          </label>
+          <div class="dm-field dm-field-wide">
+            <label for="advancedPortsInput">Ports</label>
+            <textarea id="advancedPortsInput" class="dm-textarea dm-advanced-small-textarea" spellcheck="false" placeholder="0:80&#10;0:22"></textarea>
+          </div>
+          <div class="dm-field dm-field-wide">
+            <label for="advancedEnvInput">Environment</label>
+            <textarea id="advancedEnvInput" class="dm-textarea" spellcheck="false" placeholder="KEY=value"></textarea>
+          </div>
+          <div class="dm-field dm-field-wide">
+            <label for="advancedMountsInput">Mounts</label>
+            <textarea id="advancedMountsInput" class="dm-textarea" spellcheck="false" placeholder="/host/path:/container/path:rw"></textarea>
+          </div>
+        </div>
+
+        <div class="dm-advanced-actions">
+          <button id="copyComposeBtn" class="button" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
+            <span>Copy Compose</span>
+          </button>
+          <button id="runCustomImageBtn" class="button confirm" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>
+            <span>Run image</span>
+          </button>
+        </div>
+
+        <div class="dm-field dm-compose-field">
+          <label for="composePreview">Docker Compose</label>
+          <textarea id="composePreview" class="dm-textarea dm-compose-preview" spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <section class="dm-advanced-panel" aria-labelledby="diagnosticsTitle">
+        <div class="dm-advanced-panel-head">
+          <div>
+            <h3 id="diagnosticsTitle" class="dm-advanced-title">Diagnostics</h3>
+            <div class="sv-subtitle">Docker and launcher inventory</div>
+          </div>
+        </div>
+        <div id="advancedDiagnostics" class="dm-diagnostics-grid"></div>
+      </section>
+
+      <section class="dm-advanced-panel" aria-labelledby="advancedVolumesTitle">
+        <div class="dm-advanced-panel-head">
+          <div>
+            <h3 id="advancedVolumesTitle" class="dm-advanced-title">Storage volumes</h3>
+            <div id="advancedVolumesSubtitle" class="sv-subtitle">Docker volumes</div>
+          </div>
+          <button id="advancedPruneVolumesBtn" class="button cancel" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span>
+            <span>Clear unused</span>
+          </button>
+        </div>
+        <div id="advancedVolumesList" class="sv-list"></div>
+      </section>
+    </div>
+  </section>
+  <script type="module" src="components/docker-manager/advanced/advanced.js"></script>
+</body>

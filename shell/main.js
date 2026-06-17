@@ -2653,6 +2653,20 @@ ipcMain.handle('docker-manager:stopLocalInstance', async (_event, body) => {
   }
 });
 
+ipcMain.handle('docker-manager:startLocalInstance', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const accepted = await dockerManager.startLocalInstance(containerId);
+    if (!accepted || typeof accepted.opId !== 'string') {
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Start did not return an opId' });
+    }
+    return { opId: accepted.opId };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 ipcMain.handle('docker-manager:setRetentionPolicy', async (_event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
@@ -2776,6 +2790,28 @@ ipcMain.handle('docker-manager:activate', async (_event, body) => {
     const accepted = await dockerManager.activateTag(tag, dataLossAck, options);
     if (!accepted || typeof accepted.opId !== 'string') {
       return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Activate did not return an opId' });
+    }
+    return { opId: accepted.opId };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:runCustomImage', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const options = {
+      image: typeof body.image === 'string' ? body.image : '',
+      tag: typeof body.tag === 'string' ? body.tag : '',
+      instanceName: typeof body.instanceName === 'string' ? body.instanceName : '',
+      portMappings: typeof body.portMappings === 'string' ? body.portMappings : '',
+      envText: typeof body.envText === 'string' ? body.envText : '',
+      mountsText: typeof body.mountsText === 'string' ? body.mountsText : '',
+      pull: body.pull !== false
+    };
+    const accepted = await dockerManager.runCustomImage(options);
+    if (!accepted || typeof accepted.opId !== 'string') {
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Custom image run did not return an opId' });
     }
     return { opId: accepted.opId };
   } catch (error) {

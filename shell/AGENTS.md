@@ -96,6 +96,10 @@ This scope owns:
 - Docker Hub sign-in recovery is a named shell-owned intent. The renderer may
   request it, but `shell/main.js` must launch a visible wrapper around the real
   `docker login` flow instead of exposing generic command execution.
+- Developer custom-image runs are named Docker Manager intents. The renderer may
+  pass image, tag, environment, port, mount, and pull preferences, but shell code
+  must keep validation and Docker execution behind `shell/docker_manager`; do not
+  add generic shell or Docker command IPC.
 - Docker CLI discovery for that sign-in flow should honor explicit
   `A0_DOCKER_CLI_PATH` or `DOCKER_CLI_PATH` overrides, then `PATH`, then known
   Docker Desktop, Homebrew, Linux package, and Snap locations before failing.

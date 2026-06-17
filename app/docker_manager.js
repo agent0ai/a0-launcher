@@ -233,7 +233,7 @@ async function refresh() {
   }
 }
 
-const NAV_REFRESH_TABS = new Set(["installs", "sessions"]);
+const NAV_REFRESH_TABS = new Set(["installs", "sessions", "advanced"]);
 let navRefreshTimer = 0;
 
 function scheduleNavRefresh(tab) {
@@ -469,6 +469,16 @@ async function stopLocalInstance(containerId) {
   );
 }
 
+async function startLocalInstance(containerId) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.startLocalInstance !== "function") return startActive();
+  return runDockerOperation(
+    "Start",
+    () => api.startLocalInstance(containerId || ""),
+    "Instance start requested."
+  );
+}
+
 async function deleteLocalInstance(containerId) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.deleteLocalInstance !== "function") return false;
@@ -490,6 +500,18 @@ async function activateTag(tag, options = {}) {
     () => api.activateTag(tag, dataLossAck, payload),
     "Instance run requested."
   );
+}
+
+async function runCustomImage(options = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.runCustomImage !== "function") return false;
+  const payload = options && typeof options === "object" ? options : {};
+  const res = await runDockerOperation(
+    "Run custom image",
+    () => api.runCustomImage(payload),
+    "Developer image run requested."
+  );
+  return !isErrorResponse(res);
 }
 
 async function openCliTerminal(host = "") {
@@ -648,10 +670,12 @@ window.dockerManagerActions = {
   selectRuntimeEndpoint,
   installOrSync,
   startActive,
+  startLocalInstance,
   stopActive,
   stopLocalInstance,
   deleteLocalInstance,
   activateTag,
+  runCustomImage,
   openCliTerminal,
   openDockerLoginTerminal,
   retryInstall,

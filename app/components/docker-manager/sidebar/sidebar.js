@@ -1,12 +1,14 @@
 const STORAGE_KEY = "dm-active-tab";
 const DEFAULT_TAB = "installs";
+const VALID_TABS = new Set(["installs", "sessions", "advanced", "settings"]);
 
 function getActiveTab() {
-  return sessionStorage.getItem(STORAGE_KEY) || DEFAULT_TAB;
+  const tab = sessionStorage.getItem(STORAGE_KEY) || DEFAULT_TAB;
+  return VALID_TABS.has(tab) ? tab : DEFAULT_TAB;
 }
 
 function setActiveTab(tab) {
-  sessionStorage.setItem(STORAGE_KEY, tab);
+  sessionStorage.setItem(STORAGE_KEY, VALID_TABS.has(tab) ? tab : DEFAULT_TAB);
 }
 
 function applyTab(tab) {

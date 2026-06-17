@@ -32,6 +32,27 @@ function tagFromRef(imageRef) {
   return '';
 }
 
+function bestUiPortFromList(ports) {
+  const candidates = [];
+  for (const port of Array.isArray(ports) ? ports : []) {
+    const privatePort = Number(port?.PrivatePort);
+    const publicPort = Number(port?.PublicPort);
+    if (!Number.isFinite(privatePort) || privatePort <= 0 || privatePort > 65535) continue;
+    if (!Number.isFinite(publicPort) || publicPort <= 0 || publicPort > 65535) continue;
+    candidates.push({ privatePort, publicPort });
+  }
+
+  if (!candidates.length) return null;
+  const preferredPrivatePorts = [80, 7860, 3000, 8080, 5000, 9000, 9001, 9002];
+  for (const p of preferredPrivatePorts) {
+    const match = candidates.find((candidate) => candidate.privatePort === p);
+    if (match) return match;
+  }
+
+  candidates.sort((a, b) => a.publicPort - b.publicPort);
+  return candidates.find((candidate) => candidate.privatePort !== 22) || candidates[0];
+}
+
 function safeIsoNow() {
   return new Date().toISOString();
 }
@@ -606,23 +627,27 @@ export class DockerodeDocker extends DockerInterface {
 
       for (const c of containers || []) {
         const image = typeof c?.Image === 'string' ? c.Image : '';
-        if (!image.startsWith(`${repo}:`)) continue;
-
         const names = Array.isArray(c?.Names) ? c.Names : [];
         const name = typeof names[0] === 'string' ? names[0].replace(/^\//, '') : null;
         const labels = c?.Labels && typeof c.Labels === 'object' ? c.Labels : {};
         const ports = Array.isArray(c?.Ports) ? c.Ports : [];
-        const uiPort = ports.find((p) =>
-          Number(p?.PrivatePort) === 80 &&
-          Number.isFinite(Number(p?.PublicPort)) &&
-          Number(p.PublicPort) > 0
-        );
+        const isRepoImage = image.startsWith(`${repo}:`);
+        const isDeveloperContainer =
+          labels['a0.launcher.managed'] === 'true' &&
+          labels['a0.launcher.role'] === 'developer';
+        if (!isRepoImage && !isDeveloperContainer) continue;
+
+        const uiPort = bestUiPortFromList(ports);
+        const tag = isRepoImage
+          ? image.slice(repo.length + 1)
+          : labels['a0.launcher.versionTag'] || tagFromRef(image) || image;
         results.push({
           containerId: c?.Id || null,
           containerName: name,
           instanceName: typeof labels['a0.launcher.instanceName'] === 'string' ? labels['a0.launcher.instanceName'] : null,
           imageRef: image,
-          tag: image.slice(repo.length + 1),
+          tag,
+          versionTag: tag,
           state: c?.State || null,
           status: c?.Status || null,
           createdAt: Number.isFinite(Number(c?.Created)) ? Number(c.Created) * 1000 : null,
