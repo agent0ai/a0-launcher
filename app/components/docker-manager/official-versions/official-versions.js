@@ -127,6 +127,179 @@ function defaultInstanceName(tag) {
   return sanitizeName(`agent-zero-${tag || "instance"}`).slice(0, 64);
 }
 
+const CHAT_MODEL_PROVIDER_OPTIONS = [
+  ["a0_venice", "Agent Zero API"],
+  ["openrouter", "OpenRouter"],
+  ["anthropic", "Anthropic"],
+  ["openai", "OpenAI"],
+  ["google", "Google Gemini"],
+  ["xai", "xAI"],
+  ["groq", "Groq"],
+  ["mistral", "Mistral"],
+  ["deepseek", "DeepSeek"],
+  ["moonshot", "Moonshot AI"],
+  ["nebius", "Nebius Token Factory"],
+  ["sambanova", "Sambanova"],
+  ["venice", "Venice.ai"],
+  ["zai", "Z.AI"],
+  ["zai_coding", "Z.AI Coding"],
+  ["github_copilot", "GitHub Copilot"],
+  ["cometapi", "CometAPI"],
+  ["ollama", "Ollama"],
+  ["ollama_cloud", "Ollama Cloud"],
+  ["lm_studio", "LM Studio"],
+  ["llama_cpp", "llama.cpp"],
+  ["omlx", "oMLX"],
+  ["vllm", "vLLM"],
+  ["huggingface", "Hugging Face"],
+  ["azure", "OpenAI Azure"],
+  ["bedrock", "AWS Bedrock"],
+  ["other", "Other"]
+];
+
+const EMBEDDING_MODEL_PROVIDER_OPTIONS = [
+  ["huggingface", "Hugging Face"],
+  ["openai", "OpenAI"],
+  ["openrouter", "OpenRouter"],
+  ["google", "Google Gemini"],
+  ["mistral", "Mistral"],
+  ["a0_venice", "Agent Zero API"],
+  ["venice", "Venice.ai"],
+  ["ollama", "Ollama"],
+  ["lm_studio", "LM Studio"],
+  ["llama_cpp", "llama.cpp"],
+  ["omlx", "oMLX"],
+  ["vllm", "vLLM"],
+  ["azure", "OpenAI Azure"],
+  ["bedrock", "AWS Bedrock"],
+  ["other", "Other"]
+];
+
+const PRIMARY_ACTIVATION_MODEL_DEFAULTS = [
+  {
+    id: "Main",
+    label: "Main",
+    defaultProvider: "openrouter",
+    providerEnv: "A0_SET__model_config__chat_model__provider",
+    modelEnv: "A0_SET__model_config__chat_model__name",
+    modelPlaceholder: "anthropic/claude-sonnet-4.6",
+    keyPlaceholder: "OpenRouter API key",
+    providerOptions: CHAT_MODEL_PROVIDER_OPTIONS
+  },
+  {
+    id: "Utility",
+    label: "Utility",
+    defaultProvider: "openrouter",
+    providerEnv: "A0_SET__model_config__utility_model__provider",
+    modelEnv: "A0_SET__model_config__utility_model__name",
+    modelPlaceholder: "google/gemini-3.1-flash-lite-preview",
+    keyPlaceholder: "OpenRouter API key",
+    providerOptions: CHAT_MODEL_PROVIDER_OPTIONS
+  }
+];
+
+const ADVANCED_ACTIVATION_MODEL_DEFAULTS = [
+  {
+    id: "Embedding",
+    label: "Embedding",
+    defaultProvider: "huggingface",
+    providerEnv: "A0_SET__model_config__embedding_model__provider",
+    modelEnv: "A0_SET__model_config__embedding_model__name",
+    modelPlaceholder: "sentence-transformers/all-MiniLM-L6-v2",
+    keyPlaceholder: "Embedding API key",
+    providerOptions: EMBEDDING_MODEL_PROVIDER_OPTIONS
+  }
+];
+
+const ACTIVATION_MODEL_DEFAULTS = [
+  ...PRIMARY_ACTIVATION_MODEL_DEFAULTS,
+  ...ADVANCED_ACTIVATION_MODEL_DEFAULTS
+];
+
+function providerOptionsHtml(options, selectedValue = "") {
+  return options
+    .map(([value, label]) => `<option value="${value}"${value === selectedValue ? " selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function activationModelRowsHtml(slots) {
+  return slots.map((slot) => `
+    <div class="dm-model-section">
+      <div class="dm-model-label">${slot.label}</div>
+      <div class="dm-model-controls">
+        <div class="dm-model-row">
+          <select id="activate${slot.id}Provider" class="dm-select" aria-label="${slot.label} provider">
+            ${providerOptionsHtml(slot.providerOptions, slot.defaultProvider)}
+          </select>
+          <input id="activate${slot.id}Model" class="dm-text-input" type="text" autocomplete="off" aria-label="${slot.label} model" placeholder="${slot.modelPlaceholder}">
+        </div>
+        <input id="activate${slot.id}ApiKey" class="dm-text-input dm-model-api-key" type="password" autocomplete="off" aria-label="${slot.label} API key" placeholder="${slot.keyPlaceholder}">
+      </div>
+    </div>
+  `).join("");
+}
+
+function fieldValue(dialog, selector) {
+  return String(dialog.querySelector(selector)?.value || "").trim();
+}
+
+function envKeyFromLine(line) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed || trimmed.startsWith("#")) return "";
+  const idx = trimmed.indexOf("=");
+  return idx > 0 ? trimmed.slice(0, idx).trim() : "";
+}
+
+function providerApiKeyName(provider) {
+  const suffix = String(provider || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+/, "")
+    .replace(/_+$/, "");
+  return suffix ? `API_KEY_${suffix}` : "";
+}
+
+function mergeEnvText(generatedLines, userText) {
+  const userLines = String(userText || "").split(/\r?\n/);
+  const userKeys = new Set(userLines.map(envKeyFromLine).filter(Boolean));
+  const generated = generatedLines.filter((line) => !userKeys.has(envKeyFromLine(line)));
+  const userBlock = userLines.join("\n").trim();
+  if (!generated.length) return userBlock;
+  if (!userBlock) return generated.join("\n");
+  return `${generated.join("\n")}\n\n${userBlock}`;
+}
+
+function buildActivationEnvText(dialog, userText) {
+  const lines = [];
+  const apiKeys = new Map();
+  for (const slot of ACTIVATION_MODEL_DEFAULTS) {
+    const provider = fieldValue(dialog, `#activate${slot.id}Provider`) || slot.defaultProvider || "";
+    const model = fieldValue(dialog, `#activate${slot.id}Model`);
+    const apiKey = fieldValue(dialog, `#activate${slot.id}ApiKey`);
+    if (provider && (provider !== slot.defaultProvider || model || apiKey)) {
+      lines.push(`${slot.providerEnv}=${provider}`);
+    }
+    if (model) lines.push(`${slot.modelEnv}=${model}`);
+
+    if (apiKey) {
+      const apiKeyName = providerApiKeyName(provider);
+      if (!apiKeyName) {
+        return { ok: false, message: `Choose the provider for the ${slot.label} API key.` };
+      }
+      const existing = apiKeys.get(apiKeyName);
+      if (existing && existing !== apiKey) {
+        return { ok: false, message: `Use one ${provider} API key across model slots, or choose separate providers.` };
+      }
+      apiKeys.set(apiKeyName, apiKey);
+    }
+  }
+
+  for (const [key, value] of apiKeys) lines.push(`${key}=${value}`);
+
+  return { ok: true, value: mergeEnvText(lines, userText) };
+}
+
 function normalizeVersionEntries(state) {
   const versions = Array.isArray(state?.versions) ? state.versions : [];
   const images = Array.isArray(state?.images) ? state.images : [];
@@ -276,9 +449,22 @@ function openActivateDialog(entry, state) {
           <input id="activateInstanceName" class="dm-text-input" type="text" maxlength="64" autocomplete="off">
           <div class="dm-field-hint">A friendly name shown in the launcher. The managed Docker name stays stable so rollback keeps working.</div>
         </div>
+        <div class="dm-field dm-model-defaults">
+          <div class="dm-field-label">Choose your models</div>
+          <div class="dm-model-grid">
+            ${activationModelRowsHtml(PRIMARY_ACTIVATION_MODEL_DEFAULTS)}
+          </div>
+          <div class="dm-field-hint">Using a subscription-based provider? Leave the defaults and connect the subscription during onboarding in the Agent Zero Web UI.</div>
+        </div>
         <details class="dm-advanced">
           <summary>Advanced</summary>
           <div class="dm-advanced-body">
+            <div class="dm-field dm-model-defaults">
+              <div class="dm-field-label">Embedding model</div>
+              <div class="dm-model-grid">
+                ${activationModelRowsHtml(ADVANCED_ACTIVATION_MODEL_DEFAULTS)}
+              </div>
+            </div>
             <div class="dm-field">
               <label for="activatePortMappings">Port mapping</label>
               <textarea id="activatePortMappings" class="dm-textarea" spellcheck="false"></textarea>
@@ -286,7 +472,7 @@ function openActivateDialog(entry, state) {
             </div>
             <div class="dm-field">
               <label for="activateEnvVars">Environment variables</label>
-              <textarea id="activateEnvVars" class="dm-textarea" spellcheck="false" placeholder="A0_SET_chat_model_provider=anthropic&#10;A0_SET_chat_model_name=claude-3-5-sonnet-20241022"></textarea>
+              <textarea id="activateEnvVars" class="dm-textarea" spellcheck="false" placeholder="A0_SET__model_config__chat_model__provider=openrouter&#10;A0_SET__model_config__chat_model__name=anthropic/claude-sonnet-4.6&#10;API_KEY_OPENROUTER=sk-..."></textarea>
               <div class="dm-field-hint">Agent Zero supports <strong>A0_SET_&lt;setting_name&gt;=&lt;value&gt;</strong> for initial defaults. Saved settings still take precedence, and restart is required for changes.</div>
             </div>
           </div>
@@ -325,10 +511,15 @@ function openActivateDialog(entry, state) {
       window.toastFrontendError?.("Choose how to proceed with the current active instance.", "Agent Zero");
       return;
     }
+    const envResult = buildActivationEnvText(dialog, envInput?.value || "");
+    if (!envResult.ok) {
+      window.toastFrontendError?.(envResult.message, "Agent Zero");
+      return;
+    }
     const options = {
       instanceName: nameInput?.value || "",
       portMappings: portInput?.value || "0:80",
-      envText: envInput?.value || "",
+      envText: envResult.value || "",
       dataLossAck: selectedAck || "proceed_without_backup"
     };
     closeDialog(dialog);

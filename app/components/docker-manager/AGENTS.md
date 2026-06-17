@@ -23,8 +23,9 @@ This scope owns:
 - `onboarding/`: retired runtime setup banner files kept only for compatibility
   until they are removed.
 - `sidebar/`: tab navigation and `dm:nav` event publication.
-- `official-versions/`: install/version cards, activation dialog, port/env
-  overrides, data-loss acknowledgement, and update/switch actions.
+- `official-versions/`: install/version cards, activation dialog, model default
+  helpers, port/env overrides, data-loss acknowledgement, and update/switch
+  actions.
 - `local-testing/`: local containers, per-instance action menus, remote
   instance CRUD, and instance opening.
 - `retained-instances/`: retained rollback containers and storage-volume cleanup.
@@ -84,6 +85,10 @@ This scope owns:
   Installs view.
 - Activating a tag while another instance is active must keep the
   backup/proceed acknowledgement.
+- Activation may offer optional model provider/model/API-key helpers. Keep Main
+  and Utility in the primary dialog body, keep Embedding under Advanced, compile
+  helpers to Agent Zero environment defaults, and preserve Advanced environment
+  variables as the explicit escape hatch.
 - Port mappings and environment text stay advanced activation inputs. They
   should not become a required path for normal users.
 - The Instances tab owns both local Docker containers and saved remote

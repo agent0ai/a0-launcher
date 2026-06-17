@@ -969,6 +969,42 @@ body, html {
   line-height: 1.45;
 }
 
+.dm-model-defaults {
+  gap: 0.45rem;
+}
+
+.dm-model-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.dm-model-section {
+  display: grid;
+  grid-template-columns: minmax(4.9rem, 0.52fr) minmax(0, 2.3fr);
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.dm-model-label {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding-top: 0.68rem;
+}
+
+.dm-model-controls {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.dm-model-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.9fr) minmax(12rem, 1.4fr);
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .dm-radio-line {
   display: flex;
   align-items: center;
@@ -1025,6 +1061,17 @@ body, html {
 
 .dm-dialog-close {
   min-width: 2rem;
+}
+
+@media (max-width: 640px) {
+  .dm-model-section,
+  .dm-model-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-model-label {
+    padding-top: 0;
+  }
 }
 
 .dm-runtime-gate-backdrop {
