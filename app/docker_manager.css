@@ -312,6 +312,13 @@ body, html {
   padding-right: 0.25rem;
 }
 
+.dm-official-list-scroll {
+  max-height: min(36rem, calc(100vh - 13rem));
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  scroll-padding-block: 0.25rem;
+}
+
 .sv-list-scroll-compact {
   max-height: min(16rem, 35vh);
 }
@@ -337,6 +344,11 @@ body, html {
   border-color: var(--color-primary);
   transform: translateY(-1px);
   background: color-mix(in srgb, var(--dm-surface-strong) 84%, var(--color-highlight) 16%);
+}
+
+.dm-card-highlight {
+  border-color: color-mix(in srgb, var(--color-highlight) 55%, var(--dm-line-soft));
+  box-shadow: 0 0.55rem 1.25rem color-mix(in srgb, var(--color-highlight) 20%, transparent);
 }
 
 .dm-card-visual {
@@ -734,16 +746,6 @@ body, html {
 .sv-storage-value {
   font-size: 1.05rem;
   font-weight: 600;
-}
-
-.sv-help summary {
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.sv-help-body {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
 }
 
 .sv-onboarding-message {

@@ -30,7 +30,6 @@ This scope owns:
 - `retained-instances/`: retained rollback containers and storage-volume cleanup.
 - `storage-summary/`: storage overview metrics.
 - `settings/`: port preferences and retention policy controls.
-- `help/`: concise static help in the install tab.
 - `instance-tabs/`: browser-style tab chrome, active-tab controls, empty state,
   and viewport bounds reporting for shell-owned Agent Zero UI views.
 
