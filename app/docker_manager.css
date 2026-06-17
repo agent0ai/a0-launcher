@@ -1116,24 +1116,40 @@ body, html {
   display: flex;
 }
 
+body.dm-instance-home-active .dm-page {
+  padding-top: calc(1.25rem + 2.95rem);
+}
+
+.dm-instance-tabs.home-active {
+  display: block;
+  bottom: auto;
+  background: transparent;
+  pointer-events: none;
+}
+
 .dm-instance-tab-strip {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2.75rem;
+  min-height: 2.95rem;
   border-bottom: 1px solid var(--dm-line-soft);
   overflow-x: auto;
   padding: 0.4rem 0.65rem 0;
   flex: 0 0 auto;
+  background: var(--color-background);
+}
+
+.dm-instance-tabs.home-active .dm-instance-tab-strip {
+  pointer-events: auto;
 }
 
 .dm-instance-tab {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  max-width: 15rem;
-  min-width: 8rem;
-  min-height: 2.1rem;
+  max-width: 17rem;
+  min-width: 9rem;
+  min-height: 2.35rem;
   border: 1px solid var(--dm-line-soft);
   border-radius: 0.45rem 0.45rem 0 0;
   background: var(--dm-surface);
@@ -1144,25 +1160,58 @@ body, html {
   padding: 0.35rem 0.45rem;
 }
 
+.dm-instance-home-tab {
+  min-width: 6.25rem;
+}
+
 .dm-instance-tab.active {
   background: var(--dm-surface-strong);
   color: var(--color-text);
   border-color: var(--color-highlight);
 }
 
+.dm-instance-tab .material-symbols-outlined {
+  flex: 0 0 auto;
+}
+
+.dm-instance-tab-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  line-height: 1.15;
+}
+
 .dm-instance-tab-title {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.dm-instance-tab-url {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
 .dm-instance-tab-close {
   margin-left: auto;
   font-size: 1rem;
+  flex: 0 0 auto;
 }
 
 .dm-instance-tab-controls {
   display: inline-flex;
+  align-items: center;
   gap: 0.25rem;
   margin-left: auto;
   position: sticky;
@@ -1182,6 +1231,10 @@ body, html {
   background: #000;
 }
 
+.dm-instance-tabs.home-active .dm-instance-tab-viewport {
+  display: none;
+}
+
 .dm-instance-tab-empty {
   height: 100%;
   display: flex;
@@ -1193,9 +1246,17 @@ body, html {
 }
 
 @media (max-width: 760px) {
+  body.dm-instance-home-active .dm-page {
+    padding-top: calc(1.25rem + 2.9rem);
+  }
+
   .dm-instance-tab {
-    min-width: 6.5rem;
-    max-width: 11rem;
+    min-width: 7.5rem;
+    max-width: 12rem;
+  }
+
+  .dm-instance-home-tab {
+    min-width: 5.75rem;
   }
 }
 

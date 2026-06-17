@@ -78,3 +78,31 @@ test('makeTabsSnapshot exposes only sanitized tab fields', () => {
     activeTabId: 'tab-1'
   });
 });
+
+test('makeTabsSnapshot supports launcher home with no active instance tab', () => {
+  const tabs = new Map();
+  tabs.set('tab-1', {
+    id: 'tab-1',
+    kind: 'local',
+    title: 'Research instance',
+    url: 'http://127.0.0.1:32080/',
+    containerId: 'abc',
+    loading: false,
+    canReload: true
+  });
+
+  assert.deepEqual(makeTabsSnapshot(tabs, ''), {
+    tabs: [{
+      id: 'tab-1',
+      kind: 'local',
+      title: 'Research instance',
+      url: 'http://127.0.0.1:32080/',
+      containerId: 'abc',
+      instanceId: '',
+      active: false,
+      loading: false,
+      canReload: true
+    }],
+    activeTabId: ''
+  });
+});

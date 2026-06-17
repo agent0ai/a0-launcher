@@ -22,12 +22,15 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
 
   const tabs = Array.isArray(snapshot?.tabs) ? snapshot.tabs : [];
   const selected = activeTab(snapshot);
+  const homeActive = !selected;
   strip.innerHTML = "";
 
   if (!tabs.length) {
     // No tabs: the overlay collapses out of layout entirely so the launcher
     // shell behind it stays scrollable and clickable.
     if (section) section.classList.remove("has-tabs");
+    if (section) section.classList.remove("home-active");
+    document.body.classList.remove("dm-instance-home-active");
     viewport.classList.remove("has-tab");
     if (empty) empty.classList.remove("hidden");
     window.dockerManagerActions?.syncInstanceTabBounds?.();
@@ -35,14 +38,36 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   }
 
   if (section) section.classList.add("has-tabs");
-  viewport.classList.add("has-tab");
+  if (section) section.classList.toggle("home-active", homeActive);
+  document.body.classList.toggle("dm-instance-home-active", homeActive);
+  viewport.classList.toggle("has-tab", !homeActive);
   if (empty) empty.classList.add("hidden");
+
+  const home = document.createElement("button");
+  home.type = "button";
+  home.className = `dm-instance-tab dm-instance-home-tab${homeActive ? " active" : ""}`;
+  home.title = "Launcher";
+  home.setAttribute("aria-label", "Show launcher home");
+  home.addEventListener("click", () => window.dockerManagerActions?.selectInstanceHome?.());
+
+  const homeIcon = document.createElement("span");
+  homeIcon.className = "material-symbols-outlined";
+  homeIcon.setAttribute("aria-hidden", "true");
+  homeIcon.textContent = "home";
+
+  const homeLabel = document.createElement("span");
+  homeLabel.className = "dm-instance-tab-title";
+  homeLabel.textContent = "Home";
+
+  home.appendChild(homeIcon);
+  home.appendChild(homeLabel);
+  strip.appendChild(home);
 
   for (const tab of tabs) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `dm-instance-tab${tab?.id === selected?.id ? " active" : ""}`;
-    button.title = tab?.url || "Agent Zero";
+    button.title = tab?.url ? `${tab?.title || "Agent Zero"}\n${tab.url}` : (tab?.title || "Agent Zero");
     button.addEventListener("click", () => window.dockerManagerActions?.selectInstanceTab?.(tab.id));
 
     const icon = document.createElement("span");
@@ -50,9 +75,16 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
     icon.setAttribute("aria-hidden", "true");
     icon.textContent = tab?.loading ? "progress_activity" : "language";
 
+    const copy = document.createElement("span");
+    copy.className = "dm-instance-tab-copy";
+
     const label = document.createElement("span");
     label.className = "dm-instance-tab-title";
     label.textContent = tab?.title || "Agent Zero";
+
+    const url = document.createElement("span");
+    url.className = "dm-instance-tab-url";
+    url.textContent = tab?.url || "";
 
     const close = document.createElement("span");
     close.className = "material-symbols-outlined dm-instance-tab-close";
@@ -64,7 +96,9 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
     });
 
     button.appendChild(icon);
-    button.appendChild(label);
+    copy.appendChild(label);
+    copy.appendChild(url);
+    button.appendChild(copy);
     button.appendChild(close);
     strip.appendChild(button);
   }
@@ -93,7 +127,7 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   controls.appendChild(reload);
   controls.appendChild(detach);
   strip.appendChild(controls);
-  window.dockerManagerActions?.syncInstanceTabBounds?.();
+  if (!homeActive) window.dockerManagerActions?.syncInstanceTabBounds?.();
 }
 
 window.addEventListener("dm:state", (event) => render(event.detail));

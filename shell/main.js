@@ -780,6 +780,12 @@ function createTabTargetError(code, message) {
   return error;
 }
 
+function sanitizeInstanceTabTitle(value, fallback = 'Agent Zero') {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return fallback;
+  return raw.replace(/\s+/g, ' ').slice(0, 80);
+}
+
 async function resolveInstanceUiTarget(body) {
   const request = isPlainObject(body) ? body : {};
   const kind = typeof request.kind === 'string' && request.kind.trim() ? request.kind.trim() : 'local';
@@ -795,7 +801,7 @@ async function resolveInstanceUiTarget(body) {
     if (!url || !isAllowedRemoteInstanceUrl(url)) {
       throw createTabTargetError('INVALID_REMOTE_INSTANCE', 'Invalid remote instance');
     }
-    const title = typeof remote?.name === 'string' && remote.name.trim() ? remote.name.trim() : 'Agent Zero';
+    const title = sanitizeInstanceTabTitle(remote?.name, 'Agent Zero');
     const target = {
       kind: 'remote',
       instanceId: typeof remote?.id === 'string' && remote.id ? remote.id : instanceId,
@@ -821,7 +827,7 @@ async function resolveInstanceUiTarget(body) {
       kind: 'local',
       instanceId: '',
       containerId,
-      title: 'Agent Zero',
+      title: sanitizeInstanceTabTitle(request.title, 'Agent Zero'),
       url
     };
     target.key = makeTabKey(target);
@@ -841,7 +847,7 @@ async function resolveInstanceUiTarget(body) {
     kind: 'local',
     instanceId: '',
     containerId: '',
-    title: 'Agent Zero',
+    title: sanitizeInstanceTabTitle(request.title, 'Agent Zero'),
     url
   };
   target.key = makeTabKey(target);
@@ -861,6 +867,13 @@ function setActiveInstanceTab(id) {
     throw createTabTargetError('INSTANCE_NOT_FOUND', 'Instance tab not found.');
   }
   activeInstanceTabId = tabId;
+  applyActiveInstanceTabBounds();
+  sendInstanceTabsEvent();
+  return getInstanceTabsSnapshot();
+}
+
+function selectInstanceHome() {
+  activeInstanceTabId = '';
   applyActiveInstanceTabBounds();
   sendInstanceTabsEvent();
   return getInstanceTabsSnapshot();
@@ -910,6 +923,7 @@ function attachInstanceTabEvents(tab) {
     update();
   });
   wc.on('page-title-updated', (_event, title) => {
+    if (tab.titleLocked) return;
     const cleanTitle = typeof title === 'string' ? title.trim() : '';
     if (cleanTitle) {
       tab.title = cleanTitle;
@@ -948,12 +962,13 @@ async function openInstanceTab(target) {
 
   const existing = findInstanceTabByKey(target.key);
   if (existing) {
+    existing.title = target.title || existing.title;
+    existing.titleLocked = Boolean(target.title) || existing.titleLocked;
+    existing.containerId = target.containerId || existing.containerId || '';
+    existing.instanceId = target.instanceId || existing.instanceId || '';
     const nextUrl = normalizeHttpUrl(target.url);
     if (nextUrl && nextUrl !== normalizeHttpUrl(existing.url)) {
       existing.url = nextUrl;
-      existing.title = target.title || existing.title;
-      existing.containerId = target.containerId || existing.containerId || '';
-      existing.instanceId = target.instanceId || existing.instanceId || '';
       existing.loading = true;
       sendInstanceTabsEvent();
       await existing.view?.webContents?.loadURL(nextUrl);
@@ -974,6 +989,7 @@ async function openInstanceTab(target) {
     key: target.key,
     kind: target.kind,
     title: target.title,
+    titleLocked: Boolean(target.title),
     url: target.url,
     containerId: target.containerId || '',
     instanceId: target.instanceId || '',
@@ -2073,6 +2089,14 @@ ipcMain.handle('docker-manager:selectInstanceTab', async (_event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     return setActiveInstanceTab(getInstanceTabIdFromRequest(body));
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:selectInstanceHome', async () => {
+  try {
+    return selectInstanceHome();
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

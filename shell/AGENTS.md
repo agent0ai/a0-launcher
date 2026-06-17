@@ -40,9 +40,9 @@ This scope owns:
 - External links should open through Electron `shell.openExternal` only after
   validation.
 - Instance UI tabs are shell-owned `WebContentsView`s. Renderer code may request
-  open/select/close/reload/detach and report viewport bounds, but URL
-  resolution, URL validation, web contents lifecycle, and detached windows stay
-  in `shell/main.js`.
+  open/select/select launcher home/close/reload/detach and report viewport
+  bounds, but URL resolution, URL validation, web contents lifecycle, and
+  detached windows stay in `shell/main.js`.
 - Local development content is selected by `A0_LAUNCHER_LOCAL_REPO`,
   `A0_LAUNCHER_USE_LOCAL_CONTENT`, a repo-shaped default-app current working
   directory, a repo-shaped unpackaged-app current working directory, or the

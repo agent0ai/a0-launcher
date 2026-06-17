@@ -65,9 +65,10 @@ This scope owns:
   icon/font assets.
 - Do not add marketing-page structure to the app entrypoint. The first screen is
   the usable launcher.
-- Instance tab chrome is renderer-owned, but embedded Agent Zero pages are not.
-  The renderer computes the tab viewport bounds and sends them through preload;
-  the shell owns the `WebContentsView` attached to that rectangle.
+- Instance tab chrome, including the Home tab that returns to the launcher, is
+  renderer-owned, but embedded Agent Zero pages are not. The renderer computes
+  the tab viewport bounds and sends them through preload; the shell owns the
+  `WebContentsView` attached to that rectangle.
 
 ## Work Guidance
 

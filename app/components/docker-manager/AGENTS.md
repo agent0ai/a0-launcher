@@ -30,8 +30,9 @@ This scope owns:
 - `retained-instances/`: retained rollback containers and storage-volume cleanup.
 - `storage-summary/`: storage overview metrics.
 - `settings/`: port preferences and retention policy controls.
-- `instance-tabs/`: browser-style tab chrome, active-tab controls, empty state,
-  and viewport bounds reporting for shell-owned Agent Zero UI views.
+- `instance-tabs/`: browser-style tab chrome, Home tab, active-tab controls,
+  empty state, and viewport bounds reporting for shell-owned Agent Zero UI
+  views.
 
 ## Local Contracts
 
@@ -98,6 +99,9 @@ This scope owns:
 - `Open UI` opens local and remote instances in a launcher tab by default.
   Reopening the same target focuses the existing tab. Detach moves the target
   into a standalone secure Electron window without stopping the instance.
+- Instance tab chrome keeps a Home tab as the first tab whenever any instance UI
+  tab is open. Selecting Home clears the active shell-owned view and leaves the
+  launcher surface usable below the tab strip.
 
 ## Work Guidance
 

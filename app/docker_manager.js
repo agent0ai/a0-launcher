@@ -286,6 +286,10 @@ async function selectInstanceTab(id) {
   await window.dockerManagerAPI?.selectInstanceTab?.(id);
 }
 
+async function selectInstanceHome() {
+  await window.dockerManagerAPI?.selectInstanceHome?.();
+}
+
 async function closeInstanceTab(id) {
   await window.dockerManagerAPI?.closeInstanceTab?.(id);
 }
@@ -658,6 +662,7 @@ window.dockerManagerActions = {
   deleteRemoteInstance,
   openRemoteInstance,
   openInstanceUi,
+  selectInstanceHome,
   selectInstanceTab,
   closeInstanceTab,
   reloadInstanceTab,

@@ -266,7 +266,11 @@ function renderDockerInstance(list, c, state) {
     openBtn.type = "button";
     openBtn.textContent = "Open UI";
     openBtn.addEventListener("click", () => {
-      window.dockerManagerActions?.openInstanceUi?.({ kind: "local", containerId: c?.containerId || "" });
+      window.dockerManagerActions?.openInstanceUi?.({
+        kind: "local",
+        containerId: c?.containerId || "",
+        title: displayName
+      });
     });
     actions.appendChild(openBtn);
   } else if (isActiveInstance) {

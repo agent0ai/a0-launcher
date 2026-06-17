@@ -93,9 +93,11 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
     return ipcRenderer.invoke('docker-manager:openInstanceUi', {
       kind: typeof t.kind === 'string' ? t.kind : '',
       containerId: typeof t.containerId === 'string' ? t.containerId : '',
-      instanceId: typeof t.instanceId === 'string' ? t.instanceId : ''
+      instanceId: typeof t.instanceId === 'string' ? t.instanceId : '',
+      title: typeof t.title === 'string' ? t.title : ''
     });
   },
+  selectInstanceHome: () => ipcRenderer.invoke('docker-manager:selectInstanceHome'),
   selectInstanceTab: (id) => ipcRenderer.invoke('docker-manager:selectInstanceTab', { id }),
   closeInstanceTab: (id) => ipcRenderer.invoke('docker-manager:closeInstanceTab', { id }),
   reloadInstanceTab: (id) => ipcRenderer.invoke('docker-manager:reloadInstanceTab', { id }),
