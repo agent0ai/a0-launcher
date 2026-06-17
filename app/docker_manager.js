@@ -484,9 +484,9 @@ async function activateTag(tag, options = {}) {
   const payload = options && typeof options === "object" ? options : {};
   const dataLossAck = payload.dataLossAck || "proceed_without_backup";
   return runDockerOperation(
-    "Activate",
+    "Run",
     () => api.activateTag(tag, dataLossAck, payload),
-    "Instance activation requested."
+    "Instance run requested."
   );
 }
 

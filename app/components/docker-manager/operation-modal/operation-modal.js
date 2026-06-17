@@ -29,7 +29,7 @@ function operationHeadline(progress = null) {
   const labels = {
     install: { running: "Installing Agent Zero", failed: "Install failed", canceled: "Install canceled" },
     update: { running: "Updating Agent Zero", failed: "Update failed", canceled: "Update canceled" },
-    activate: { running: "Activating Agent Zero", failed: "Activation failed", canceled: "Activation canceled" },
+    activate: { running: "Running Agent Zero", failed: "Run failed", canceled: "Run canceled" },
     rollback: { running: "Rolling back Agent Zero", failed: "Rollback failed", canceled: "Rollback canceled" },
     start: { running: "Starting Agent Zero", failed: "Start failed", canceled: "Start canceled" },
     stop: { running: "Stopping Agent Zero", failed: "Stop failed", canceled: "Stop canceled" },

@@ -399,7 +399,7 @@ function render(state) {
 
   list.innerHTML = "";
   if (!containers.length && !remoteInstances.length) {
-    list.innerHTML = '<div class="dm-empty">No instances found. Activate an install or add a remote instance.</div>';
+    list.innerHTML = '<div class="dm-empty">No instances found. Run an install or add a remote instance.</div>';
     return;
   }
 

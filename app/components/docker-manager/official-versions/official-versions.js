@@ -212,7 +212,7 @@ function actionForEntry(entry, state) {
 
   if (entry.availability === "installed" || entry.availability === "update_available" || entry.differsFromPublished) {
     return {
-      label: entry.availability === "update_available" || entry.differsFromPublished ? "Update" : "Activate",
+      label: entry.availability === "update_available" || entry.differsFromPublished ? "Update" : "Run",
       className: "button confirm",
       handler: () => {
         if (entry.availability === "update_available" || entry.differsFromPublished) {
@@ -267,7 +267,7 @@ function openActivateDialog(entry, state) {
   dialog.innerHTML = `
     <form class="dm-dialog" role="dialog" aria-modal="true" aria-labelledby="activateInstanceTitle">
       <div class="dm-dialog-header">
-        <h2 id="activateInstanceTitle" class="dm-dialog-title">Activate instance</h2>
+        <h2 id="activateInstanceTitle" class="dm-dialog-title">Run instance</h2>
         <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">×</button>
       </div>
       <div class="dm-dialog-body">
@@ -300,7 +300,7 @@ function openActivateDialog(entry, state) {
       </div>
       <div class="dm-dialog-footer">
         <button class="button" type="button" data-dialog-close>Cancel</button>
-        <button class="button confirm" type="submit">Activate</button>
+        <button class="button confirm" type="submit">Run</button>
       </div>
     </form>
   `;
