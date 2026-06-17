@@ -1,3 +1,5 @@
+import { createVersionVisual } from "../card-visuals.js";
+
 function byId(id) { return document.getElementById(id); }
 
 function fmtUptime(started) {
@@ -40,6 +42,26 @@ function localUiUrl(value) {
   } catch {
     return "";
   }
+}
+
+function tagFromImageRef(value) {
+  const raw = String(value || "").trim();
+  if (!raw || !raw.includes(":")) return "";
+  return raw.slice(raw.lastIndexOf(":") + 1);
+}
+
+function dockerInstanceVisualValue(c) {
+  return c?.versionTag ||
+    c?.labels?.["a0.launcher.versionTag"] ||
+    c?.tag ||
+    tagFromImageRef(c?.imageRef) ||
+    c?.instanceName ||
+    c?.containerName ||
+    "Instance";
+}
+
+function remoteInstanceVisualSeed(remote) {
+  return remote?.url || remote?.name || remote?.id || "remote";
 }
 
 function closeDialog(dialog) {
@@ -203,17 +225,14 @@ function renderDockerInstance(list, c, state) {
   const operationRunning = state?.progress?.status === "running";
   const containerId = c?.containerId || "";
   const displayName = c?.instanceName || c?.containerName || c?.containerId?.slice(0, 12) || "instance";
+  const visualValue = dockerInstanceVisualValue(c);
   const cliHost = localUiUrl(c?.uiUrl);
   const card = document.createElement("div");
   card.className = "dm-card";
 
-  const visual = document.createElement("div");
-  visual.className = "dm-card-visual";
-  const logo = document.createElement("img");
-  logo.className = "dm-card-logo";
-  logo.src = "assets/darkSymbol.svg";
-  logo.alt = "Agent Zero";
-  visual.appendChild(logo);
+  const visual = createVersionVisual(visualValue, {
+    seed: visualValue
+  });
 
   const body = document.createElement("div");
   body.className = "dm-card-body";
@@ -323,13 +342,9 @@ function renderRemoteInstance(list, remote) {
   const card = document.createElement("div");
   card.className = "dm-card";
 
-  const visual = document.createElement("div");
-  visual.className = "dm-card-visual";
-  const logo = document.createElement("img");
-  logo.className = "dm-card-logo";
-  logo.src = "assets/darkSymbol.svg";
-  logo.alt = "Agent Zero";
-  visual.appendChild(logo);
+  const visual = createVersionVisual("Remote", {
+    seed: remoteInstanceVisualSeed(remote)
+  });
 
   const body = document.createElement("div");
   body.className = "dm-card-body";

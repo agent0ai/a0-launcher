@@ -1,3 +1,5 @@
+import { createVersionVisual } from "../card-visuals.js";
+
 function byId(id) { return document.getElementById(id); }
 
 function fmtDate(v) {
@@ -369,13 +371,7 @@ function render(state) {
     const card = document.createElement("div");
     card.className = isPinnedChannelEntry(entry) ? "dm-card dm-card-highlight" : "dm-card";
 
-    const visual = document.createElement("div");
-    visual.className = "dm-card-visual";
-    const logo = document.createElement("img");
-    logo.className = "dm-card-logo";
-    logo.src = "assets/darkSymbol.svg";
-    logo.alt = "Agent Zero";
-    visual.appendChild(logo);
+    const visual = createVersionVisual(entry.title || entry.tag, { seed: entry.tag || entry.title });
 
     const body = document.createElement("div");
     body.className = "dm-card-body";
