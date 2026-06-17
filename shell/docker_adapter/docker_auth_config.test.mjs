@@ -157,6 +157,63 @@ test('pullImage passes Docker CLI authconfig to Dockerode', async (t) => {
   });
 });
 
+test('pullImage aborts stream when signal fires before Docker returns pull stream', async (t) => {
+  const dockerConfigDir = await mkdtemp(path.join(os.tmpdir(), 'a0-docker-config-'));
+  const previousDockerConfig = process.env.DOCKER_CONFIG;
+
+  t.after(async () => {
+    if (previousDockerConfig === undefined) {
+      delete process.env.DOCKER_CONFIG;
+    } else {
+      process.env.DOCKER_CONFIG = previousDockerConfig;
+    }
+    await rm(dockerConfigDir, { recursive: true, force: true });
+  });
+
+  process.env.DOCKER_CONFIG = dockerConfigDir;
+  await writeFile(path.join(dockerConfigDir, 'config.json'), '{}');
+
+  const docker = new DockerodeDocker();
+  docker.getRemoteLayerSizes = async () => {
+    throw new Error('layer prefetch should not run after abort');
+  };
+
+  let pullCallback = null;
+  let destroyed = false;
+  let followedProgress = false;
+  docker.docker = {
+    pull: (_ref, _options, callback) => {
+      pullCallback = callback;
+    },
+    modem: {
+      followProgress: () => {
+        followedProgress = true;
+      }
+    }
+  };
+
+  const controller = new AbortController();
+  const pending = docker.pullImage('agent0ai/agent-zero:latest', { signal: controller.signal });
+
+  while (!pullCallback) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  controller.abort();
+  pullCallback(null, {
+    destroy: () => {
+      destroyed = true;
+    }
+  });
+
+  const result = await pending;
+
+  assert.equal(result.status, 'aborted_client');
+  assert.equal(destroyed, true);
+  assert.equal(followedProgress, false);
+  assert.deepEqual(await docker.getPulls(), []);
+});
+
 test('Docker Hub token cache separates anonymous and authenticated requests', async (t) => {
   const dockerConfigDir = await mkdtemp(path.join(os.tmpdir(), 'a0-docker-config-'));
   const previousDockerConfig = process.env.DOCKER_CONFIG;

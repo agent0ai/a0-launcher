@@ -249,29 +249,50 @@ export class DockerodeDocker extends DockerInterface {
     let authconfig = null;
 
     try {
+      if (signal) {
+        const listener = () => {
+          this.cancelPull(opId).catch(() => {});
+        };
+        pullState._abortListener = listener;
+
+        if (signal.aborted) {
+          await this.cancelPull(opId);
+          return { opId, status: 'aborted_client' };
+        }
+
+        try {
+          signal.addEventListener('abort', listener, { once: true });
+        } catch {
+          // ignore
+        }
+      }
+
       authconfig = await resolveDockerAuthConfigForImage(ref);
+      if (pullState.status === 'aborted_client') return { opId, status: 'aborted_client' };
+
       const pullOptions = authconfig ? { authconfig } : {};
       const stream = await new Promise((resolve, reject) => {
         this.docker.pull(ref, pullOptions, (err, s) => (err ? reject(err) : resolve(s)));
       });
 
       pullState._stream = stream;
-
-      if (signal) {
-        if (signal.aborted) {
-          await this.cancelPull(opId);
-          return { opId, status: 'aborted_client' };
+      const abortPullStream = () => {
+        if (stream && typeof stream.destroy === 'function') {
+          try {
+            stream.destroy();
+          } catch {
+            // ignore
+          }
         }
+        pullState.status = 'aborted_client';
+        pullState.canCancel = false;
+        pullState.message = 'aborted_client';
+        this._pulls.delete(opId);
+      };
 
-        const listener = () => {
-          this.cancelPull(opId).catch(() => {});
-        };
-        pullState._abortListener = listener;
-        try {
-          signal.addEventListener('abort', listener, { once: true });
-        } catch {
-          // ignore
-        }
+      if (pullState.status === 'aborted_client' || signal?.aborted) {
+        abortPullStream();
+        return { opId, status: 'aborted_client' };
       }
 
       // Best-effort manifest layer sizes to stabilize denominators and avoid 99% stalls.
@@ -288,6 +309,10 @@ export class DockerodeDocker extends DockerInterface {
         } catch {
           // best-effort only
         }
+      }
+      if (pullState.status === 'aborted_client' || signal?.aborted) {
+        abortPullStream();
+        return { opId, status: 'aborted_client' };
       }
 
       if (prefetched) {
@@ -554,19 +579,20 @@ export class DockerodeDocker extends DockerInterface {
     if (p.status !== 'running') return { canceled: false };
 
     const s = p._stream;
-    if (!s || typeof s.destroy !== 'function') return { canceled: false };
-
-    // Best-effort client-side abort; daemon may continue (DI-009).
-    try {
-      s.destroy();
-    } catch {
-      // ignore
+    if (s && typeof s.destroy === 'function') {
+      // Best-effort client-side abort; daemon may continue briefly while the
+      // Docker API request is torn down.
+      try {
+        s.destroy();
+      } catch {
+        // ignore
+      }
     }
 
     p.status = 'aborted_client';
     p.canCancel = false;
     p.message = 'aborted_client';
-    this._pulls.delete(id);
+    if (s) this._pulls.delete(id);
     return { canceled: true };
   }
 

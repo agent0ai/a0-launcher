@@ -120,7 +120,13 @@ function makeButton(label, className, disabled = false) {
   return button;
 }
 
-function renderProgress(model, parent) {
+function clearChildren(element) {
+  if (!element) return;
+  while (element.firstChild) element.removeChild(element.firstChild);
+  while (element.children && element.children.length) element.removeChild(element.children[0]);
+}
+
+function createProgressBlock() {
   const block = document.createElement("div");
   block.className = "sv-progress-block dm-runtime-progress";
 
@@ -128,10 +134,10 @@ function renderProgress(model, parent) {
   head.className = "sv-progress-head";
 
   const phase = document.createElement("span");
-  phase.textContent = model.phase;
+  phase.className = "dm-operation-phase";
 
   const percent = document.createElement("span");
-  percent.textContent = model.indeterminate || model.progress === null ? "" : `${Math.round(model.progress)}%`;
+  percent.className = "dm-operation-percent";
 
   head.appendChild(phase);
   head.appendChild(percent);
@@ -140,13 +146,106 @@ function renderProgress(model, parent) {
   track.className = "sv-progress-track";
 
   const fill = document.createElement("div");
-  fill.className = `sv-progress-fill${model.indeterminate ? " indeterminate" : ""}`;
-  fill.style.width = model.indeterminate ? "" : `${model.progress === null ? 0 : model.progress}%`;
+  fill.className = "sv-progress-fill dm-operation-progress-fill";
 
   track.appendChild(fill);
   block.appendChild(head);
   block.appendChild(track);
-  parent.appendChild(block);
+  return block;
+}
+
+function updateProgress(model, root) {
+  const phase = root.querySelector(".dm-operation-phase");
+  const percent = root.querySelector(".dm-operation-percent");
+  const fill = root.querySelector(".dm-operation-progress-fill");
+  if (phase) phase.textContent = model.phase;
+  if (percent) percent.textContent = model.indeterminate || model.progress === null ? "" : `${Math.round(model.progress)}%`;
+  if (fill) {
+    fill.className = `sv-progress-fill dm-operation-progress-fill${model.indeterminate ? " indeterminate" : ""}`;
+    fill.style.width = model.indeterminate ? "" : `${model.progress === null ? 0 : model.progress}%`;
+  }
+}
+
+function syncActionButton(wrap, action, className, state, actions) {
+  if (!wrap) return;
+  if (!action) {
+    clearChildren(wrap);
+    return;
+  }
+
+  const key = `${operationKey(state?.progress)}:${action.kind}:${action.label}:${action.disabled ? "disabled" : "enabled"}:${className}`;
+  const existing = wrap.querySelector("button");
+  if (existing && existing.dataset.operationActionKey === key) return;
+
+  clearChildren(wrap);
+  const button = makeButton(action.label, className, action.disabled);
+  button.dataset.operationAction = action.kind;
+  button.dataset.operationActionKey = key;
+  button.addEventListener("click", () => runAction(action.kind, state, actions));
+  wrap.appendChild(button);
+}
+
+function createOperationDialogShell() {
+  const backdrop = document.createElement("div");
+  backdrop.id = OPERATION_DIALOG_ID;
+  backdrop.className = "dm-dialog-backdrop dm-operation-backdrop";
+  backdrop.setAttribute("role", "presentation");
+  backdrop.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const dialog = document.createElement("div");
+  dialog.className = "dm-dialog dm-operation-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "operationDialogTitle");
+  dialog.tabIndex = -1;
+  dialog.addEventListener("click", (event) => event.stopPropagation());
+
+  const header = document.createElement("div");
+  header.className = "dm-dialog-header";
+  const title = document.createElement("h2");
+  title.id = "operationDialogTitle";
+  title.className = "dm-dialog-title dm-operation-title";
+  header.appendChild(title);
+
+  const body = document.createElement("div");
+  body.className = "dm-dialog-body";
+  const detail = document.createElement("div");
+  detail.className = "dm-runtime-gate-detail dm-operation-detail";
+  body.appendChild(detail);
+  body.appendChild(createProgressBlock());
+
+  const footer = document.createElement("div");
+  footer.className = "dm-dialog-footer";
+
+  const secondaryWrap = document.createElement("div");
+  secondaryWrap.className = "dm-runtime-gate-secondary dm-operation-secondary";
+  const primaryWrap = document.createElement("div");
+  primaryWrap.className = "dm-runtime-gate-primary dm-operation-primary";
+
+  footer.appendChild(secondaryWrap);
+  footer.appendChild(primaryWrap);
+  dialog.appendChild(header);
+  dialog.appendChild(body);
+  dialog.appendChild(footer);
+  backdrop.appendChild(dialog);
+  return backdrop;
+}
+
+function updateOperationDialog(backdrop, model, state, actions) {
+  const title = backdrop.querySelector(".dm-operation-title");
+  const detail = backdrop.querySelector(".dm-operation-detail");
+  if (title) title.textContent = model.headline;
+  if (detail) detail.textContent = model.detail;
+  updateProgress(model, backdrop);
+
+  const secondaryClass = model.secondary?.kind === "cancel" ? "button cancel" : "button";
+  syncActionButton(backdrop.querySelector(".dm-operation-secondary"), model.secondary, secondaryClass, state, actions);
+
+  const primaryClass = model.primary ? "button confirm" : "button";
+  syncActionButton(backdrop.querySelector(".dm-operation-primary"), model.primary, primaryClass, state, actions);
 }
 
 function setPageBlocked(blocked) {
@@ -246,74 +345,14 @@ function renderOperationDialog(state = {}, actions = {}) {
   setPageBlocked(true);
 
   const model = normalizedOperationDialog(state);
-  const existing = document.getElementById(OPERATION_DIALOG_ID);
-  if (existing) existing.remove();
-
-  const backdrop = document.createElement("div");
-  backdrop.id = OPERATION_DIALOG_ID;
-  backdrop.className = "dm-dialog-backdrop dm-operation-backdrop";
-  backdrop.setAttribute("role", "presentation");
-  backdrop.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-
-  const dialog = document.createElement("div");
-  dialog.className = "dm-dialog dm-operation-dialog";
-  dialog.setAttribute("role", "dialog");
-  dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-labelledby", "operationDialogTitle");
-  dialog.tabIndex = -1;
-  dialog.addEventListener("click", (event) => event.stopPropagation());
-
-  const header = document.createElement("div");
-  header.className = "dm-dialog-header";
-  const title = document.createElement("h2");
-  title.id = "operationDialogTitle";
-  title.className = "dm-dialog-title";
-  title.textContent = model.headline;
-  header.appendChild(title);
-
-  const body = document.createElement("div");
-  body.className = "dm-dialog-body";
-  const detail = document.createElement("div");
-  detail.className = "dm-runtime-gate-detail";
-  detail.textContent = model.detail;
-  body.appendChild(detail);
-  renderProgress(model, body);
-
-  const footer = document.createElement("div");
-  footer.className = "dm-dialog-footer";
-
-  const secondaryWrap = document.createElement("div");
-  secondaryWrap.className = "dm-runtime-gate-secondary";
-  const primaryWrap = document.createElement("div");
-  primaryWrap.className = "dm-runtime-gate-primary";
-
-  if (model.secondary) {
-    const secondaryClass = model.secondary.kind === "cancel" ? "button cancel" : "button";
-    const secondary = makeButton(model.secondary.label, secondaryClass, model.secondary.disabled);
-    secondary.dataset.operationAction = model.secondary.kind;
-    secondary.addEventListener("click", () => runAction(model.secondary.kind, state, actions));
-    secondaryWrap.appendChild(secondary);
+  let backdrop = document.getElementById(OPERATION_DIALOG_ID);
+  const isNew = !backdrop;
+  if (!backdrop) {
+    backdrop = createOperationDialogShell();
+    document.body.appendChild(backdrop);
   }
-
-  if (model.primary) {
-    const primaryClass = model.primary.kind === "wait" ? "button confirm" : "button confirm";
-    const primary = makeButton(model.primary.label, primaryClass, model.primary.disabled);
-    primary.dataset.operationAction = model.primary.kind;
-    primary.addEventListener("click", () => runAction(model.primary.kind, state, actions));
-    primaryWrap.appendChild(primary);
-  }
-
-  footer.appendChild(secondaryWrap);
-  footer.appendChild(primaryWrap);
-  dialog.appendChild(header);
-  dialog.appendChild(body);
-  dialog.appendChild(footer);
-  backdrop.appendChild(dialog);
-  document.body.appendChild(backdrop);
-  focusFirstControl(backdrop);
+  updateOperationDialog(backdrop, model, state, actions);
+  if (isNew) focusFirstControl(backdrop);
   return true;
 }
 

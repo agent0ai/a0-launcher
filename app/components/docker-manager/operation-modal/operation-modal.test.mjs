@@ -239,7 +239,18 @@ test('running install shows centered operation modal with cancel action', () => 
   renderOperationDialog(state, { cancelOperation: (opId) => { canceled = opId; } });
   assert.ok(document.getElementById('operationProgressDialog'));
   assert.equal(document.querySelector('.dm-page').inert, true);
-  buttonByText(document, 'Cancel download').dispatchEvent(new MiniEvent('click'));
+  const cancelButton = buttonByText(document, 'Cancel download');
+
+  renderOperationDialog({
+    progress: {
+      ...state.progress,
+      progress: 42,
+      downloadProgress: 42
+    }
+  }, { cancelOperation: (opId) => { canceled = opId; } });
+
+  assert.equal(buttonByText(document, 'Cancel download'), cancelButton);
+  cancelButton.dispatchEvent(new MiniEvent('click'));
   assert.equal(canceled, 'op-install');
 });
 
