@@ -1,6 +1,7 @@
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import {
+  dockerBasicHeaderFromAuthConfig,
+  resolveDockerAuthConfigForRegistry
+} from './DockerAuthConfig.mjs';
 
 const DEFAULT_USER_AGENT = 'A0-Launcher';
 const REGISTRY_BASE_URL = 'https://registry-1.docker.io';
@@ -89,49 +90,6 @@ function buildTokenUrl(imageRepo) {
   return u.toString();
 }
 
-async function readDockerConfigJson() {
-  const dockerConfigDir = (process.env.DOCKER_CONFIG || '').trim() || path.join(os.homedir(), '.docker');
-  const configPath = path.join(dockerConfigDir, 'config.json');
-  try {
-    const raw = await fs.readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function getDockerHubBasicAuthFromConfig(configJson) {
-  // Best-effort only. We do not invoke credential helpers.
-  const auths = configJson?.auths;
-  if (!auths || typeof auths !== 'object') return null;
-
-  const candidates = [
-    'https://index.docker.io/v1/',
-    'https://registry-1.docker.io',
-    'registry-1.docker.io',
-    'index.docker.io'
-  ];
-
-  for (const key of candidates) {
-    const entry = auths[key];
-    const auth = entry?.auth;
-    if (typeof auth !== 'string' || !auth) continue;
-
-    try {
-      const decoded = Buffer.from(auth, 'base64').toString('utf8');
-      // Expect "username:password"
-      if (!decoded.includes(':')) continue;
-      return `Basic ${auth}`;
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
 function makeError(code, message, details = {}) {
   const err = new Error(message);
   err.name = 'DockerHubRegistryError';
@@ -149,28 +107,19 @@ export class DockerHubRegistry {
     this.userAgent = (options?.userAgent || DEFAULT_USER_AGENT).trim() || DEFAULT_USER_AGENT;
     /** @type {Map<string, {token: string, expiresAtMs: number}>} */
     this._tokenCache = new Map();
-    this._dockerConfigPromise = null;
     /** @type {Map<string, {value: any, expiresAtMs: number}>} */
     this._layerSizesCache = new Map();
   }
 
-  async #getDockerConfig() {
-    if (this._dockerConfigPromise) return this._dockerConfigPromise;
-    this._dockerConfigPromise = readDockerConfigJson().finally(() => {
-      // Cache promise result; subsequent calls reuse resolved value by chaining.
-    });
-    return this._dockerConfigPromise;
-  }
-
   async #getAuthHeaderBestEffort() {
-    const cfg = await this.#getDockerConfig();
-    if (!cfg) return null;
-    return getDockerHubBasicAuthFromConfig(cfg);
+    const authConfig = await resolveDockerAuthConfigForRegistry('docker.io');
+    return dockerBasicHeaderFromAuthConfig(authConfig);
   }
 
   async #getToken(imageRepo, forceRefresh = false) {
-    const key = imageRepo;
     const now = Date.now();
+    const basicAuth = await this.#getAuthHeaderBestEffort();
+    const key = `${imageRepo}|${basicAuth ? 'auth' : 'anon'}`;
 
     if (!forceRefresh) {
       const cached = this._tokenCache.get(key);
@@ -185,7 +134,6 @@ export class DockerHubRegistry {
       'Accept': 'application/json'
     };
 
-    const basicAuth = await this.#getAuthHeaderBestEffort();
     if (basicAuth) headers['Authorization'] = basicAuth;
 
     const res = await fetch(url, { method: 'GET', headers });

@@ -1,5 +1,6 @@
 import Dockerode from 'dockerode';
 import { DockerInterface } from '../DockerInterface.mjs';
+import { resolveDockerAuthConfigForImage } from './DockerAuthConfig.mjs';
 import { DockerHubRegistry } from './DockerHubRegistry.mjs';
 import {
   followContainerLogs as dockerodeFollowContainerLogs,
@@ -245,10 +246,13 @@ export class DockerodeDocker extends DockerInterface {
 
     const onProgress = typeof options?.onProgress === 'function' ? options.onProgress : null;
     const signal = options?.signal;
+    let authconfig = null;
 
     try {
+      authconfig = await resolveDockerAuthConfigForImage(ref);
+      const pullOptions = authconfig ? { authconfig } : {};
       const stream = await new Promise((resolve, reject) => {
-        this.docker.pull(ref, (err, s) => (err ? reject(err) : resolve(s)));
+        this.docker.pull(ref, pullOptions, (err, s) => (err ? reject(err) : resolve(s)));
       });
 
       pullState._stream = stream;
@@ -511,6 +515,7 @@ export class DockerodeDocker extends DockerInterface {
         imageRef: ref,
         repo: imageRepoFromRef(ref),
         tag: tagFromRef(ref),
+        registryAuth: authconfig ? 'present' : 'absent',
         env: this.#envSummary()
       });
     } finally {

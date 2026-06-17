@@ -118,6 +118,10 @@ This scope owns:
 - Concrete implementations live under `impl/` and are loaded on demand.
 - Docker Hub calls should expose digest/content-type/rate-limit metadata without
   forcing renderer or Docker Manager code to parse registry responses directly.
+- Dockerode image pulls and Docker Hub metadata requests should reuse Docker CLI
+  registry credentials from `DOCKER_CONFIG` or `~/.docker/config.json`, including
+  configured credential helpers, so the launcher honors a successful
+  shell-owned `docker login`.
 - Log processing should normalize stream events into stable progress messages and
   preserve enough detail for cancellation/failure diagnosis.
 
