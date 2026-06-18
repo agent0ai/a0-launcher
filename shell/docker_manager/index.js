@@ -1829,6 +1829,61 @@ function developerContainerName(instanceName) {
   return sanitizeInstanceName(`${base}-${suffix}`, `a0-dev-${suffix}`);
 }
 
+function managedInstanceContainerName(tag, instanceName) {
+  const suffix = Date.now().toString(36);
+  const baseName = instanceName || `agent-zero-${tag || 'instance'}`;
+  const base = sanitizeInstanceName(`a0-inst-${baseName}`, 'a0-inst').slice(0, 48);
+  return sanitizeInstanceName(`${base}-${suffix}`, `a0-inst-${suffix}`);
+}
+
+async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, activationOptions = null) {
+  const imageRef = imageRefForTag(imageRepo, tag);
+  const mappings = Array.isArray(activationOptions?.portMappings) && activationOptions.portMappings.length
+    ? activationOptions.portMappings
+    : parsePortMappings('0:80');
+  const { exposedPorts, portBindings } = buildPortExposure(mappings);
+  const uiMapping = preferredUiMapping(mappings);
+  const sshMapping = mappings.find((mapping) => Number(mapping.containerPort) === 22) || null;
+  const instanceName = sanitizeInstanceName(activationOptions?.instanceName, sanitizeInstanceName(`agent-zero-${tag}`));
+  const containerName = managedInstanceContainerName(tag, instanceName);
+  const portMapLabel = mappings.map((m) => `${m.hostPort}:${m.containerPort}`).join(',');
+
+  const createOptions = {
+    name: containerName,
+    Image: imageRef,
+    ExposedPorts: exposedPorts,
+    Labels: {
+      'a0.launcher.managed': 'true',
+      'a0.launcher.role': 'instance',
+      'a0.launcher.versionTag': tag,
+      'a0.launcher.instanceName': instanceName,
+      'a0.launcher.imageRepo': imageRepo,
+      'a0.launcher.imageRef': imageRef,
+      'a0.launcher.port.map': portMapLabel,
+      'a0.launcher.port.ui': String(uiMapping?.hostPort ?? ''),
+      'a0.launcher.port.ssh': String(sshMapping?.hostPort ?? '')
+    },
+    HostConfig: {
+      PortBindings: portBindings
+    }
+  };
+
+  if (Array.isArray(activationOptions?.env) && activationOptions.env.length) {
+    createOptions.Env = activationOptions.env;
+  }
+
+  const created = await docker.createContainer(createOptions);
+  const containerId = created?.containerId;
+  if (!containerId) {
+    const err = new Error('Failed to create container');
+    err.code = 'CREATE_FAILED';
+    throw err;
+  }
+
+  await docker.startContainer(containerId);
+  return { containerId, name: containerName };
+}
+
 async function createAndStartDeveloperContainer(docker, options) {
   const mappings = Array.isArray(options?.portMappings) ? options.portMappings : parsePortMappings('0:80');
   const { exposedPorts, portBindings } = buildPortExposure(mappings);
@@ -2626,7 +2681,7 @@ async function activateRetainedInstance(containerId, dataLossAck) {
 async function activateTag(tag, dataLossAck, options = {}) {
   const imageRepo = getBackendImageRepo();
   const t = assertTagAllowedForActivate(tag);
-  const ack = assertDataLossAck(dataLossAck);
+  const ack = dataLossAck ? assertDataLossAck(dataLossAck) : 'proceed_without_backup';
   const activationOptions = normalizeActivationOptions(options, t);
 
   requireNoRunningOperation();
@@ -2635,18 +2690,12 @@ async function activateTag(tag, dataLossAck, options = {}) {
   (async () => {
     /** @type {any} */
     let docker = null;
-    let policy = null;
-    let portPreferences = null;
-
-    let retainedFromActive = null;
     let createdNew = null;
 
     try {
       docker = await getManagedDocker(imageRepo);
-      policy = await stateStore.readRetentionPolicy();
-      portPreferences = await stateStore.readPortPreferences();
 
-      updateOperationProgress({ message: 'Preparing switch', progress: null });
+      updateOperationProgress({ message: 'Preparing instance', progress: null });
 
       const localImages = await docker.listLocalImages(imageRepo);
       const hasTag = (localImages || []).some((img) => img && typeof img.tag === 'string' && img.tag === t);
@@ -2656,32 +2705,10 @@ async function activateTag(tag, dataLossAck, options = {}) {
         throw err;
       }
 
-      const containers = await docker.listContainers(imageRepo);
-      const activeName = retention.getActiveContainerName(imageRepo);
-      const active = (containers || []).find((c) => c && c.containerName === activeName) || null;
+      updateOperationProgress({ message: 'Starting instance', progress: null });
+      createdNew = await createAndStartManagedInstanceContainer(docker, imageRepo, t, activationOptions);
 
-      if (active && active.containerId) {
-        updateOperationProgress({ message: 'Stopping current version', progress: null });
-        const state = (active.state || '').toLowerCase();
-        if (!state || state === 'running') {
-          try {
-            await docker.stopContainer(active.containerId, { t: 10 });
-          } catch (e) {
-            const m = typeof e?.message === 'string' ? e.message : '';
-            if (!m || !/is not running/i.test(m)) throw e;
-          }
-        }
-
-        const retainedAt = nowIso();
-        const retainedName = retention.makeRetainedContainerName(imageRepo, active.tag || 'unknown', retainedAt);
-        await docker.renameContainer(active.containerId, retainedName);
-        retainedFromActive = { containerId: active.containerId };
-      }
-
-      updateOperationProgress({ message: 'Starting selected version', progress: null });
-      createdNew = await createAndStartActiveContainer(docker, imageRepo, t, portPreferences, activationOptions);
-
-      updateOperationProgress({ message: 'Starting selected version (waiting for UI)', progress: null });
+      updateOperationProgress({ message: 'Starting instance (waiting for UI)', progress: null });
       if (createdNew && createdNew.containerId) {
         const waitRes = await waitForUiReachable(docker, createdNew.containerId, {
           timeoutMs: UI_READY_TIMEOUT_MS,
@@ -2689,17 +2716,15 @@ async function activateTag(tag, dataLossAck, options = {}) {
           attemptTimeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
           onTick: (seconds) => {
             const s = Number.isFinite(Number(seconds)) && seconds > 0 ? ` - ${Math.floor(seconds)}s` : '';
-            updateOperationProgress({ message: `Starting selected version (waiting for UI${s})`, progress: null });
+            updateOperationProgress({ message: `Starting instance (waiting for UI${s})`, progress: null });
           }
         });
         if (!waitRes.ok) {
-          const err = new Error('Agent Zero UI is not reachable yet after switching versions.');
+          const err = new Error('Agent Zero UI is not reachable yet after starting the instance.');
           err.code = 'UI_NOT_READY';
           throw err;
         }
       }
-
-      await enforceRetention(docker, imageRepo, policy);
 
       finishOperation('completed', null);
       updateOperationProgress({ progress: 100, message: 'Completed' });
@@ -2713,23 +2738,13 @@ async function activateTag(tag, dataLossAck, options = {}) {
         // ignore
       }
 
-      try {
-        if (retainedFromActive && retainedFromActive.containerId) {
-          const activeName = retention.getActiveContainerName(imageRepo);
-          await docker.renameContainer(retainedFromActive.containerId, activeName);
-          await docker.startContainer(retainedFromActive.containerId);
-        }
-      } catch {
-        // ignore
-      }
-
       const message =
         (error && typeof error === 'object' && error.code === 'UI_NOT_READY' && error.message) ||
         mapDockerInterfaceErrorToUiMessage(error) ||
         (error && typeof error === 'object' && error.code === 'NOT_INSTALLED'
           ? 'This version is not installed yet.'
           : '') ||
-        'Switch failed';
+        'Run failed';
       finishOperation('failed', message);
     } finally {
       await refreshDockerManager({ forceRefresh: false }).catch(() => {});

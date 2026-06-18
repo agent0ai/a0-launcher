@@ -123,8 +123,22 @@ function sanitizeName(value) {
   return cleaned || "agent-zero";
 }
 
-function defaultInstanceName(tag) {
-  return sanitizeName(`agent-zero-${tag || "instance"}`).slice(0, 64);
+function defaultInstanceName(tag, state = {}) {
+  const base = sanitizeName(`agent-zero-${tag || "instance"}`).slice(0, 64);
+  const containers = Array.isArray(state?.containers) ? state.containers : [];
+  const used = new Set(containers.map((container) =>
+    String(container?.instanceName || container?.containerName || "").trim()
+  ).filter(Boolean));
+  if (!used.has(base)) return base;
+
+  for (let i = 2; i < 100; i += 1) {
+    const suffix = `-${i}`;
+    const candidate = `${base.slice(0, 64 - suffix.length)}${suffix}`;
+    if (!used.has(candidate)) return candidate;
+  }
+
+  const suffix = `-${Date.now().toString(36).slice(-6)}`;
+  return `${base.slice(0, 64 - suffix.length)}${suffix}`;
 }
 
 const CHAT_MODEL_PROVIDER_OPTIONS = [
@@ -381,7 +395,7 @@ function statusForEntry(entry) {
 }
 
 function actionForEntry(entry, state) {
-  if (entry.isActive || entry.availability === "installing") return null;
+  if (entry.availability === "installing") return null;
 
   if (entry.availability === "installed" || entry.availability === "update_available" || entry.differsFromPublished) {
     return {
@@ -417,11 +431,6 @@ function isAwaitingFirstInventory(state, entries) {
   return !state?.stateLoaded || (!!state?.loading && !entries.length);
 }
 
-function hasDifferentActive(state, tag) {
-  const versions = Array.isArray(state?.versions) ? state.versions : [];
-  return versions.some((v) => v?.isActive && v?.id !== tag);
-}
-
 function closeDialog(dialog) {
   if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
 }
@@ -431,7 +440,7 @@ function openActivateDialog(entry, state) {
   if (existing) existing.remove();
 
   const tag = entry?.tag || "";
-  const requiresAck = hasDifferentActive(state, tag);
+  const requiresAck = false;
   const dialog = document.createElement("div");
   dialog.id = "activateInstanceDialog";
   dialog.className = "dm-dialog-backdrop";
@@ -495,7 +504,7 @@ function openActivateDialog(entry, state) {
   const nameInput = dialog.querySelector("#activateInstanceName");
   const portInput = dialog.querySelector("#activatePortMappings");
   const envInput = dialog.querySelector("#activateEnvVars");
-  if (nameInput) nameInput.value = defaultInstanceName(tag);
+  if (nameInput) nameInput.value = defaultInstanceName(tag, state);
   if (portInput) portInput.value = "0:80";
 
   dialog.querySelectorAll("[data-dialog-close]").forEach((btn) => {
@@ -629,6 +638,8 @@ function render(state) {
     list.appendChild(card);
   }
 }
+
+export { actionForEntry, defaultInstanceName };
 
 window.addEventListener("dm:state", (e) => render(e.detail || {}));
 if (window.__dmLastState) render(window.__dmLastState);

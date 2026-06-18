@@ -42,8 +42,8 @@ This scope owns:
   with `a0.launcher.role=developer` so the Instances tab can manage them.
 - UI URLs should be derived from inspected port bindings and verified where
   practical before opening.
-- Start, switch, and activation flows should give the Agent Zero UI enough time
-  to finish a slow first boot before rolling back a newly-created container.
+- Start, switch, and run flows should give the Agent Zero UI enough time to
+  finish a slow first boot before rolling back a newly-created container.
 - UI readiness probes should also allow enough time for a local Agent Zero HTTP
   response to produce headers on slower Windows/WSL loopback paths; avoid
   per-attempt timeouts that create false failed starts while the UI is reachable.
@@ -98,6 +98,9 @@ This scope owns:
   Linux Engine.
 - Progress messages should be user-oriented: `Starting selected version`, not
   raw Docker implementation chatter.
+- Running an installed image from Installs should create a new launcher-managed
+  container with a unique Docker name and open host ports, so repeated runs of
+  the same image can coexist.
 - Per-container start/stop/delete/clone actions from the Instances card menu
   still belong in this product layer. They must target the requested container
   id, return an operation id, refresh state afterward, and keep storage-volume

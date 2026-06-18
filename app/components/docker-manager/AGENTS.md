@@ -85,8 +85,10 @@ This scope owns:
   the main story. Fresh machines must have a visible install action once Docker
   is ready. The unmaintained `testing` tag is intentionally hidden from the
   Installs view.
-- Activating a tag while another instance is active must keep the
-  backup/proceed acknowledgement.
+- Running an installed tag from Installs creates another managed local instance
+  and must not stop existing instances or require a data-loss acknowledgement.
+  Destructive switch, update, and retained-instance activation flows must keep
+  the backup/proceed acknowledgement.
 - Activation may offer optional model provider/model/API-key helpers. Keep Main
   and Utility in the primary dialog body, keep Embedding under Advanced, compile
   helpers to Agent Zero environment defaults, and preserve Advanced environment
