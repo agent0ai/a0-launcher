@@ -68,6 +68,8 @@ This scope owns:
 - Keep `Open UI` colocated with the instance or install it opens.
 - Keep compact controls stable in width and avoid text overflow on small
   windows.
+- Do not use circular launcher buttons. The maximum launcher control radius is
+  the shared 6px Refresh-button radius.
 - Prefer local Material Symbols icons through the bundled font instead of remote
   icon/font assets.
 - Do not add marketing-page structure to the app entrypoint. The first screen is
