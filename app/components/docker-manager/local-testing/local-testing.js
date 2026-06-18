@@ -69,14 +69,38 @@ function tagFromImageRef(value) {
   return raw.slice(raw.lastIndexOf(":") + 1);
 }
 
-function dockerInstanceVisualValue(c) {
+function runtimeBranch(c) {
+  return c?.runtimeBranch || c?.runtimeSource?.branch || "";
+}
+
+function runtimeShortCommit(c) {
+  const shortCommit = c?.runtimeShortCommit || c?.runtimeSource?.shortCommit || "";
+  if (shortCommit) return shortCommit;
+  const commit = c?.runtimeCommit || c?.runtimeSource?.commit || "";
+  return commit ? String(commit).slice(0, 12) : "";
+}
+
+function imageTagForContainer(c) {
   return c?.versionTag ||
     c?.labels?.["a0.launcher.versionTag"] ||
     c?.tag ||
     tagFromImageRef(c?.imageRef) ||
+    "";
+}
+
+function dockerInstanceVisualValue(c) {
+  return runtimeBranch(c) ||
+    imageTagForContainer(c) ||
     c?.instanceName ||
     c?.containerName ||
     "Instance";
+}
+
+function dockerInstanceRuntimeSummary(c) {
+  const branch = runtimeBranch(c);
+  const shortCommit = runtimeShortCommit(c);
+  if (branch && shortCommit) return `${branch} @ ${shortCommit}`;
+  return branch || shortCommit || "";
 }
 
 function remoteInstanceVisualSeed(remote) {
@@ -501,6 +525,12 @@ function renderDockerInstance(list, c, state) {
   const meta = document.createElement("div");
   meta.className = "dm-card-meta";
   const parts = [];
+  const runtimeSummary = dockerInstanceRuntimeSummary(c);
+  const imageTag = imageTagForContainer(c);
+  if (runtimeSummary) {
+    parts.push(runtimeSummary);
+    if (imageTag && imageTag !== runtimeBranch(c)) parts.push(`image ${imageTag}`);
+  }
   if (c?.uiUrl) parts.push(c.uiUrl);
   else if (c?.status) parts.push(c.status);
   meta.textContent = parts.join(" \u00B7 ");

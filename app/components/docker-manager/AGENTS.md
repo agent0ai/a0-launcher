@@ -105,6 +105,9 @@ This scope owns:
   Secondary management and inspection actions such as `Rename`, `See logs`,
   `Clone`, `Open A0 CLI`, `Stop`, and `Delete` belong in the card overflow menu
   so they always apply to the specific instance shown.
+- Local instance cards should prefer runtime source metadata such as git branch
+  over Docker image tag for the primary visual identity, while keeping a
+  divergent image tag visible as provenance in compact metadata.
 - Renaming a local instance changes the launcher-visible display name. It must
   not rely on mutating existing Docker labels, because Docker labels are
   immutable after container creation.

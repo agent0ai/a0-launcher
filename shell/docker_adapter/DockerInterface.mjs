@@ -428,6 +428,20 @@ export class DockerInterface {
   }
 
   /**
+   * Read a single text file from a container filesystem through Docker's archive API.
+   * Returns null when the path is absent or not a regular file.
+   *
+   * @param {string} containerId
+   * @param {string} filePath
+   * @param {Object=} options
+   * @param {number=} options.maxBytes
+   * @returns {Promise<string|null>}
+   */
+  async readContainerTextFile(_containerId, _filePath, _options = {}) {
+    throw new Error('DockerInterface.readContainerTextFile is abstract');
+  }
+
+  /**
    * Commit a container's writable layer to a local image reference.
    * Used by product-level clone workflows that need a real container snapshot.
    *

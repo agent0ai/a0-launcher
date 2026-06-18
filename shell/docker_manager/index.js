@@ -25,12 +25,14 @@ const UI_READY_ATTEMPT_TIMEOUT_MS = 2_000;
 const CONTAINER_LOG_DEFAULT_LINES = 400;
 const CONTAINER_LOG_MAX_LINES = 1500;
 const CONTAINER_LOG_MAX_CHARS = 12_000;
+const CONTAINER_SOURCE_MAX_BYTES = 256 * 1024;
 const RUNTIME_SETUP_RESUME_ARG = '--a0-resume-runtime-setup';
 const RUNTIME_SETUP_RUNONCE_VALUE = 'AgentZeroLauncherResumeRuntimeSetup';
 const execFileAsync = promisify(execFile);
 
 const CHANNEL_TAGS = Object.freeze(['latest', 'ready', 'testing']);
 const CANONICAL_LOCAL_TAGS = Object.freeze(['local', 'development', 'main']);
+const CONTAINER_SOURCE_WORKDIRS = Object.freeze(['/a0', '/app', '/agent-zero']);
 
 function logDockerManagerError(op, error, details = {}) {
   const payload = { ...details };
@@ -219,6 +221,146 @@ function splitImageAndTag(imageValue, tagValue) {
     image = image.slice(0, lastColon).trim();
   }
   return { image, tag: tag || embeddedTag || 'latest' };
+}
+
+function sanitizeGitBranchName(value) {
+  const branch = String(value || '').trim();
+  if (!branch || branch === 'HEAD' || branch.length > 120) return '';
+  if (/[\0-\x20\x7F]/.test(branch)) return '';
+  if (branch.startsWith('/') || branch.endsWith('/') || branch.includes('//')) return '';
+  if (branch.includes('..') || branch.includes('@{') || branch.includes('\\')) return '';
+  return branch;
+}
+
+function sanitizeGitCommit(value) {
+  const commit = String(value || '').trim().toLowerCase();
+  return /^[0-9a-f]{7,64}$/.test(commit) ? commit : '';
+}
+
+function parseGitHead(text) {
+  const line = String(text || '').split(/\r?\n/u).map((item) => item.trim()).find(Boolean) || '';
+  if (!line) return null;
+
+  if (line.startsWith('ref:')) {
+    const refPath = line.slice(4).trim();
+    const branch = refPath.startsWith('refs/heads/') ? sanitizeGitBranchName(refPath.slice('refs/heads/'.length)) : '';
+    return { refPath, branch, commit: '' };
+  }
+
+  const commit = sanitizeGitCommit(line);
+  return commit ? { refPath: '', branch: '', commit } : null;
+}
+
+function safeGitRefPath(value) {
+  const refPath = String(value || '').trim();
+  if (!refPath || refPath.length > 240) return '';
+  if (!refPath.startsWith('refs/')) return '';
+  if (/[\0-\x20\x7F]/.test(refPath)) return '';
+  if (refPath.startsWith('/') || refPath.endsWith('/') || refPath.includes('//')) return '';
+  if (refPath.includes('..') || refPath.includes('@{') || refPath.includes('\\')) return '';
+  return refPath;
+}
+
+function parsePackedRefs(text, refPath) {
+  const safeRef = safeGitRefPath(refPath);
+  if (!safeRef) return '';
+
+  for (const line of String(text || '').split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('^')) continue;
+    const parts = trimmed.split(/\s+/u);
+    if (parts.length < 2) continue;
+    if (parts[1] === safeRef) {
+      const commit = sanitizeGitCommit(parts[0]);
+      if (commit) return commit;
+    }
+  }
+
+  return '';
+}
+
+function parseGitDirFile(text, workdir) {
+  const line = String(text || '').split(/\r?\n/u).map((item) => item.trim()).find(Boolean) || '';
+  const match = /^gitdir:\s*(.+)$/i.exec(line);
+  if (!match) return '';
+
+  const raw = match[1].trim();
+  if (!raw || /[\0\r\n]/.test(raw)) return '';
+  const candidate = raw.startsWith('/') ? raw : path.posix.join(workdir, raw);
+  const normalized = path.posix.normalize(candidate);
+  if (!normalized.startsWith('/')) return '';
+  return normalized;
+}
+
+async function readContainerGitText(docker, containerId, filePath, maxBytes = CONTAINER_SOURCE_MAX_BYTES) {
+  if (!docker || typeof docker.readContainerTextFile !== 'function') return null;
+  try {
+    return await docker.readContainerTextFile(containerId, filePath, { maxBytes });
+  } catch {
+    return null;
+  }
+}
+
+async function inspectContainerRuntimeSource(docker, container) {
+  const containerId = typeof container?.containerId === 'string' ? container.containerId.trim() : '';
+  if (!containerId) return null;
+
+  for (const workdir of CONTAINER_SOURCE_WORKDIRS) {
+    let gitDir = `${workdir}/.git`;
+    let headText = await readContainerGitText(docker, containerId, `${gitDir}/HEAD`, 8192);
+
+    if (!headText) {
+      const gitFile = await readContainerGitText(docker, containerId, `${workdir}/.git`, 8192);
+      const redirectedGitDir = parseGitDirFile(gitFile, workdir);
+      if (redirectedGitDir) {
+        gitDir = redirectedGitDir;
+        headText = await readContainerGitText(docker, containerId, `${gitDir}/HEAD`, 8192);
+      }
+    }
+
+    const head = parseGitHead(headText);
+    if (!head) continue;
+
+    let commit = head.commit;
+    const refPath = safeGitRefPath(head.refPath);
+    if (!commit && refPath) {
+      commit = sanitizeGitCommit(await readContainerGitText(docker, containerId, `${gitDir}/${refPath}`, 8192));
+      if (!commit) {
+        commit = parsePackedRefs(await readContainerGitText(docker, containerId, `${gitDir}/packed-refs`, CONTAINER_SOURCE_MAX_BYTES), refPath);
+      }
+    }
+
+    const branch = sanitizeGitBranchName(head.branch);
+    if (!branch && !commit) continue;
+
+    return {
+      type: 'git',
+      workdir,
+      branch: branch || null,
+      commit: commit || null,
+      shortCommit: commit ? commit.slice(0, 12) : null
+    };
+  }
+
+  return null;
+}
+
+async function enrichContainersWithRuntimeSource(docker, containers) {
+  const list = Array.isArray(containers) ? containers : [];
+  if (!list.length || !docker || typeof docker.readContainerTextFile !== 'function') return list;
+
+  return await Promise.all(list.map(async (container) => {
+    const source = await inspectContainerRuntimeSource(docker, container);
+    if (!source) return container;
+
+    return {
+      ...container,
+      runtimeSource: source,
+      runtimeBranch: source.branch || null,
+      runtimeCommit: source.commit || null,
+      runtimeShortCommit: source.shortCommit || null
+    };
+  }));
 }
 
 function assertCustomImageRepo(value) {
@@ -760,7 +902,10 @@ async function buildDerivedState(options = {}) {
       bestEffortFreeBytesForUserData(),
       docker.listRemoteTags(imageRepo).catch(() => null)
     ]);
-  const containers = applyLocalInstanceNames(rawContainers, localInstanceNames);
+  const containers = applyLocalInstanceNames(
+    await enrichContainersWithRuntimeSource(docker, rawContainers),
+    localInstanceNames
+  );
 
   const releases = Array.isArray(releasesResult?.releases) ? releasesResult.releases : [];
   const offline = !!releasesResult?.offline;
@@ -2926,7 +3071,10 @@ async function getDockerInventory() {
       docker.listVolumes()
     ]);
     images = Array.isArray(results[0]) ? results[0] : [];
-    containers = applyLocalInstanceNames(Array.isArray(results[1]) ? results[1] : [], localInstanceNames);
+    containers = applyLocalInstanceNames(
+      await enrichContainersWithRuntimeSource(docker, Array.isArray(results[1]) ? results[1] : []),
+      localInstanceNames
+    );
     volumes = Array.isArray(results[2]) ? results[2] : [];
     listingSucceeded = images.length > 0 || containers.length > 0 || volumes.length > 0;
   } catch {

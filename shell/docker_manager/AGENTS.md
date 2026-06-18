@@ -43,6 +43,9 @@ This scope owns:
   with `a0.launcher.role=developer` so the Instances tab can manage them.
 - UI URLs should be derived from inspected port bindings and verified where
   practical before opening.
+- Containers may be enriched with bounded runtime source metadata from the
+  Agent Zero checkout inside the container. Keep the Docker image tag as
+  provenance, and expose runtime branch/commit as separate structured state.
 - Start, switch, and run flows should give the Agent Zero UI enough time to
   finish a slow first boot before rolling back a newly-created container.
 - UI readiness probes should also allow enough time for a local Agent Zero HTTP

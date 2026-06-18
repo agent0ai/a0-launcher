@@ -1,7 +1,24 @@
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 import { test } from 'node:test';
 
 import { DockerodeDocker } from './impl/DockerodeDocker.mjs';
+
+function tarArchiveForFile(name, text) {
+  const data = Buffer.from(text, 'utf8');
+  const header = Buffer.alloc(512);
+  header.write(name, 0, Math.min(Buffer.byteLength(name), 100), 'utf8');
+  header.write(data.length.toString(8), 124, 11, 'ascii');
+  header[156] = '0'.charCodeAt(0);
+
+  const paddedSize = Math.ceil(data.length / 512) * 512;
+  return Buffer.concat([
+    header,
+    data,
+    Buffer.alloc(paddedSize - data.length),
+    Buffer.alloc(1024)
+  ]);
+}
 
 test('listContainers formats UI URLs from selected public host port', async () => {
   const docker = new DockerodeDocker({ imageRepo: 'agent0ai/agent-zero' });
@@ -30,4 +47,38 @@ test('listContainers formats UI URLs from selected public host port', async () =
     { privatePort: 22, publicPort: 32222, type: 'tcp', ip: '127.0.0.1' },
     { privatePort: 80, publicPort: 32080, type: 'tcp', ip: '127.0.0.1' }
   ]);
+});
+
+test('readContainerTextFile extracts text from a Docker archive', async () => {
+  const docker = new DockerodeDocker({ imageRepo: 'agent0ai/agent-zero' });
+  docker.docker = {
+    getContainer: (containerId) => {
+      assert.equal(containerId, 'container-id');
+      return {
+        getArchive: (options, callback) => {
+          assert.deepEqual(options, { path: '/a0/.git/HEAD' });
+          callback(null, Readable.from(tarArchiveForFile('HEAD', 'ref: refs/heads/ready\n')));
+        }
+      };
+    }
+  };
+
+  const text = await docker.readContainerTextFile('container-id', '/a0/.git/HEAD', { maxBytes: 8192 });
+
+  assert.equal(text, 'ref: refs/heads/ready\n');
+});
+
+test('readContainerTextFile returns null for missing paths', async () => {
+  const docker = new DockerodeDocker({ imageRepo: 'agent0ai/agent-zero' });
+  docker.docker = {
+    getContainer: () => ({
+      getArchive: (_options, callback) => {
+        callback({ statusCode: 404 });
+      }
+    })
+  };
+
+  const text = await docker.readContainerTextFile('container-id', '/a0/.git/HEAD', { maxBytes: 8192 });
+
+  assert.equal(text, null);
 });

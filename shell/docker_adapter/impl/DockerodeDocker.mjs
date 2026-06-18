@@ -1,4 +1,5 @@
 import Dockerode from 'dockerode';
+import { once } from 'node:events';
 import { DockerInterface } from '../DockerInterface.mjs';
 import { resolveDockerAuthConfigForImage } from './DockerAuthConfig.mjs';
 import { DockerHubRegistry } from './DockerHubRegistry.mjs';
@@ -116,6 +117,87 @@ function normalizeDockerError(error, context = {}) {
   }
 
   return makeDockerInterfaceError('DOCKER_ERROR', error?.message || 'Docker operation failed', details, error);
+}
+
+function validateContainerFilePath(value) {
+  const filePath = String(value || '').trim();
+  if (!filePath || !filePath.startsWith('/')) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'filePath must be an absolute container path');
+  }
+  if (filePath.length > 4096 || /[\0\r\n]/.test(filePath)) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'filePath is invalid');
+  }
+  return filePath;
+}
+
+function clampReadBytes(value) {
+  const fallback = 64 * 1024;
+  const max = Number(value);
+  if (!Number.isFinite(max)) return fallback;
+  return Math.max(1, Math.min(1024 * 1024, Math.floor(max)));
+}
+
+function isZeroTarBlock(block) {
+  for (let i = 0; i < block.length; i += 1) {
+    if (block[i] !== 0) return false;
+  }
+  return true;
+}
+
+function tarHeaderSize(header) {
+  const sizeText = header.subarray(124, 136).toString('ascii').replace(/\0.*$/u, '').trim();
+  if (!sizeText) return 0;
+  const parsed = Number.parseInt(sizeText, 8);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function extractFirstRegularFileFromTar(archive, maxBytes) {
+  if (!Buffer.isBuffer(archive) || archive.length < 512) return null;
+
+  let offset = 0;
+  while (offset + 512 <= archive.length) {
+    const header = archive.subarray(offset, offset + 512);
+    if (isZeroTarBlock(header)) return null;
+
+    const size = tarHeaderSize(header);
+    const dataStart = offset + 512;
+    const dataEnd = dataStart + size;
+    if (dataEnd > archive.length) return null;
+
+    const typeflag = header[156];
+    if (typeflag === 0 || typeflag === 48) {
+      return archive.subarray(dataStart, Math.min(dataEnd, dataStart + maxBytes));
+    }
+
+    const paddedSize = Math.ceil(size / 512) * 512;
+    offset = dataStart + paddedSize;
+  }
+
+  return null;
+}
+
+async function streamToBuffer(stream, maxBytes) {
+  if (!stream || typeof stream.on !== 'function') return Buffer.alloc(0);
+
+  const chunks = [];
+  let total = 0;
+  stream.on('data', (chunk) => {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxBytes) {
+      const err = makeDockerInterfaceError('OUTPUT_TOO_LARGE', 'Container file archive exceeded the read limit');
+      try {
+        stream.destroy(err);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    chunks.push(buffer);
+  });
+
+  await once(stream, 'end');
+  return Buffer.concat(chunks, total);
 }
 
 function dockerodeOptionsFromEnv(env) {
@@ -758,6 +840,33 @@ export class DockerodeDocker extends DockerInterface {
       return await Promise.resolve(c.inspect());
     } catch (error) {
       throw normalizeDockerError(error, { op: 'inspectContainer', containerId: id, env: this.#envSummary() });
+    }
+  }
+
+  async readContainerTextFile(containerId, filePath, options = {}) {
+    const id = (containerId || '').trim();
+    if (!id) throw makeDockerInterfaceError('INVALID_INPUT', 'containerId is required');
+
+    const targetPath = validateContainerFilePath(filePath);
+    const maxBytes = clampReadBytes(options?.maxBytes);
+
+    try {
+      const c = this.docker.getContainer(id);
+      const stream = await new Promise((resolve, reject) => {
+        c.getArchive({ path: targetPath }, (err, archiveStream) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(archiveStream);
+        });
+      });
+      const archive = await streamToBuffer(stream, maxBytes + 8192);
+      const fileBytes = extractFirstRegularFileFromTar(archive, maxBytes);
+      return fileBytes ? fileBytes.toString('utf8') : null;
+    } catch (error) {
+      if (Number(error?.statusCode) === 404 || error?.code === 'NOT_FOUND') return null;
+      throw normalizeDockerError(error, { op: 'readContainerTextFile', containerId: id, filePath: targetPath, env: this.#envSummary() });
     }
   }
 

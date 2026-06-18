@@ -2427,6 +2427,20 @@ function sanitizeDockerManagerState(state) {
     if (typeof c.imageRef === 'string') out.imageRef = c.imageRef;
     if (typeof c.tag === 'string') out.tag = c.tag;
     if (typeof c.versionTag === 'string') out.versionTag = c.versionTag;
+    if (typeof c.runtimeBranch === 'string' || c.runtimeBranch === null) out.runtimeBranch = c.runtimeBranch || null;
+    if (typeof c.runtimeCommit === 'string' || c.runtimeCommit === null) out.runtimeCommit = c.runtimeCommit || null;
+    if (typeof c.runtimeShortCommit === 'string' || c.runtimeShortCommit === null) out.runtimeShortCommit = c.runtimeShortCommit || null;
+    if (isPlainObject(c.runtimeSource)) {
+      const runtimeSource = {};
+      if (c.runtimeSource.type === 'git') runtimeSource.type = 'git';
+      if (typeof c.runtimeSource.workdir === 'string') runtimeSource.workdir = c.runtimeSource.workdir;
+      if (typeof c.runtimeSource.branch === 'string' || c.runtimeSource.branch === null) runtimeSource.branch = c.runtimeSource.branch || null;
+      if (typeof c.runtimeSource.commit === 'string' || c.runtimeSource.commit === null) runtimeSource.commit = c.runtimeSource.commit || null;
+      if (typeof c.runtimeSource.shortCommit === 'string' || c.runtimeSource.shortCommit === null) {
+        runtimeSource.shortCommit = c.runtimeSource.shortCommit || null;
+      }
+      if (Object.keys(runtimeSource).length) out.runtimeSource = runtimeSource;
+    }
     if (typeof c.state === 'string' || c.state === null) out.state = c.state || null;
     if (typeof c.status === 'string' || c.status === null) out.status = c.status || null;
     if (Number.isFinite(Number(c.createdAt))) out.createdAt = Number(c.createdAt);

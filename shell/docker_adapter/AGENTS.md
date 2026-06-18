@@ -130,6 +130,9 @@ This scope owns:
   `a0.launcher.managed=true` in `listContainers()` even when their image repo
   differs from the default Agent Zero repo. Keep UI language and product
   decisions in `shell/docker_manager` or the renderer.
+- Container file reads must stay bounded, path-specific, and adapter-owned.
+  They are for structured inspection such as product-layer runtime source
+  metadata, not for exposing a generic command or filesystem browser.
 - Container commit support is a low-level snapshot primitive for product-layer
   clone workflows. Keep clone naming, labels, and port-policy decisions in
   `shell/docker_manager`.
