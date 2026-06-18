@@ -14,8 +14,8 @@ asks for work.
 This scope owns:
 
 - `docker-manager-store.js`: mutable renderer store and default state shape.
-- `status-header/`: wordmark, launcher version line, reserved launcher update
-  affordance, refresh, and shared progress-recovery helpers.
+- `status-header/`: wordmark, launcher update affordance, refresh, and shared
+  progress-recovery helpers.
 - `operation-modal/`: centered progress/error modal for non-runtime installs,
   updates, activation, start/stop, delete, rollback, and recovery actions.
 - `runtime-gate/`: mandatory startup runtime setup modal, runtime setup

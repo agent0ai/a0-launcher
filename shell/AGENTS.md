@@ -85,8 +85,9 @@ This scope owns:
   resolution, fetch, and CSP compatible with that scheme.
 - `content_meta.json` owns the downloaded content version exposed through
   shell metadata.
-- `app.getVersion()` owns the app version shown in the renderer header as
-  `Launcher v...`.
+- `app.getVersion()` owns the launcher app version exposed to the renderer for
+  diagnostics and update decisions. The default renderer header does not show
+  visible launcher version text.
 - `electronAPI` owns shell metadata: status/error listeners, app/content version,
   and icon data URL.
 - `dockerManagerAPI` owns all Docker Manager calls.

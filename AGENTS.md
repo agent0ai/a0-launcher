@@ -72,8 +72,10 @@ Runtime and release contracts:
 A0_LAUNCHER_LOCAL_REPO=/home/eclypso/a0/a0-launcher npm start
 ```
 
-- The compact header shows `Launcher v...` from Electron `app.getVersion()`,
-  which reads the root `package.json` version.
+- The compact header shows the Agent Zero wordmark without visible launcher
+  version text. Electron `app.getVersion()` still reads the root `package.json`
+  version and remains available through renderer metadata for diagnostics and
+  update decisions.
 - Keep `package.json` and the root entries in `package-lock.json` aligned with
   the current release line so local `npm start` runs do not show stale metadata.
 - Packaged or non-local runs fetch `content.json` from the latest GitHub Release

@@ -1,17 +1,5 @@
 function byId(id) { return document.getElementById(id); }
 
-function formatLauncherVersion(value) {
-  const raw = typeof value === "string" ? value.trim() : "";
-  const version = raw.replace(/^app:\s*/i, "").replace(/^v/i, "");
-  if (!version) return "";
-
-  const parts = version.split(".");
-  if (parts.length === 3 && parts[2] === "0") {
-    return `Launcher v${parts[0]}.${parts[1]}`;
-  }
-  return `Launcher v${version}`;
-}
-
 function hasLauncherUpdate(state) {
   const meta = state?.meta || {};
   return meta.launcherUpdateAvailable === true ||
@@ -38,14 +26,9 @@ function progressActionsForState(state) {
 }
 
 function render(state) {
-  const launcherVersion = byId("launcherVersion");
   const updateBtn = byId("launcherUpdateBtn");
   const showUpdate = hasLauncherUpdate(state);
 
-  if (launcherVersion) {
-    const label = formatLauncherVersion(state?.meta?.appVersion || "");
-    if (label) launcherVersion.textContent = label;
-  }
   if (updateBtn) {
     updateBtn.classList.toggle("is-hidden", !showUpdate);
     updateBtn.setAttribute("aria-hidden", showUpdate ? "false" : "true");
@@ -78,7 +61,6 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
 }
 
 export {
-  formatLauncherVersion,
   hasLauncherUpdate,
   isDockerHubRateLimit,
   progressActionsForState

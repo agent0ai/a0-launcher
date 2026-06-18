@@ -49,9 +49,10 @@ This scope owns:
   discovered local container. Pass the card's local UI URL through the
   shell-owned terminal action; do not add a global footer or ambiguous
   active-instance CLI button.
-- The compact header shows `Launcher v...` from Electron `app.getVersion()`.
-  Shell content metadata may remain in renderer state for diagnostics, but it
-  should not reintroduce `Content:` clutter into the header.
+- The compact header shows the Agent Zero wordmark without visible launcher
+  version text. Shell app/content metadata may remain in renderer state for
+  diagnostics and update decisions, but it should not reintroduce version or
+  `Content:` clutter into the header.
 - Keep external navigation intentional. Product destinations such as API
   Dashboard should go through the shell action where one exists; direct
   `window.open` should stay limited to safe public links such as Docker install

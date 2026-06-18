@@ -41,7 +41,7 @@ body {
   padding: 1.25rem 1rem 2.5rem;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1rem;
 }
 
 .dm-header {
@@ -199,34 +199,18 @@ body {
 
 .header-logo {
   display: block;
-  width: 12.75rem;
+  width: 14.5rem;
   height: auto;
 }
 
 .sv-wordmark {
-  max-width: min(12.75rem, 58vw);
-}
-
-.sv-launcher-line {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 1.85rem;
-}
-
-.sv-launcher-version {
-  color: var(--color-text);
-  font-size: 0.82rem;
-  line-height: 1.2;
-  white-space: nowrap;
+  max-width: min(14.5rem, 62vw);
 }
 
 .sv-update-slot {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  min-width: 4.65rem;
-  min-height: 1.85rem;
 }
 
 .sv-update-button {
@@ -237,7 +221,7 @@ body {
 }
 
 .sv-update-button.is-hidden {
-  visibility: hidden;
+  display: none;
   pointer-events: none;
 }
 
@@ -1554,6 +1538,10 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.dm-instance-tabs-host {
+  display: contents;
 }
 
 /*
