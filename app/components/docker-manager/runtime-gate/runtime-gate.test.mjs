@@ -298,6 +298,8 @@ test('runtime setup progress keeps setup disabled and shows an indeterminate bar
   const primary = buttonByText(document, 'Setting Up Agent Zero');
   assert.equal(primary.disabled, true);
   assert.ok(document.querySelector('.indeterminate'));
+  assert.equal(document.querySelector('.dm-runtime-gate-detail'), null);
+  assert.equal(document.querySelector('.sv-progress-head')?.children[0]?.textContent, 'Installing Docker Engine');
   assert.equal(document.querySelector('.dm-runtime-steps'), null);
 });
 
@@ -331,6 +333,7 @@ test('completed runtime setup shows success without a refresh button or step lis
   let installTag = '';
   assert.equal(renderRuntimeGate(state, { installOrSync: (tag) => { installTag = tag; } }), true);
   assert.ok(document.querySelector('.dm-runtime-success'));
+  assert.equal(document.querySelector('.dm-runtime-gate-detail')?.textContent, 'Docker Engine is installed and running.');
   assert.equal(document.querySelector('#runtimeSetupTag')?.value, 'latest');
   assert.equal(document.querySelector('#runtimeEndpointChoice'), null);
   assert.equal(buttonByText(document, 'Refresh'), null);

@@ -1491,6 +1491,28 @@ body {
   width: min(34rem, 100%);
 }
 
+.dm-operation-dialog .dm-runtime-progress {
+  margin-top: 0.15rem;
+}
+
+.dm-operation-dialog .dm-runtime-progress .sv-progress-head {
+  align-items: center;
+  color: var(--color-text);
+  font-size: 0.95rem;
+  margin-bottom: 0.6rem;
+}
+
+.dm-operation-phase {
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.dm-operation-percent {
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
 .dm-runtime-gate .dm-dialog-header {
   align-items: flex-start;
 }
@@ -1508,6 +1530,24 @@ body {
 
 .dm-runtime-progress .sv-progress-head {
   margin-bottom: 0.25rem;
+}
+
+.dm-runtime-gate .dm-runtime-progress .sv-progress-head {
+  align-items: center;
+  color: var(--color-text);
+  font-size: 0.92rem;
+  margin-bottom: 0.55rem;
+}
+
+.dm-runtime-gate .dm-runtime-progress .sv-progress-head span:first-child {
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.dm-runtime-gate .dm-runtime-progress .sv-progress-head span:last-child {
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
 }
 
 .dm-runtime-success {

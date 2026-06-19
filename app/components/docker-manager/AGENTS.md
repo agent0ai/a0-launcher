@@ -71,6 +71,9 @@ This scope owns:
 - Post-runtime image, activation, update, rollback, start, stop, and delete
   progress should use the centered operation modal rather than a top-page
   status strip.
+- Active modal progress should show the current phase once, in the progress
+  header above the bar. Do not repeat the same phase as body detail under the
+  modal title.
 - Operation progress should keep actionable recovery affordances for
   user-fixable failures. For Docker Hub pull-rate limits, keep the error
   visible and offer the shell-owned Docker sign-in wrapper plus retry instead

@@ -239,6 +239,8 @@ test('running install shows centered operation modal with cancel action', () => 
   renderOperationDialog(state, { cancelOperation: (opId) => { canceled = opId; } });
   assert.ok(document.getElementById('operationProgressDialog'));
   assert.equal(document.querySelector('.dm-page').inert, true);
+  assert.equal(document.querySelector('.dm-operation-detail'), null);
+  assert.equal(document.querySelector('.dm-operation-phase')?.textContent, 'Downloading');
   const cancelButton = buttonByText(document, 'Cancel download');
 
   renderOperationDialog({
@@ -325,6 +327,7 @@ test('generic failed operation can be dismissed and completed operations do not 
       opId: 'op-stop',
       type: 'stop',
       status: 'failed',
+      message: 'Stopping',
       error: 'The runtime could not be started.',
       finishedAt: '2026-06-16T12:00:00.000Z'
     }
@@ -332,6 +335,7 @@ test('generic failed operation can be dismissed and completed operations do not 
 
   renderOperationDialog(failed, {});
   assert.ok(buttonByText(document, 'Close'));
+  assert.equal(document.querySelector('.dm-operation-phase')?.textContent, 'The runtime could not be started.');
   buttonByText(document, 'Close').dispatchEvent(new MiniEvent('click'));
   assert.equal(document.getElementById('operationProgressDialog'), null);
 

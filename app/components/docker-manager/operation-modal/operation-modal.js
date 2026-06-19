@@ -54,6 +54,13 @@ function operationDetail(progress = null) {
   return asText(progress?.detail) || asText(progress?.message) || "Working...";
 }
 
+function operationPhase(progress = null) {
+  const status = asText(progress?.status);
+  const detail = operationDetail(progress);
+  if (status === "failed" || status === "canceled") return detail;
+  return asText(progress?.phase) || asText(progress?.message) || detail;
+}
+
 function runningAction(progress = null) {
   if (!asText(progress?.opId) || progress?.canCancel !== true) {
     return { primary: { kind: "wait", label: operationHeadline(progress), disabled: true }, secondary: null };
@@ -109,7 +116,7 @@ function normalizedOperationDialog(state = {}) {
     detail: operationDetail(progress),
     progress: numericProgress,
     indeterminate,
-    phase: asText(progress?.phase) || asText(progress?.message) || operationDetail(progress),
+    phase: operationPhase(progress),
     primary: actions.primary,
     secondary: actions.secondary
   };
@@ -216,9 +223,6 @@ function createOperationDialogShell() {
 
   const body = document.createElement("div");
   body.className = "dm-dialog-body";
-  const detail = document.createElement("div");
-  detail.className = "dm-runtime-gate-detail dm-operation-detail";
-  body.appendChild(detail);
   body.appendChild(createProgressBlock());
 
   const footer = document.createElement("div");
@@ -240,9 +244,7 @@ function createOperationDialogShell() {
 
 function updateOperationDialog(backdrop, model, state, actions) {
   const title = backdrop.querySelector(".dm-operation-title");
-  const detail = backdrop.querySelector(".dm-operation-detail");
   if (title) title.textContent = model.headline;
-  if (detail) detail.textContent = model.detail;
   updateProgress(model, backdrop);
 
   const secondaryClass = model.secondary?.kind === "cancel" ? "button cancel" : "button";

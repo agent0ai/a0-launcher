@@ -261,6 +261,7 @@ function normalizedRuntimeGate(state = {}) {
   return {
     headline: success ? "Agent Zero setup complete" : headlineForRuntime(runtime, progress),
     detail: success ? "Docker Engine is installed and running." : detailForRuntime(runtime, progress),
+    showDetail: success || status !== "running",
     phase,
     status: success ? "completed" : status,
     progress: numericProgress,
@@ -301,7 +302,7 @@ function renderProgress(model, parent) {
 
   const phase = document.createElement("span");
   const activeStep = model.steps.find((step) => ["running", "current", "failed", "canceled"].includes(step.status));
-  phase.textContent = activeStep?.label || model.detail;
+  phase.textContent = model.showDetail ? (activeStep?.label || model.detail) : (model.detail || activeStep?.label);
 
   const percent = document.createElement("span");
   percent.textContent = model.indeterminate || model.progress === null ? "" : `${Math.round(model.progress)}%`;
@@ -543,7 +544,7 @@ function renderRuntimeGate(state = {}, actions = {}) {
 
   const body = document.createElement("div");
   body.className = "dm-dialog-body";
-  appendText(body, "dm-runtime-gate-detail", model.detail);
+  if (model.showDetail) appendText(body, "dm-runtime-gate-detail", model.detail);
   renderSuccess(model, body);
   renderRuntimeChoice(model, body, previousRuntimeEndpointId);
   renderSetupChoice(model, body, previousSetupTag);
