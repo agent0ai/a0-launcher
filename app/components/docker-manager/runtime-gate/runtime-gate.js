@@ -1,3 +1,5 @@
+import { estimatedProgressFromSteps, progressMetaText } from "../progress-eta.js";
+
 const RUNTIME_GATE_ID = "runtimeSetupDialog";
 
 const RUNTIME_STEPS = Object.freeze({
@@ -257,6 +259,7 @@ function normalizedRuntimeGate(state = {}) {
   const numericProgress = success ? 100 : completedButStillBlocked ? null : percentValue(progress?.progress);
   const indeterminate = !completedButStillBlocked && (progress?.indeterminate === true || (progress?.type === "runtime_setup" && status === "running" && numericProgress === null));
   const steps = completedButStillBlocked ? [] : normalizeSteps(progress?.steps);
+  const renderedSteps = steps.length ? steps : decorateSteps(kind, phase, status);
 
   return {
     headline: success ? "Agent Zero Setup Complete" : headlineForRuntime(runtime, progress),
@@ -266,7 +269,14 @@ function normalizedRuntimeGate(state = {}) {
     status: success ? "completed" : status,
     progress: numericProgress,
     indeterminate: success ? false : indeterminate,
-    steps: steps.length ? steps : decorateSteps(kind, phase, status),
+    progressMeta: progressMetaText({
+      progress: numericProgress,
+      indeterminate: success ? false : indeterminate,
+      startedAt: progress?.startedAt,
+      status,
+      fallbackProgress: estimatedProgressFromSteps(renderedSteps)
+    }),
+    steps: renderedSteps,
     success,
     setupOptions: success ? setupTagOptions(state) : [],
     setupTag: "latest",
@@ -305,7 +315,8 @@ function renderProgress(model, parent) {
   phase.textContent = model.showDetail ? (activeStep?.label || model.detail) : (model.detail || activeStep?.label);
 
   const percent = document.createElement("span");
-  percent.textContent = model.indeterminate || model.progress === null ? "" : `${Math.round(model.progress)}%`;
+  percent.className = "dm-runtime-progress-meta dm-progress-meta";
+  percent.textContent = model.progressMeta;
 
   head.appendChild(phase);
   head.appendChild(percent);
@@ -321,6 +332,57 @@ function renderProgress(model, parent) {
   block.appendChild(head);
   block.appendChild(track);
   parent.appendChild(block);
+}
+
+function runtimeStepIcon(status) {
+  if (status === "done") return "check";
+  if (status === "failed") return "error";
+  if (status === "canceled") return "block";
+  if (status === "running" || status === "current") return "progress_activity";
+  return "radio_button_unchecked";
+}
+
+function renderRuntimeDetails(model, parent) {
+  if (model.success || !Array.isArray(model.steps) || !model.steps.length) return;
+
+  const details = document.createElement("details");
+  details.className = "dm-runtime-details";
+
+  const summary = document.createElement("summary");
+  summary.className = "dm-runtime-details-summary";
+
+  const label = document.createElement("span");
+  label.textContent = "See more";
+  summary.appendChild(label);
+  details.appendChild(summary);
+
+  const steps = document.createElement("div");
+  steps.className = "dm-runtime-steps";
+  steps.setAttribute("role", "list");
+  steps.setAttribute("aria-label", "Runtime setup phases");
+
+  for (const step of model.steps) {
+    const status = asText(step.status) || "pending";
+    const item = document.createElement("span");
+    item.className = `dm-runtime-step is-${status}`;
+    item.setAttribute("role", "listitem");
+
+    const icon = document.createElement("span");
+    icon.className = "material-symbols-outlined dm-runtime-step-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = runtimeStepIcon(status);
+    item.appendChild(icon);
+
+    const text = document.createElement("span");
+    text.className = "dm-runtime-step-label";
+    text.textContent = step.label;
+    item.appendChild(text);
+
+    steps.appendChild(item);
+  }
+
+  details.appendChild(steps);
+  parent.appendChild(details);
 }
 
 function renderSuccess(model, parent) {
@@ -548,7 +610,10 @@ function renderRuntimeGate(state = {}, actions = {}) {
   renderSuccess(model, body);
   renderRuntimeChoice(model, body, previousRuntimeEndpointId);
   renderSetupChoice(model, body, previousSetupTag);
-  if (!model.success) renderProgress(model, body);
+  if (!model.success) {
+    renderProgress(model, body);
+    renderRuntimeDetails(model, body);
+  }
 
   const footer = document.createElement("div");
   footer.className = "dm-dialog-footer";

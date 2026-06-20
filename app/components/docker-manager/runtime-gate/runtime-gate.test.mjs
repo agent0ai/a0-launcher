@@ -286,6 +286,7 @@ test('runtime setup progress keeps setup disabled and shows an indeterminate bar
       status: 'running',
       headline: 'Setup Agent Zero',
       detail: 'Installing Docker Engine',
+      phase: 'install_engine',
       indeterminate: true
     }
   };
@@ -300,7 +301,43 @@ test('runtime setup progress keeps setup disabled and shows an indeterminate bar
   assert.ok(document.querySelector('.indeterminate'));
   assert.equal(document.querySelector('.dm-runtime-gate-detail'), null);
   assert.equal(document.querySelector('.sv-progress-head')?.children[0]?.textContent, 'Installing Docker Engine');
-  assert.equal(document.querySelector('.dm-runtime-steps'), null);
+  assert.ok(document.querySelector('.dm-runtime-details'));
+  assert.equal(document.querySelector('.dm-runtime-details-current'), null);
+  assert.equal(document.querySelector('.dm-runtime-step-status'), null);
+  const steps = document.querySelectorAll('.dm-runtime-step');
+  assert.equal(steps.length, 6);
+  assert.ok(steps.some((step) => step.classList.contains('is-running')));
+});
+
+test('runtime setup progress estimates remaining minutes from setup phases', () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-06-16T12:04:00.000Z');
+
+  try {
+    const document = installDom();
+    const state = {
+      stateLoaded: true,
+      dockerAvailable: false,
+      runtime: { platform: 'linux', state: 'not_provisioned', action: 'install', canProvision: true },
+      progress: {
+        type: 'runtime_setup',
+        status: 'running',
+        startedAt: '2026-06-16T12:00:00.000Z',
+        headline: 'Setup Agent Zero',
+        detail: 'Installing Docker Engine',
+        phase: 'install_engine',
+        indeterminate: true
+      }
+    };
+
+    const model = normalizedRuntimeGate(state);
+    assert.equal(model.progressMeta, '~6 min remaining');
+
+    renderRuntimeGate(state, {});
+    assert.equal(document.querySelector('.dm-progress-meta')?.textContent, '~6 min remaining');
+  } finally {
+    Date.now = originalNow;
+  }
 });
 
 test('completed runtime setup shows success without a refresh button or step list', () => {

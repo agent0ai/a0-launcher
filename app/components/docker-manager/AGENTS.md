@@ -14,12 +14,16 @@ asks for work.
 This scope owns:
 
 - `docker-manager-store.js`: mutable renderer store and default state shape.
+- `progress-eta.js`: renderer-only minute-level progress ETA formatting shared
+  by setup and operation modals.
 - `status-header/`: wordmark, launcher update affordance, refresh, and shared
   progress-recovery helpers.
 - `operation-modal/`: centered progress/error modal for non-runtime installs,
   updates, activation, start/stop, delete, rollback, and recovery actions.
 - `runtime-gate/`: mandatory startup runtime setup modal, runtime setup
   progress, recovery actions, and non-dismissable gating.
+- `setup-showcase/`: Agent Zero capability slideshow helper shown during the
+  long Agent Zero image pull phase.
 - `onboarding/`: retired runtime setup banner files kept only for compatibility
   until they are removed.
 - `sidebar/`: tab navigation and `dm:nav` event publication.
@@ -61,6 +65,9 @@ This scope owns:
   that the user is never left wondering whether Docker or the launcher is still
   working.
 - Runtime setup progress belongs primarily in the blocking runtime modal.
+- Runtime setup should stay transparent without becoming a feature showcase.
+  Use the `See more` disclosure for structured setup phases when detailed
+  progress is available.
 - Runtime setup success should stay in the same modal shell long enough to
   offer first Agent Zero image setup. The selector defaults to `latest`, and the
   primary `Setup Agent Zero` action starts the selected image install.
@@ -73,6 +80,9 @@ This scope owns:
 - Post-runtime image, activation, update, rollback, start, stop, and delete
   progress should use the centered operation modal rather than a top-page
   status strip.
+- The Agent Zero setup slideshow belongs only to the image pull/extract wait in
+  the install operation modal. Do not show it during Docker runtime setup or
+  short preflight checks.
 - Active modal progress should show the current phase once, in the progress
   header above the bar. Do not repeat the same phase as body detail under the
   modal title.

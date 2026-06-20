@@ -1,4 +1,10 @@
 import { progressActionsForState } from "../status-header/status-header.js";
+import {
+  mountSetupShowcase,
+  shouldShowSetupShowcase,
+  unmountSetupShowcase
+} from "../setup-showcase/setup-showcase.js";
+import { progressMetaText } from "../progress-eta.js";
 
 const OPERATION_DIALOG_ID = "operationProgressDialog";
 
@@ -116,6 +122,12 @@ function normalizedOperationDialog(state = {}) {
     detail: operationDetail(progress),
     progress: numericProgress,
     indeterminate,
+    progressMeta: progressMetaText({
+      progress: numericProgress,
+      indeterminate,
+      startedAt: progress?.startedAt,
+      status
+    }),
     phase: operationPhase(progress),
     primary: actions.primary,
     secondary: actions.secondary
@@ -148,7 +160,7 @@ function createProgressBlock() {
   phase.className = "dm-operation-phase";
 
   const percent = document.createElement("span");
-  percent.className = "dm-operation-percent";
+  percent.className = "dm-operation-percent dm-progress-meta";
 
   head.appendChild(phase);
   head.appendChild(percent);
@@ -170,7 +182,7 @@ function updateProgress(model, root) {
   const percent = root.querySelector(".dm-operation-percent");
   const fill = root.querySelector(".dm-operation-progress-fill");
   if (phase) phase.textContent = model.phase;
-  if (percent) percent.textContent = model.indeterminate || model.progress === null ? "" : `${Math.round(model.progress)}%`;
+  if (percent) percent.textContent = model.progressMeta;
   if (fill) {
     fill.className = `sv-progress-fill dm-operation-progress-fill${model.indeterminate ? " indeterminate" : ""}`;
     fill.style.width = model.indeterminate ? "" : `${model.progress === null ? 0 : model.progress}%`;
@@ -245,6 +257,12 @@ function createOperationDialogShell() {
 function updateOperationDialog(backdrop, model, state, actions) {
   const title = backdrop.querySelector(".dm-operation-title");
   if (title) title.textContent = model.headline;
+  const dialog = backdrop.querySelector(".dm-operation-dialog");
+  const body = backdrop.querySelector(".dm-dialog-body");
+  const showShowcase = shouldShowSetupShowcase(state?.progress);
+  dialog?.classList?.toggle("has-setup-showcase", showShowcase);
+  if (showShowcase) mountSetupShowcase(body);
+  else unmountSetupShowcase(body);
   updateProgress(model, backdrop);
 
   const secondaryClass = model.secondary?.kind === "cancel" ? "button cancel" : "button";
@@ -272,7 +290,14 @@ function focusableWithin(root) {
 }
 
 function focusFirstControl(root) {
-  const control = root.querySelector("button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+  if (root.querySelector(".dm-setup-showcase")) {
+    root.querySelector(".dm-operation-dialog")?.focus?.();
+    return;
+  }
+  const actionControl =
+    root.querySelector(".dm-operation-secondary")?.querySelector("button:not([disabled])") ||
+    root.querySelector(".dm-operation-primary")?.querySelector("button:not([disabled])");
+  const control = actionControl || root.querySelector("button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
   const target = control || root.querySelector(".dm-operation-dialog");
   target?.focus?.();
 }

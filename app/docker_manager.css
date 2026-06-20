@@ -752,7 +752,10 @@ body {
 
 .sv-progress-head {
   display: flex;
+  align-items: center;
+  gap: 0.75rem;
   justify-content: space-between;
+  min-width: 0;
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
@@ -1483,12 +1486,128 @@ body {
   width: min(34rem, 100%);
 }
 
+.dm-runtime-gate:focus {
+  outline: none;
+}
+
 .dm-operation-backdrop {
   z-index: 4900;
 }
 
 .dm-operation-dialog {
   width: min(34rem, 100%);
+}
+
+.dm-dialog.dm-operation-dialog:focus,
+.dm-dialog.dm-operation-dialog:focus-visible {
+  outline: none;
+}
+
+.dm-operation-dialog.has-setup-showcase {
+  width: min(64rem, 100%);
+}
+
+.dm-operation-dialog.has-setup-showcase .dm-dialog-body {
+  gap: 0.85rem;
+}
+
+.dm-operation-dialog.has-setup-showcase .dm-setup-showcase {
+  order: -1;
+}
+
+.dm-setup-showcase {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(16rem, 0.82fr);
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dm-setup-showcase-media-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 13rem;
+  overflow: hidden;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: #05070a;
+}
+
+.dm-setup-showcase-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.dm-setup-showcase-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.dm-setup-showcase-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.dm-setup-showcase-description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.dm-setup-showcase-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  margin-top: 0.15rem;
+}
+
+.dm-setup-showcase-arrow {
+  width: 1.9rem;
+  min-width: 1.9rem;
+  height: 1.9rem;
+}
+
+.dm-setup-showcase-dots {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dm-setup-showcase-dot {
+  width: 0.55rem;
+  height: 0.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--dm-radius-max) / 2);
+  background: color-mix(in srgb, var(--color-text-muted) 46%, transparent);
+  cursor: pointer;
+  transition: width 0.18s cubic-bezier(0.2, 0, 0, 1), background 0.18s ease, transform 0.18s ease;
+}
+
+.dm-setup-showcase-dot:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--color-highlight) 74%, var(--color-text));
+}
+
+.dm-setup-showcase-dot.active {
+  width: 1.35rem;
+  background: var(--color-highlight);
 }
 
 .dm-operation-dialog .dm-runtime-progress {
@@ -1505,12 +1624,22 @@ body {
 .dm-operation-phase {
   font-weight: 600;
   line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dm-operation-percent {
+.dm-progress-meta {
+  flex: 0 0 auto;
+  max-width: 45%;
   color: var(--color-text-muted);
   font-size: 0.84rem;
   line-height: 1.35;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dm-runtime-gate .dm-dialog-header {
@@ -1542,12 +1671,117 @@ body {
 .dm-runtime-gate .dm-runtime-progress .sv-progress-head span:first-child {
   font-weight: 600;
   line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dm-runtime-gate .dm-runtime-progress .sv-progress-head span:last-child {
+.dm-runtime-progress-meta {
   color: var(--color-text-muted);
   font-size: 0.84rem;
   line-height: 1.35;
+}
+
+.dm-runtime-details {
+  overflow: hidden;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--dm-surface) 84%, var(--color-background) 16%);
+}
+
+.dm-runtime-details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.dm-runtime-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dm-runtime-details-summary::after {
+  content: "expand_more";
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-family: "Material Symbols Outlined";
+  font-size: 1.15rem;
+  font-weight: normal;
+  line-height: 1;
+}
+
+.dm-runtime-details[open] .dm-runtime-details-summary::after {
+  content: "expand_less";
+}
+
+.dm-runtime-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.1rem;
+  row-gap: 0.12rem;
+  padding: 0.1rem 0.7rem 0.7rem;
+}
+
+.dm-runtime-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.35rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+.dm-runtime-step-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.dm-runtime-step-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-runtime-step.is-done {
+  color: color-mix(in srgb, #7ddc8f 84%, var(--color-text-muted));
+}
+
+.dm-runtime-step.is-done .dm-runtime-step-icon {
+  color: #7ddc8f;
+}
+
+.dm-runtime-step.is-running,
+.dm-runtime-step.is-current {
+  color: color-mix(in srgb, var(--color-highlight) 84%, var(--color-text-muted));
+}
+
+.dm-runtime-step.is-running .dm-runtime-step-icon,
+.dm-runtime-step.is-current .dm-runtime-step-icon {
+  color: var(--color-highlight);
+}
+
+.dm-runtime-step.is-failed {
+  color: color-mix(in srgb, var(--color-accent) 84%, var(--color-text-muted));
+}
+
+.dm-runtime-step.is-failed .dm-runtime-step-icon {
+  color: var(--color-accent);
+}
+
+.dm-runtime-step.is-canceled .dm-runtime-step-icon {
+  color: var(--color-warning-text);
 }
 
 .dm-runtime-success {
@@ -1586,6 +1820,20 @@ body {
 
 .dm-instance-tabs-host {
   display: contents;
+}
+
+@media (max-width: 760px) {
+  .dm-operation-dialog.has-setup-showcase {
+    width: min(38rem, 100%);
+  }
+
+  .dm-setup-showcase {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-setup-showcase-media-frame {
+    min-height: 10rem;
+  }
 }
 
 /*

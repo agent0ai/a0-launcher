@@ -239,6 +239,9 @@ test('running install shows centered operation modal with cancel action', () => 
   renderOperationDialog(state, { cancelOperation: (opId) => { canceled = opId; } });
   assert.ok(document.getElementById('operationProgressDialog'));
   assert.equal(document.querySelector('.dm-page').inert, true);
+  assert.ok(document.querySelector('.dm-setup-showcase'));
+  assert.equal(document.querySelector('.dm-setup-showcase-count'), null);
+  assert.ok(document.querySelector('.dm-operation-dialog').classList.contains('has-setup-showcase'));
   assert.equal(document.querySelector('.dm-operation-detail'), null);
   assert.equal(document.querySelector('.dm-operation-phase')?.textContent, 'Downloading');
   const cancelButton = buttonByText(document, 'Cancel download');
@@ -254,6 +257,54 @@ test('running install shows centered operation modal with cancel action', () => 
   assert.equal(buttonByText(document, 'Cancel download'), cancelButton);
   cancelButton.dispatchEvent(new MiniEvent('click'));
   assert.equal(canceled, 'op-install');
+});
+
+test('running image pull shows a minute-level ETA near the percentage', () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-06-16T12:05:00.000Z');
+
+  try {
+    const document = installDom();
+    const state = {
+      progress: {
+        opId: 'op-install-eta',
+        type: 'install',
+        status: 'running',
+        startedAt: '2026-06-16T12:00:00.000Z',
+        message: 'Downloading',
+        progress: 50,
+        downloadProgress: 50,
+        canCancel: true
+      }
+    };
+
+    const model = normalizedOperationDialog(state);
+    assert.equal(model.progressMeta, '50% · ~5 min remaining');
+
+    renderOperationDialog(state, {});
+    assert.equal(document.querySelector('.dm-operation-percent')?.textContent, '50% · ~5 min remaining');
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('install availability check stays compact before image pull starts', () => {
+  const document = installDom();
+  const state = {
+    progress: {
+      opId: 'op-install-check',
+      type: 'install',
+      status: 'running',
+      message: 'Checking availability',
+      canCancel: false
+    }
+  };
+
+  renderOperationDialog(state, {});
+
+  assert.ok(document.getElementById('operationProgressDialog'));
+  assert.equal(document.querySelector('.dm-setup-showcase'), null);
+  assert.equal(document.querySelector('.dm-operation-dialog').classList.contains('has-setup-showcase'), false);
 });
 
 test('running operation without cancel support shows no cancel action', () => {

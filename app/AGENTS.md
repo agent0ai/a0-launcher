@@ -17,7 +17,7 @@ This scope owns:
 - `app/docker_manager.js`: renderer state coordination, preload API calls,
   action facade, runtime setup action, toast helpers, and initial refresh flow.
 - `app/docker_manager.css`: launcher-specific UI surface.
-- `app/assets/`: renderer-visible images and symbols.
+- `app/assets/`: renderer-visible images, symbols, and setup showcase media.
 - `app/components/`: component HTML and ES modules loaded through
   `<x-component>`.
 - `app/a0ui/`: portable Agent Zero UI primitives vendored into this app.
@@ -37,6 +37,8 @@ This scope owns:
   runtime is not ready after initial state loads, the renderer must show the
   blocking startup runtime modal before any launcher workspace feature can be
   used. Docker mechanics stay in the shell.
+- The setup capability slideshow is for the long Agent Zero image pull/extract
+  wait, not for Docker runtime setup or short install preflight checks.
 - When runtime setup completes, the same modal shell owns the first Agent Zero
   image setup prompt, including a short explanation and a version selector that
   defaults to the Docker `latest` tag.
