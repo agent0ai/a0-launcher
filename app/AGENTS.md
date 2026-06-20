@@ -42,6 +42,9 @@ This scope owns:
 - When runtime setup completes, the same modal shell owns the first Agent Zero
   image setup prompt, including a short explanation and a version selector that
   defaults to the Docker `latest` tag.
+- During the first Agent Zero image pull, the operation modal may offer saved
+  Instance provider/model defaults and an explicit one-time checkbox to start
+  the first Instance after the download finishes.
 - Long-running non-runtime Docker operations should use the same centered modal
   affordance rather than a top-of-page status strip. Keep the header quiet once
   the modal flow exists.

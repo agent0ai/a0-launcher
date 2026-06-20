@@ -61,6 +61,8 @@ This scope owns:
 - Local instance display-name overrides are persisted through `state_store.js`
   because Docker labels on existing containers cannot be mutated safely.
 - Port preferences are stored as UI and SSH host-port preferences.
+- Instance defaults are stored as Main, Utility, and Embedding provider/model
+  preferences with optional local API keys for new Instances.
 - Runtime endpoint selection is stored as a launcher-local Docker endpoint
   preference. It may be set from the setup modal when multiple usable endpoints
   are detected, and all Docker Manager operations should continue through the

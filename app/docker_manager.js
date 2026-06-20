@@ -1,4 +1,9 @@
 import { dockerManagerStore as store } from "./components/docker-manager/docker-manager-store.js";
+import {
+  buildInstanceEnvText,
+  defaultInstanceName,
+  normalizeInstanceDefaults
+} from "./components/docker-manager/instance-defaults.js";
 import { renderOperationDialog } from "./components/docker-manager/operation-modal/operation-modal.js";
 import { renderRuntimeGate } from "./components/docker-manager/runtime-gate/runtime-gate.js";
 
@@ -106,6 +111,7 @@ function snapshot() {
     runtimeDiagnostics: store.runtimeDiagnostics || null,
     progress: store.progress || null,
     portPreferences: store.portPreferences || null,
+    instanceDefaults: normalizeInstanceDefaults(store.instanceDefaults),
     retentionPolicy: store.retentionPolicy || null,
     instanceTabs: store.instanceTabs || { tabs: [], activeTabId: "" }
   };
@@ -213,6 +219,7 @@ async function refresh() {
       store.runtime = state?.runtime || null;
       store.runtimeDiagnostics = state?.runtimeDiagnostics || store.runtimeDiagnostics || null;
       store.portPreferences = state?.portPreferences || null;
+      store.instanceDefaults = state?.instanceDefaults || null;
       store.retentionPolicy = state?.retentionPolicy || null;
       if (!store.error) setBanner("", "");
     }
@@ -408,6 +415,103 @@ async function installOrSync(tag) {
     () => api.installOrSync(tag),
     "Install requested."
   );
+}
+
+let pendingFirstInstanceRun = null;
+const handledFirstInstanceRunOps = new Set();
+
+async function setInstanceDefaults(instanceDefaults, options = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.setInstanceDefaults !== "function") return false;
+  try {
+    const defaults = normalizeInstanceDefaults(instanceDefaults);
+    const envResult = buildInstanceEnvText(defaults);
+    if (!envResult.ok) {
+      setBanner("error", envResult.message);
+      return false;
+    }
+    const res = await api.setInstanceDefaults(defaults);
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    store.instanceDefaults = normalizeInstanceDefaults(res);
+    if (!options?.quiet) setBanner("info", "Instance defaults saved.");
+    emitState();
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Failed to save Instance defaults");
+    return false;
+  }
+}
+
+async function confirmFirstInstanceSetup(payload = {}) {
+  const input = payload && typeof payload === "object" ? payload : {};
+  const defaults = normalizeInstanceDefaults(input.instanceDefaults || input.defaults);
+  const envResult = buildInstanceEnvText(defaults);
+  if (!envResult.ok) {
+    setBanner("error", envResult.message);
+    return false;
+  }
+
+  const ok = await setInstanceDefaults(defaults, { quiet: true });
+  if (!ok) return false;
+
+  const opId = typeof input.opId === "string" ? input.opId.trim() : "";
+  const targetTag = typeof input.targetTag === "string" ? input.targetTag.trim() : "";
+  if (input.runFirstInstance === true && opId && targetTag) {
+    pendingFirstInstanceRun = {
+      opId,
+      targetTag,
+      instanceName: typeof input.instanceName === "string" ? input.instanceName.trim() : "",
+      instanceDefaults: defaults
+    };
+    setBanner("info", "Defaults saved. Your first Instance will start when the download finishes.");
+  } else {
+    if (pendingFirstInstanceRun?.opId === opId) pendingFirstInstanceRun = null;
+    setBanner("info", "Instance defaults saved.");
+  }
+  return true;
+}
+
+function skipFirstInstanceSetup(payload = {}) {
+  const opId = typeof payload?.opId === "string" ? payload.opId.trim() : "";
+  if (opId && pendingFirstInstanceRun?.opId === opId) pendingFirstInstanceRun = null;
+  return true;
+}
+
+async function startPendingFirstInstance(progress = null) {
+  const opId = typeof progress?.opId === "string" ? progress.opId.trim() : "";
+  if (!opId || handledFirstInstanceRunOps.has(opId)) return;
+  const pending = pendingFirstInstanceRun;
+  if (!pending || pending.opId !== opId) return;
+  handledFirstInstanceRunOps.add(opId);
+  pendingFirstInstanceRun = null;
+
+  const targetTag = pending.targetTag || (typeof progress?.targetTag === "string" ? progress.targetTag.trim() : "");
+  if (!targetTag) return;
+
+  const defaults = normalizeInstanceDefaults(pending.instanceDefaults || store.instanceDefaults);
+  const envResult = buildInstanceEnvText(defaults);
+  if (!envResult.ok) {
+    setBanner("error", envResult.message);
+    return;
+  }
+
+  const state = snapshot();
+  const options = {
+    instanceName: pending.instanceName || defaultInstanceName(targetTag, state),
+    portMappings: "0:80",
+    envText: envResult.value || "",
+    dataLossAck: "proceed_without_backup"
+  };
+
+  await activateTag(targetTag, options);
+}
+
+function clearPendingFirstInstanceRun(progress = null) {
+  const opId = typeof progress?.opId === "string" ? progress.opId.trim() : "";
+  if (opId && pendingFirstInstanceRun?.opId === opId) pendingFirstInstanceRun = null;
 }
 
 let postOperationRefreshTimer = 0;
@@ -749,6 +853,8 @@ window.dockerManagerActions = {
   openDockerLoginTerminal,
   retryInstall,
   cancelOperation,
+  confirmFirstInstanceSetup,
+  skipFirstInstanceSetup,
   addRemoteInstance,
   deleteRemoteInstance,
   renameRemoteInstance,
@@ -760,6 +866,7 @@ window.dockerManagerActions = {
   reloadInstanceTab,
   detachInstanceTab,
   syncInstanceTabBounds,
+  setInstanceDefaults,
   async setPortPreferences(prefs) {
     const api = window.dockerManagerAPI;
     if (!api || typeof api.setPortPreferences !== "function") return false;
@@ -807,6 +914,7 @@ function initSubscriptions() {
         store.runtime = state?.runtime || null;
         store.runtimeDiagnostics = state?.runtimeDiagnostics || store.runtimeDiagnostics || null;
         store.portPreferences = state?.portPreferences || null;
+        store.instanceDefaults = state?.instanceDefaults || null;
         store.retentionPolicy = state?.retentionPolicy || null;
         emitState();
       }
@@ -819,6 +927,13 @@ function initSubscriptions() {
       emitState();
       const status = typeof progress?.status === "string" ? progress.status : "";
       if (status === "completed" || status === "failed" || status === "canceled") {
+        if (progress?.type === "install" && status === "completed") {
+          startPendingFirstInstance(progress).catch((e) => {
+            setBanner("error", e?.message || "Unable to start the first Instance");
+          });
+        } else if (progress?.type === "install") {
+          clearPendingFirstInstanceRun(progress);
+        }
         schedulePostOperationRefresh(progress);
       }
     });

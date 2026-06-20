@@ -78,6 +78,13 @@ const DEFAULT_PORT_PREFERENCES = Object.freeze({
 const MAX_REMOTE_INSTANCES = 64;
 const MAX_LOCAL_INSTANCE_NAMES = 256;
 
+const INSTANCE_DEFAULT_SLOT_IDS = Object.freeze(['Main', 'Utility', 'Embedding']);
+const DEFAULT_INSTANCE_PROVIDERS = Object.freeze({
+  Main: 'openrouter',
+  Utility: 'openrouter',
+  Embedding: 'huggingface'
+});
+
 function normalizePort(value, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -123,6 +130,44 @@ async function writePortPreferences(portPreferences) {
   const state = await readJson(stateFile(), {});
   await writeJson(stateFile(), { ...state, portPreferences: prefs, updatedAt: new Date().toISOString() });
   return prefs;
+}
+
+function normalizePreferenceText(value, maxLength) {
+  return String(value || '')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, '')
+    .slice(0, maxLength);
+}
+
+function normalizeInstanceDefaults(value) {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const sourceModels = input.models && typeof input.models === 'object' && !Array.isArray(input.models) ? input.models : {};
+  const models = {};
+
+  for (const id of INSTANCE_DEFAULT_SLOT_IDS) {
+    const source = sourceModels[id] && typeof sourceModels[id] === 'object' && !Array.isArray(sourceModels[id])
+      ? sourceModels[id]
+      : {};
+    models[id] = {
+      provider: normalizePreferenceText(source.provider, 96) || DEFAULT_INSTANCE_PROVIDERS[id],
+      model: normalizePreferenceText(source.model, 256),
+      apiKey: normalizePreferenceText(source.apiKey, 4096)
+    };
+  }
+
+  return { models };
+}
+
+async function readInstanceDefaults() {
+  const state = await readJson(stateFile(), {});
+  return normalizeInstanceDefaults(state?.instanceDefaults);
+}
+
+async function writeInstanceDefaults(instanceDefaults) {
+  const defaults = normalizeInstanceDefaults(instanceDefaults);
+  const state = await readJson(stateFile(), {});
+  await writeJson(stateFile(), { ...state, instanceDefaults: defaults, updatedAt: new Date().toISOString() });
+  return defaults;
 }
 
 function normalizeRuntimeSetupResume(value) {
@@ -434,6 +479,10 @@ module.exports = {
   // Port preferences
   readPortPreferences,
   writePortPreferences,
+
+  // Instance defaults
+  readInstanceDefaults,
+  writeInstanceDefaults,
 
   // Remote instances
   readRemoteInstances,

@@ -307,6 +307,61 @@ test('install availability check stays compact before image pull starts', () => 
   assert.equal(document.querySelector('.dm-operation-dialog').classList.contains('has-setup-showcase'), false);
 });
 
+test('first image pull asks for models before optional first Instance details', async () => {
+  const document = installDom();
+  const state = {
+    containers: [],
+    progress: {
+      opId: 'op-first-install',
+      type: 'install',
+      status: 'running',
+      targetTag: 'latest',
+      message: 'Downloading',
+      progress: 18,
+      downloadProgress: 18,
+      canCancel: true
+    }
+  };
+
+  let skipped = '';
+  let confirmed = null;
+  renderOperationDialog(state, {
+    skipFirstInstanceSetup: ({ opId }) => { skipped = opId; },
+    confirmFirstInstanceSetup: (payload) => {
+      confirmed = payload;
+      return true;
+    }
+  });
+
+  assert.ok(document.querySelector('.dm-first-instance-setup'));
+  assert.equal(document.querySelector('.dm-setup-showcase'), null);
+  assert.ok(document.querySelector('.dm-operation-dialog').classList.contains('has-first-instance-setup'));
+  assert.equal(document.querySelector('.dm-first-instance-title')?.textContent, 'Choose Instance defaults');
+  assert.equal(document.querySelector('.dm-first-instance-step-run')?.classList.contains('hidden'), true);
+
+  buttonByText(document, 'Continue').dispatchEvent(new MiniEvent('click'));
+
+  assert.equal(document.querySelector('.dm-first-instance-title')?.textContent, 'Start your first Instance');
+  assert.equal(document.querySelector('.dm-first-instance-step-models')?.classList.contains('hidden'), true);
+  assert.equal(document.querySelector('.dm-first-instance-step-run')?.classList.contains('hidden'), false);
+  assert.ok(document.getElementById('firstSetupRunInstance'));
+  assert.ok(document.getElementById('firstSetupInstanceName'));
+  assert.equal(buttonByText(document, 'Show slideshow'), null);
+  assert.equal(buttonByText(document, 'Skip'), null);
+  assert.ok(buttonByText(document, '< Back to model configuration'));
+  assert.equal(document.getElementById('firstSetupRunInstance').parentNode.children[1]?.textContent, 'Start my first Instance when the download finishes');
+
+  buttonByText(document, 'Continue').dispatchEvent(new MiniEvent('click'));
+  await Promise.resolve();
+
+  assert.equal(skipped, '');
+  assert.equal(confirmed?.opId, 'op-first-install');
+  assert.equal(confirmed?.runFirstInstance, false);
+  assert.equal(document.querySelector('.dm-first-instance-setup'), null);
+  assert.ok(document.querySelector('.dm-setup-showcase'));
+  assert.ok(document.querySelector('.dm-operation-dialog').classList.contains('has-setup-showcase'));
+});
+
 test('running operation without cancel support shows no cancel action', () => {
   installDom();
   const state = {

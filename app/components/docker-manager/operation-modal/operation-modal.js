@@ -1,5 +1,10 @@
 import { progressActionsForState } from "../status-header/status-header.js";
 import {
+  mountFirstInstanceSetup,
+  shouldShowFirstInstanceSetup,
+  unmountFirstInstanceSetup
+} from "../first-instance-setup/first-instance-setup.js";
+import {
   mountSetupShowcase,
   shouldShowSetupShowcase,
   unmountSetupShowcase
@@ -259,10 +264,20 @@ function updateOperationDialog(backdrop, model, state, actions) {
   if (title) title.textContent = model.headline;
   const dialog = backdrop.querySelector(".dm-operation-dialog");
   const body = backdrop.querySelector(".dm-dialog-body");
-  const showShowcase = shouldShowSetupShowcase(state?.progress);
+  const showFirstSetup = shouldShowFirstInstanceSetup(state);
+  const showShowcase = shouldShowSetupShowcase(state?.progress) && !showFirstSetup;
   dialog?.classList?.toggle("has-setup-showcase", showShowcase);
-  if (showShowcase) mountSetupShowcase(body);
-  else unmountSetupShowcase(body);
+  dialog?.classList?.toggle("has-first-instance-setup", showFirstSetup);
+  if (showFirstSetup) {
+    unmountSetupShowcase(body);
+    mountFirstInstanceSetup(body, state, actions, () => {
+      updateOperationDialog(backdrop, model, state, actions);
+    });
+  } else {
+    unmountFirstInstanceSetup(body);
+    if (showShowcase) mountSetupShowcase(body);
+    else unmountSetupShowcase(body);
+  }
   updateProgress(model, backdrop);
 
   const secondaryClass = model.secondary?.kind === "cancel" ? "button cancel" : "button";

@@ -1507,11 +1507,23 @@ body {
   width: min(64rem, 100%);
 }
 
+.dm-operation-dialog.has-first-instance-setup {
+  width: min(64rem, 100%);
+}
+
 .dm-operation-dialog.has-setup-showcase .dm-dialog-body {
   gap: 0.85rem;
 }
 
 .dm-operation-dialog.has-setup-showcase .dm-setup-showcase {
+  order: -1;
+}
+
+.dm-operation-dialog.has-first-instance-setup .dm-dialog-body {
+  gap: 0.85rem;
+}
+
+.dm-operation-dialog.has-first-instance-setup .dm-first-instance-setup {
   order: -1;
 }
 
@@ -1608,6 +1620,104 @@ body {
 .dm-setup-showcase-dot.active {
   width: 1.35rem;
   background: var(--color-highlight);
+}
+
+.dm-first-instance-setup {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.dm-first-instance-head {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.dm-first-instance-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.dm-first-instance-description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.dm-first-instance-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.dm-first-instance-step {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dm-first-instance-step-run {
+  max-width: 34rem;
+}
+
+.dm-first-instance-run {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dm-first-instance-check {
+  align-items: flex-start;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.dm-first-instance-name-field input:disabled {
+  opacity: 0.55;
+}
+
+.dm-text-button {
+  min-height: 2em;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-family: "Rubik", Arial, Helvetica, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.dm-text-button:hover:not(:disabled),
+.dm-text-button:focus-visible {
+  color: var(--color-text);
+  outline: none;
+}
+
+.dm-first-instance-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dm-first-instance-primary {
+  margin-left: auto;
+}
+
+.dm-settings-model-defaults {
+  margin-top: 0.15rem;
+}
+
+.dm-settings-advanced {
+  margin-top: 0.85rem;
 }
 
 .dm-operation-dialog .dm-runtime-progress {
@@ -1823,11 +1933,13 @@ body {
 }
 
 @media (max-width: 760px) {
-  .dm-operation-dialog.has-setup-showcase {
+  .dm-operation-dialog.has-setup-showcase,
+  .dm-operation-dialog.has-first-instance-setup {
     width: min(38rem, 100%);
   }
 
-  .dm-setup-showcase {
+  .dm-setup-showcase,
+  .dm-first-instance-layout {
     grid-template-columns: 1fr;
   }
 

@@ -2329,6 +2329,7 @@ function sanitizeDockerManagerState(state) {
   const remoteIn = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
   const policyIn = isPlainObject(state?.retentionPolicy) ? state.retentionPolicy : {};
   const portsIn = isPlainObject(state?.portPreferences) ? state.portPreferences : {};
+  const defaultsIn = isPlainObject(state?.instanceDefaults) ? state.instanceDefaults : {};
 
   const allowedCategory = new Set(['official_release', 'local_build']);
   const allowedAvailability = new Set(['available', 'installed', 'update_available', 'installing', 'error']);
@@ -2466,6 +2467,26 @@ function sanitizeDockerManagerState(state) {
   const keepCount = Number.isFinite(Number(policyIn.keepCount)) ? Number(policyIn.keepCount) : 1;
   const retentionPolicy = { keepCount: Math.max(0, Math.min(20, Math.floor(keepCount))) };
 
+  const normalizePreferenceText = (value, maxLength) => String(value || '')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, '')
+    .slice(0, maxLength);
+  const defaultProviders = {
+    Main: 'openrouter',
+    Utility: 'openrouter',
+    Embedding: 'huggingface'
+  };
+  const sourceModels = isPlainObject(defaultsIn.models) ? defaultsIn.models : {};
+  const instanceDefaults = { models: {} };
+  for (const id of ['Main', 'Utility', 'Embedding']) {
+    const source = isPlainObject(sourceModels[id]) ? sourceModels[id] : {};
+    instanceDefaults.models[id] = {
+      provider: normalizePreferenceText(source.provider, 96) || defaultProviders[id],
+      model: normalizePreferenceText(source.model, 256),
+      apiKey: normalizePreferenceText(source.apiKey, 4096)
+    };
+  }
+
   const remoteInstances = [];
   for (const r of remoteIn) {
     if (!isPlainObject(r)) continue;
@@ -2484,7 +2505,8 @@ function sanitizeDockerManagerState(state) {
     containers,
     retainedInstances,
     remoteInstances,
-    retentionPolicy
+    retentionPolicy,
+    instanceDefaults
   };
 
   {
@@ -2774,6 +2796,18 @@ ipcMain.handle('docker-manager:setPortPreferences', async (_event, body) => {
     const ssh = body.ssh;
     const prefs = await dockerManager.setPortPreferences({ ui, ssh });
     return { ui: prefs.ui, ssh: prefs.ssh };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:setInstanceDefaults', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const defaults = await dockerManager.setInstanceDefaults({
+      models: isPlainObject(body.models) ? body.models : {}
+    });
+    return sanitizeDockerManagerState({ instanceDefaults: defaults }).instanceDefaults;
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

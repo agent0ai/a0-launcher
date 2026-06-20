@@ -1,3 +1,15 @@
+import {
+  ADVANCED_INSTANCE_MODEL_SLOTS,
+  PRIMARY_INSTANCE_MODEL_SLOTS,
+  applyInstanceDefaultsToForm,
+  bindInstanceDefaultDirtyTracking,
+  buildInstanceEnvText,
+  clearInstanceDefaultDirty,
+  instanceModelRowsHtml,
+  normalizeInstanceDefaults,
+  readInstanceDefaultsFromForm
+} from "../instance-defaults.js";
+
 function byId(id) { return document.getElementById(id); }
 
 function parseOptionalInt(value) {
@@ -7,13 +19,26 @@ function parseOptionalInt(value) {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
+function renderModelFields() {
+  const primary = byId("settingsPrimaryModels");
+  const advanced = byId("settingsAdvancedModels");
+  if (primary && !primary.dataset.rendered) {
+    primary.innerHTML = instanceModelRowsHtml(PRIMARY_INSTANCE_MODEL_SLOTS, null, "settings");
+    primary.dataset.rendered = "1";
+  }
+  if (advanced && !advanced.dataset.rendered) {
+    advanced.innerHTML = instanceModelRowsHtml(ADVANCED_INSTANCE_MODEL_SLOTS, null, "settings");
+    advanced.dataset.rendered = "1";
+  }
+}
+
 function populateFromState(state) {
+  renderModelFields();
   const prefs = state?.portPreferences;
-  const policy = state?.retentionPolicy;
+  const instanceDefaults = normalizeInstanceDefaults(state?.instanceDefaults);
 
   const uiInput = byId("uiPortInput");
   const sshInput = byId("sshPortInput");
-  const keepSelect = byId("keepCountSelect");
 
   if (uiInput && prefs?.ui != null && !uiInput.dataset.dirty) {
     uiInput.value = prefs.ui;
@@ -21,19 +46,15 @@ function populateFromState(state) {
   if (sshInput && prefs?.ssh != null && !sshInput.dataset.dirty) {
     sshInput.value = prefs.ssh;
   }
-  if (keepSelect && policy?.keepCount != null && !keepSelect.dataset.dirty) {
-    const kc = String(policy.keepCount);
-    const opt = keepSelect.querySelector(`option[value="${kc}"]`);
-    if (opt) keepSelect.value = kc;
-  }
+  applyInstanceDefaultsToForm(document, "settings", instanceDefaults, { respectDirty: true });
 }
 
 function bindActions() {
+  renderModelFields();
   const savePortsBtn = byId("savePortsBtn");
-  const saveRetentionBtn = byId("saveRetentionBtn");
+  const saveInstanceDefaultsBtn = byId("saveInstanceDefaultsBtn");
   const uiInput = byId("uiPortInput");
   const sshInput = byId("sshPortInput");
-  const keepSelect = byId("keepCountSelect");
 
   if (uiInput && !uiInput.dataset.bound) {
     uiInput.dataset.bound = "1";
@@ -43,10 +64,7 @@ function bindActions() {
     sshInput.dataset.bound = "1";
     sshInput.addEventListener("input", () => { sshInput.dataset.dirty = "1"; });
   }
-  if (keepSelect && !keepSelect.dataset.bound) {
-    keepSelect.dataset.bound = "1";
-    keepSelect.addEventListener("change", () => { keepSelect.dataset.dirty = "1"; });
-  }
+  bindInstanceDefaultDirtyTracking(document, "settings");
 
   if (savePortsBtn && !savePortsBtn.dataset.bound) {
     savePortsBtn.dataset.bound = "1";
@@ -61,12 +79,17 @@ function bindActions() {
     });
   }
 
-  if (saveRetentionBtn && !saveRetentionBtn.dataset.bound) {
-    saveRetentionBtn.dataset.bound = "1";
-    saveRetentionBtn.addEventListener("click", async () => {
-      const keepCount = parseOptionalInt(keepSelect?.value) || 1;
-      const ok = await window.dockerManagerActions?.setRetentionPolicy?.(keepCount);
-      if (ok && keepSelect) delete keepSelect.dataset.dirty;
+  if (saveInstanceDefaultsBtn && !saveInstanceDefaultsBtn.dataset.bound) {
+    saveInstanceDefaultsBtn.dataset.bound = "1";
+    saveInstanceDefaultsBtn.addEventListener("click", async () => {
+      const instanceDefaults = readInstanceDefaultsFromForm(document, "settings");
+      const envResult = buildInstanceEnvText(instanceDefaults);
+      if (!envResult.ok) {
+        window.toastFrontendError?.(envResult.message, "Agent Zero");
+        return;
+      }
+      const ok = await window.dockerManagerActions?.setInstanceDefaults?.(instanceDefaults);
+      if (ok) clearInstanceDefaultDirty(document, "settings");
     });
   }
 }

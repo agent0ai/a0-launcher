@@ -22,19 +22,21 @@ This scope owns:
   updates, activation, start/stop, delete, rollback, and recovery actions.
 - `runtime-gate/`: mandatory startup runtime setup modal, runtime setup
   progress, recovery actions, and non-dismissable gating.
+- `first-instance-setup/`: first image-pull defaults panel and optional first
+  Instance run choice shown before the setup slideshow.
 - `setup-showcase/`: Agent Zero capability slideshow helper shown during the
   long Agent Zero image pull phase.
 - `onboarding/`: retired runtime setup banner files kept only for compatibility
   until they are removed.
 - `sidebar/`: tab navigation and `dm:nav` event publication.
-- `official-versions/`: install/version cards, activation dialog, model default
-  helpers, port/env overrides, data-loss acknowledgement, and update/switch
-  actions.
+- `official-versions/`: install/version cards, activation dialog, saved
+  Instance defaults, port/env overrides, data-loss acknowledgement, and
+  update/switch actions.
 - `local-testing/`: local containers, per-instance action menus, rename,
   clone/log inspection controls, remote instance CRUD, and instance opening.
 - `advanced/`: tabbed developer-mode custom image runner with inline Docker
   Compose composer, diagnostics, and storage-volume maintenance.
-- `settings/`: port preferences and retention policy controls.
+- `settings/`: port preferences and saved Instance provider/model defaults.
 - `instance-tabs/`: browser-style tab chrome, Home tab, active-tab controls,
   empty state, and viewport bounds reporting for shell-owned Agent Zero UI
   views.
@@ -83,6 +85,11 @@ This scope owns:
 - The Agent Zero setup slideshow belongs only to the image pull/extract wait in
   the install operation modal. Do not show it during Docker runtime setup or
   short preflight checks.
+- On a first image pull with no local Instances, the operation modal may show a
+  saved Instance defaults panel before the slideshow. Ask for providers,
+  models, and API keys before the optional first-Instance name/run choice.
+  Persist provider/model defaults to Settings, but keep the "start my first
+  Instance" checkbox transient to that install operation.
 - Active modal progress should show the current phase once, in the progress
   header above the bar. Do not repeat the same phase as body detail under the
   modal title.
@@ -142,8 +149,9 @@ This scope owns:
 - Retained instances are rollback candidates; storage-volume cleanup belongs in
   Advanced and must remain clearly separate from instance start/stop actions.
 - Storage UI must say `Storage volumes` when referring to Docker volumes.
-- Settings owns persistence for preferred UI/SSH ports and retained-instance
-  count. Do not scatter those controls into install or instance cards.
+- Settings owns persistence for preferred UI/SSH ports and Instance
+  provider/model defaults. Do not scatter those persistent controls into
+  install or instance cards except for the first-pull defaults prompt.
 - `Open UI` opens local and remote instances in a launcher tab by default.
   Reopening the same target focuses the existing tab. Detach moves the target
   into a standalone secure Electron window without stopping the instance.

@@ -110,6 +110,12 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
     const p = prefs && typeof prefs === 'object' ? prefs : {};
     return ipcRenderer.invoke('docker-manager:setPortPreferences', { ui: p.ui, ssh: p.ssh });
   },
+  setInstanceDefaults: (defaults) => {
+    const d = defaults && typeof defaults === 'object' ? defaults : {};
+    return ipcRenderer.invoke('docker-manager:setInstanceDefaults', {
+      models: d.models && typeof d.models === 'object' ? d.models : {}
+    });
+  },
   provisionRuntime: () => ipcRenderer.invoke('docker-manager:provisionRuntime'),
   selectRuntimeEndpoint: (id) => ipcRenderer.invoke('docker-manager:selectRuntimeEndpoint', {
     id: typeof id === 'string' ? id : ''

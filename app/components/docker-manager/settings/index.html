@@ -27,27 +27,25 @@
 
   <section class="section sv-card">
     <div class="sv-card-head">
-      <h2 class="section-title sv-section-heading">Retention Policy</h2>
-      <div class="sv-subtitle">How many stopped instances to keep before pruning</div>
+      <h2 class="section-title sv-section-heading">Instance Defaults</h2>
+      <div class="sv-subtitle">Preferred providers and models for new Instances</div>
     </div>
-    <div class="sv-settings-grid">
-      <div class="sv-settings-row">
-        <label class="sv-settings-label" for="keepCountSelect">Keep instances</label>
-        <div class="sv-settings-field">
-          <select id="keepCountSelect" class="sv-select">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="5">5</option>
-            <option value="10">10</option>
-            <option value="20">20</option>
-          </select>
-          <span class="sv-settings-hint">Older instances beyond this count will be removed automatically</span>
+    <div class="dm-field dm-model-defaults dm-settings-model-defaults">
+      <div class="dm-field-label">Main and Utility</div>
+      <div id="settingsPrimaryModels" class="dm-model-grid"></div>
+      <div class="dm-field-hint">Saved on this computer and applied when you run a new Agent Zero Instance.</div>
+    </div>
+    <details class="dm-advanced dm-settings-advanced">
+      <summary>Advanced</summary>
+      <div class="dm-advanced-body">
+        <div class="dm-field dm-model-defaults">
+          <div class="dm-field-label">Embedding model</div>
+          <div id="settingsAdvancedModels" class="dm-model-grid"></div>
         </div>
       </div>
-    </div>
+    </details>
     <div class="sv-row-end" style="margin-top:0.75rem;">
-      <button id="saveRetentionBtn" class="button confirm" type="button">Save Policy</button>
+      <button id="saveInstanceDefaultsBtn" class="button confirm" type="button">Save Defaults</button>
     </div>
   </section>
 

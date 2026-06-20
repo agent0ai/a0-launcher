@@ -461,6 +461,13 @@ function emptyDerivedState(runtime = null) {
     remoteInstances: [],
     retentionPolicy: { keepCount: 1 },
     portPreferences: { ui: 8880, ssh: 55022 },
+    instanceDefaults: {
+      models: {
+        Main: { provider: 'openrouter', model: '', apiKey: '' },
+        Utility: { provider: 'openrouter', model: '', apiKey: '' },
+        Embedding: { provider: 'huggingface', model: '', apiKey: '' }
+      }
+    },
     uiUrl: null,
     lastSyncedAt: null,
     offline: false,
@@ -581,15 +588,18 @@ async function collectRuntimeDiagnostics(docker, env = null) {
 }
 
 async function buildUnavailableState(runtime) {
-  const [retentionPolicy, portPreferences, remoteInstances] = await Promise.all([
+  const [retentionPolicy, portPreferences, instanceDefaults, remoteInstances] = await Promise.all([
     stateStore.readRetentionPolicy().catch(() => ({ keepCount: 1 })),
     stateStore.readPortPreferences().catch(() => ({ ui: 8880, ssh: 55022 })),
+    stateStore.readInstanceDefaults().catch(() => null),
     stateStore.readRemoteInstances().catch(() => [])
   ]);
+  const empty = emptyDerivedState(runtime);
   return {
-    ...emptyDerivedState(runtime),
+    ...empty,
     retentionPolicy,
     portPreferences,
+    instanceDefaults: instanceDefaults || empty.instanceDefaults,
     remoteInstances
   };
 }
@@ -921,10 +931,11 @@ async function buildDerivedState(options = {}) {
     return await buildUnavailableState(runtime);
   }
 
-  const [retentionPolicy, portPreferences, remoteInstances, localInstanceNames, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
+  const [retentionPolicy, portPreferences, instanceDefaults, remoteInstances, localInstanceNames, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
     await Promise.all([
       stateStore.readRetentionPolicy(),
       stateStore.readPortPreferences(),
+      stateStore.readInstanceDefaults(),
       stateStore.readRemoteInstances(),
       stateStore.readLocalInstanceNames(),
       stateStore.readInstallabilityCache(),
@@ -1287,6 +1298,7 @@ async function buildDerivedState(options = {}) {
     remoteInstances,
     retentionPolicy,
     portPreferences,
+    instanceDefaults,
     uiUrl,
     lastSyncedAt,
     offline,
@@ -1740,6 +1752,15 @@ async function setPortPreferences(portPreferences) {
   const prefs = await stateStore.writePortPreferences(portPreferences);
   await refreshDockerManager({ forceRefresh: false });
   return prefs;
+}
+
+async function setInstanceDefaults(instanceDefaults) {
+  const defaults = await stateStore.writeInstanceDefaults(instanceDefaults);
+  if (_cachedState) {
+    _cachedState = { ..._cachedState, instanceDefaults: defaults };
+    events.emit('state', _cachedState);
+  }
+  return defaults;
 }
 
 function assertRuntimeEndpointId(value) {
@@ -3226,6 +3247,7 @@ module.exports = {
   stopLocalInstance,
   setRetentionPolicy,
   setPortPreferences,
+  setInstanceDefaults,
   selectRuntimeEndpoint,
   provisionRuntime,
   resumeRuntimeSetupIfPending,
