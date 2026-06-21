@@ -138,8 +138,8 @@ This scope owns:
   instances. Visible copy must say `Instances`, not `Sessions`.
 - Local instance cards keep `Open UI` or `Start` as the visible primary action.
   Secondary management and inspection actions such as `Rename`, `See logs`,
-  `Clone`, `Open A0 CLI`, `Stop`, and `Delete` belong in the card overflow menu
-  so they always apply to the specific instance shown.
+  `Open storage folder`, `Clone`, `Open A0 CLI`, `Stop`, and `Delete` belong in
+  the card overflow menu so they always apply to the specific instance shown.
 - Local instance cards should prefer runtime source metadata such as git branch
   over Docker image tag for the primary visual identity, while keeping a
   divergent image tag visible as provenance in compact metadata.
@@ -147,6 +147,9 @@ This scope owns:
   directories, named volumes, custom mounts, and legacy ephemeral workspaces
   should be distinguishable without turning Docker storage into the primary
   card story. Intentionally ephemeral workspaces should not be labeled legacy.
+- `Open storage folder` should appear only for persistent workspace storage
+  that exposes an actual host directory path. Do not show it for named Docker
+  volumes when the host file manager cannot open a stable user-facing folder.
 - `Persist a0/usr data` belongs in the local instance overflow menu only when
   the Docker Manager marks the container as legacy or non-persistent. The
   action must call a named renderer action, keep the old container retained
@@ -156,7 +159,7 @@ This scope owns:
   not rely on mutating existing Docker labels, because Docker labels are
   immutable after container creation.
 - Saved remote URL-only instance cards must not expose Docker mutation actions.
-  A saved remote card may show `Clone` only when its URL is loopback
+  A saved remote card may show `Clone locally` only when its URL is loopback
   (`localhost`, `127.0.0.1`, or IPv6 loopback) and the port matches a discovered
   local Docker container; the action must clone that local container.
 - The local instance log viewer is a bottom popover panel driven by bounded

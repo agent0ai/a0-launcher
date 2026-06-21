@@ -2322,6 +2322,29 @@ async function installDockerDesktop() {
   return { started: true, installerPath: targetPath, installerType: 'exe' };
 }
 
+async function openHostFolder(folderPath) {
+  const targetPath = typeof folderPath === 'string' ? folderPath.trim() : '';
+  if (!targetPath) {
+    return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Storage folder is not available.' });
+  }
+  try {
+    const stat = await fs.stat(targetPath);
+    if (!stat.isDirectory()) {
+      return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Storage folder is not a directory.' });
+    }
+    const opened = await shell.openPath(targetPath);
+    if (opened) {
+      return dockerManager.toErrorResponse({ code: 'OPEN_FAILED', message: opened });
+    }
+    return { opened: true };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return dockerManager.toErrorResponse({ code: 'WORKSPACE_FOLDER_NOT_FOUND', message: 'Storage folder was not found.' });
+    }
+    return dockerManager.toErrorResponse(error);
+  }
+}
+
 function sanitizeDockerManagerState(state) {
   const versionsIn = Array.isArray(state?.versions) ? state.versions : [];
   const containersIn = Array.isArray(state?.containers) ? state.containers : [];
@@ -3090,6 +3113,17 @@ ipcMain.handle('docker-manager:getLocalInstanceLogs', async (_event, body) => {
     const maxLines = body.maxLines;
     const result = await dockerManager.getLocalInstanceLogs(containerId, { maxLines });
     return sanitizeContainerLogsResult(result);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:openLocalInstanceStorageFolder', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const result = await dockerManager.getLocalInstanceStorageFolder(containerId);
+    return await openHostFolder(result?.path || '');
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

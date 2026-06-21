@@ -11,6 +11,7 @@ const {
   resolveWorkspaceStorage,
   applyWorkspaceStorage,
   workspaceStorageFromInspect,
+  workspaceHostPathFromInspect,
   buildCloneCreateOptions
 } = dockerManager._test;
 
@@ -95,6 +96,22 @@ test('workspace storage detection distinguishes legacy and persistent containers
   assert.equal(persistent.mode, 'host_directory');
   assert.equal(persistent.persistent, true);
   assert.equal(persistent.hostPath, '/tmp/a0/usr');
+});
+
+test('workspace host folder resolver only returns persistent bind paths', () => {
+  const bindInspect = {
+    Config: { Labels: {} },
+    Mounts: [{ Type: 'bind', Source: '/tmp/a0/usr', Destination: WORKSPACE_MOUNT_TARGET }]
+  };
+  const volumeInspect = {
+    Config: { Labels: {} },
+    Mounts: [{ Type: 'volume', Name: 'a0-volume', Source: '/var/lib/docker/volumes/a0-volume/_data', Destination: WORKSPACE_MOUNT_TARGET }]
+  };
+  const ephemeralInspect = { Config: { Labels: {} }, Mounts: [] };
+
+  assert.equal(workspaceHostPathFromInspect(bindInspect), '/tmp/a0/usr');
+  assert.equal(workspaceHostPathFromInspect(volumeInspect), '');
+  assert.equal(workspaceHostPathFromInspect(ephemeralInspect), '');
 });
 
 test('clone create options replace source workspace mounts with a fresh workspace', async () => {

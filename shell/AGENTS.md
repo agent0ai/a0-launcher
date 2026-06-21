@@ -117,6 +117,9 @@ This scope owns:
   intents. They may expose storage mode/root/volume fields, but Docker mount
   creation, migration, and archive copy behavior must stay in
   `shell/docker_manager` and `shell/docker_adapter`.
+- Opening an Instance storage folder is a named Docker Manager intent. The
+  renderer passes a container id; the shell resolves and opens only validated
+  host-directory workspace paths.
 - Per-instance Docker log inspection is a named, bounded, read-only Docker
   Manager intent. Do not expose raw Docker log commands or shell execution.
 - Error responses should use `dockerManager.toErrorResponse()` so renderer code

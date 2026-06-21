@@ -694,6 +694,13 @@ function workspaceStorageFromInspect(inspect) {
   };
 }
 
+function workspaceHostPathFromInspect(inspect) {
+  const storage = workspaceStorageFromInspect(inspect);
+  const hostPath = typeof storage?.hostPath === 'string' ? storage.hostPath.trim() : '';
+  if (!storage?.persistent || !hostPath) return '';
+  return path.resolve(hostPath);
+}
+
 async function enrichContainersWithWorkspaceStorage(docker, containers) {
   const out = [];
   for (const container of Array.isArray(containers) ? containers : []) {
@@ -3684,6 +3691,31 @@ async function getLocalInstanceLogs(containerId, options = {}) {
   };
 }
 
+async function getLocalInstanceStorageFolder(containerId) {
+  const imageRepo = getBackendImageRepo();
+  const id = assertContainerId(containerId);
+  const docker = await getManagedDocker(imageRepo);
+  const containers = await docker.listContainers(imageRepo);
+  const target = (containers || []).find((c) => c && c.containerId === id) || null;
+  if (!target?.containerId) {
+    const err = new Error('Instance not found');
+    err.code = 'INSTANCE_NOT_FOUND';
+    throw err;
+  }
+
+  const inspect = await docker.inspectContainer(target.containerId);
+  const folderPath = workspaceHostPathFromInspect(inspect);
+  if (!folderPath) {
+    const err = new Error('This instance does not expose a host storage folder.');
+    err.code = 'WORKSPACE_FOLDER_UNAVAILABLE';
+    throw err;
+  }
+  return {
+    path: folderPath,
+    mountTarget: WORKSPACE_MOUNT_TARGET
+  };
+}
+
 async function removeVolume(volumeName) {
   const name = (volumeName || '').trim();
   if (!name) {
@@ -3769,6 +3801,7 @@ module.exports = {
   cancelOperation,
   getDockerInventory,
   getLocalInstanceLogs,
+  getLocalInstanceStorageFolder,
   removeVolume,
   pruneVolumes,
   getContainerUiUrl,
@@ -3779,6 +3812,7 @@ module.exports = {
     resolveWorkspaceStorage,
     applyWorkspaceStorage,
     workspaceStorageFromInspect,
+    workspaceHostPathFromInspect,
     buildCloneCreateOptions
   },
 

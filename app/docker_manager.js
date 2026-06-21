@@ -781,6 +781,23 @@ async function getLocalInstanceLogs(containerId, options = {}) {
   }
 }
 
+async function openLocalInstanceStorageFolder(containerId) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.openLocalInstanceStorageFolder !== "function") return false;
+  try {
+    const res = await api.openLocalInstanceStorageFolder(containerId || "");
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    setBanner("info", "Storage folder opened.");
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to open storage folder");
+    return false;
+  }
+}
+
 async function activateTag(tag, options = {}) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.activateTag !== "function") return;
@@ -987,6 +1004,7 @@ window.dockerManagerActions = {
   stopLocalInstance,
   deleteLocalInstance,
   getLocalInstanceLogs,
+  openLocalInstanceStorageFolder,
   activateTag,
   runCustomImage,
   setStoragePreferences,

@@ -123,6 +123,11 @@ function workspaceMigrationAvailable(c) {
   return !!(storage && (storage.migrationAvailable || storage.legacy || storage.persistent === false));
 }
 
+function workspaceStorageFolderAvailable(c) {
+  const storage = c?.workspaceStorage || null;
+  return !!(storage?.persistent && typeof storage.hostPath === "string" && storage.hostPath.trim());
+}
+
 function remoteInstanceVisualSeed(remote) {
   return remote?.url || remote?.name || remote?.id || "remote";
 }
@@ -704,6 +709,12 @@ function renderDockerInstance(list, c, state) {
       disabled: !containerId,
       title: "See recent Docker logs"
     }),
+    workspaceStorageFolderAvailable(c) ? menuButton("folder_open", "Open storage folder", () => {
+      window.dockerManagerActions?.openLocalInstanceStorageFolder?.(containerId);
+    }, {
+      disabled: !containerId,
+      title: "Open the persistent /a0/usr folder on this computer"
+    }) : null,
     workspaceMigrationAvailable(c) ? menuButton("drive_file_move", "Persist a0/usr data", async () => {
       if (!window.confirm(`Create persistent /a0/usr storage for ${displayName}?\n\nThe existing container will be kept until the persistent replacement starts successfully.`)) return;
       await window.dockerManagerActions?.migrateLocalInstanceStorage?.(containerId);
@@ -811,7 +822,7 @@ function renderRemoteInstance(list, remote, state) {
   }));
 
   if (cloneTarget?.containerId) {
-    menuItems.push(menuButton("content_copy", "Clone", () => {
+    menuItems.push(menuButton("content_copy", "Clone locally", () => {
       window.dockerManagerActions?.cloneLocalInstance?.(cloneTarget.containerId);
     }, {
       disabled: operationRunning,

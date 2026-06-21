@@ -80,6 +80,9 @@ This scope owns:
 - Storage-volume operations must remain separate from retained-instance
   activation/removal and from container deletion. Deleting an instance must not
   remove its host workspace directory or named volume.
+- Host-directory workspace paths may be resolved for the shell-owned
+  `Open storage folder` action. Named Docker volumes should stay represented as
+  Docker volumes rather than guessed host paths.
 - Long-running operations return an operation id and emit progress.
 - Image installs may target Docker channel tags (`latest`, `ready`, `testing`)
   in addition to semver releases and local development tags, because first-run
