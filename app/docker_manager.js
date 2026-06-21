@@ -90,6 +90,112 @@ window.toastFrontendSuccess = (message, title = "Agent Zero", displayTime = 3, g
 window.toastFrontendWarning = (message, title = "Agent Zero", displayTime = 5, group = "") =>
   showToast("warning", message, title, displayTime, group);
 
+const shownWorkspacePersistedOps = new Set();
+let workspacePersistedDialogKeyHandler = null;
+
+function cleanDialogText(value, fallback = "") {
+  const text = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  return (text || fallback).slice(0, 160);
+}
+
+function migrationDisplayName(name, containerName, fallback) {
+  const label = cleanDialogText(name, fallback);
+  const dockerName = cleanDialogText(containerName);
+  if (dockerName && dockerName !== label) return `${label} (${dockerName})`;
+  return label;
+}
+
+function removeWorkspacePersistedDialog() {
+  if (workspacePersistedDialogKeyHandler) {
+    document.removeEventListener("keydown", workspacePersistedDialogKeyHandler);
+    workspacePersistedDialogKeyHandler = null;
+  }
+  document.getElementById("workspacePersistedDialog")?.remove();
+}
+
+function showWorkspacePersistedDialog(progress = {}) {
+  const opId = cleanDialogText(progress?.opId);
+  if (!opId || shownWorkspacePersistedOps.has(opId)) return;
+  shownWorkspacePersistedOps.add(opId);
+
+  const migration = progress?.workspaceMigration && typeof progress.workspaceMigration === "object"
+    ? progress.workspaceMigration
+    : {};
+  const mountTarget = cleanDialogText(migration.mountTarget, "/a0/usr");
+  const replacement = migrationDisplayName(
+    migration.replacementName,
+    migration.replacementContainerName,
+    "the new persistent Instance"
+  );
+  const source = migrationDisplayName(
+    migration.sourceName,
+    migration.sourceContainerName,
+    "the old ephemeral Instance"
+  );
+
+  removeWorkspacePersistedDialog();
+
+  const backdrop = document.createElement("div");
+  backdrop.id = "workspacePersistedDialog";
+  backdrop.className = "dm-dialog-backdrop dm-workspace-persisted-backdrop";
+  backdrop.setAttribute("role", "presentation");
+
+  const dialog = document.createElement("div");
+  dialog.className = "dm-dialog dm-workspace-persisted-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "workspacePersistedTitle");
+
+  const header = document.createElement("div");
+  header.className = "dm-dialog-header";
+  const title = document.createElement("h2");
+  title.id = "workspacePersistedTitle";
+  title.className = "dm-dialog-title";
+  title.textContent = "a0/usr data persisted";
+  header.appendChild(title);
+
+  const body = document.createElement("div");
+  body.className = "dm-dialog-body";
+  const summary = document.createElement("p");
+  summary.className = "dm-dialog-copy";
+  summary.textContent = `Open ${replacement} and check that your ${mountTarget} files are present.`;
+  const next = document.createElement("p");
+  next.className = "dm-dialog-copy";
+  next.textContent = `When everything looks right, ${source} can be safely deleted.`;
+  const reminder = document.createElement("p");
+  reminder.className = "dm-field-hint";
+  reminder.textContent = "The old Instance was kept running so you can compare before deleting it.";
+  body.appendChild(summary);
+  body.appendChild(next);
+  body.appendChild(reminder);
+
+  const footer = document.createElement("div");
+  footer.className = "dm-dialog-footer";
+  const spacer = document.createElement("span");
+  const ok = document.createElement("button");
+  ok.className = "button confirm";
+  ok.type = "button";
+  ok.textContent = "OK";
+  const close = () => {
+    removeWorkspacePersistedDialog();
+  };
+  const keyHandler = (event) => {
+    if (event.key === "Escape") close();
+  };
+  workspacePersistedDialogKeyHandler = keyHandler;
+  ok.addEventListener("click", close);
+  footer.appendChild(spacer);
+  footer.appendChild(ok);
+
+  dialog.appendChild(header);
+  dialog.appendChild(body);
+  dialog.appendChild(footer);
+  backdrop.appendChild(dialog);
+  document.body.appendChild(backdrop);
+  document.addEventListener("keydown", keyHandler);
+  window.setTimeout(() => ok.focus(), 0);
+}
+
 function snapshot() {
   return {
     loading: !!store.loading,
@@ -219,6 +325,7 @@ async function refresh() {
       store.runtime = state?.runtime || null;
       store.runtimeDiagnostics = state?.runtimeDiagnostics || store.runtimeDiagnostics || null;
       store.portPreferences = state?.portPreferences || null;
+      store.storagePreferences = state?.storagePreferences || null;
       store.instanceDefaults = state?.instanceDefaults || null;
       store.retentionPolicy = state?.retentionPolicy || null;
       if (!store.error) setBanner("", "");
@@ -338,6 +445,31 @@ async function removeVolume(volumeName) {
   }
 }
 
+async function setStoragePreferences(preferences = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.setStoragePreferences !== "function") return null;
+  const payload = preferences && typeof preferences === "object" ? preferences : {};
+  const result = await api.setStoragePreferences(payload);
+  if (isErrorResponse(result)) {
+    setBanner("error", result.message || "Unable to save workspace storage preferences.");
+    return null;
+  }
+  store.storagePreferences = result || store.storagePreferences;
+  setBanner("success", "Workspace storage preferences saved.");
+  emitState();
+  return result;
+}
+
+async function migrateLocalInstanceStorage(containerId, options = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.migrateLocalInstanceStorage !== "function") return null;
+  return runDockerOperation(
+    "Persist a0/usr data",
+    () => api.migrateLocalInstanceStorage(containerId, options),
+    "Persisting /a0/usr data."
+  );
+}
+
 async function pruneVolumes() {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.pruneVolumes !== "function") return;
@@ -420,6 +552,11 @@ async function installOrSync(tag) {
 let pendingFirstInstanceRun = null;
 const handledFirstInstanceRunOps = new Set();
 
+function normalizeWorkspaceStorageMode(value) {
+  const mode = typeof value === "string" ? value.trim() : "";
+  return mode === "host_directory" || mode === "named_volume" || mode === "ephemeral" ? mode : "";
+}
+
 async function setInstanceDefaults(instanceDefaults, options = {}) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.setInstanceDefaults !== "function") return false;
@@ -464,6 +601,7 @@ async function confirmFirstInstanceSetup(payload = {}) {
       opId,
       targetTag,
       instanceName: typeof input.instanceName === "string" ? input.instanceName.trim() : "",
+      storageMode: normalizeWorkspaceStorageMode(input.storageMode),
       instanceDefaults: defaults
     };
     setBanner("info", "Defaults saved. Your first Instance will start when the download finishes.");
@@ -505,6 +643,7 @@ async function startPendingFirstInstance(progress = null) {
     envText: envResult.value || "",
     dataLossAck: "proceed_without_backup"
   };
+  if (pending.storageMode) options.storageMode = pending.storageMode;
 
   await activateTag(targetTag, options);
 }
@@ -842,6 +981,7 @@ window.dockerManagerActions = {
   startActive,
   startLocalInstance,
   cloneLocalInstance,
+  migrateLocalInstanceStorage,
   renameLocalInstance,
   stopActive,
   stopLocalInstance,
@@ -849,6 +989,7 @@ window.dockerManagerActions = {
   getLocalInstanceLogs,
   activateTag,
   runCustomImage,
+  setStoragePreferences,
   openCliTerminal,
   openDockerLoginTerminal,
   retryInstall,
@@ -933,6 +1074,9 @@ function initSubscriptions() {
           });
         } else if (progress?.type === "install") {
           clearPendingFirstInstanceRun(progress);
+        }
+        if (progress?.type === "migrate_workspace" && status === "completed") {
+          showWorkspacePersistedDialog(progress);
         }
         schedulePostOperationRefresh(progress);
       }

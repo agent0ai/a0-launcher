@@ -113,6 +113,10 @@ This scope owns:
   report progress through Docker Manager events instead of blocking the renderer.
 - Per-instance clone and rename operations are named Docker Manager intents.
   They must stay behind IPC; long-running container mutations report progress.
+- Workspace storage preference and migration actions are named Docker Manager
+  intents. They may expose storage mode/root/volume fields, but Docker mount
+  creation, migration, and archive copy behavior must stay in
+  `shell/docker_manager` and `shell/docker_adapter`.
 - Per-instance Docker log inspection is a named, bounded, read-only Docker
   Manager intent. Do not expose raw Docker log commands or shell execution.
 - Error responses should use `dockerManager.toErrorResponse()` so renderer code

@@ -103,6 +103,26 @@ function dockerInstanceRuntimeSummary(c) {
   return branch || shortCommit || "";
 }
 
+function workspaceStorageSummary(c) {
+  const storage = c?.workspaceStorage || null;
+  if (!storage) return "";
+  if (storage.legacy || storage.mode === "legacy_ephemeral") {
+    return storage.migrationAvailable ? "Legacy ephemeral workspace - migration available" : "Legacy ephemeral workspace";
+  }
+  if (storage.mode === "ephemeral" || storage.persistent === false) {
+    return storage.migrationAvailable ? "Ephemeral workspace - migration available" : "Ephemeral workspace";
+  }
+  if (storage.mode === "named_volume") return "Named volume workspace";
+  if (storage.mode === "host_directory") return "Persistent workspace";
+  if (storage.mode === "custom_mount") return "Custom workspace mount";
+  return storage.persistent ? "Persistent workspace" : "";
+}
+
+function workspaceMigrationAvailable(c) {
+  const storage = c?.workspaceStorage || null;
+  return !!(storage && (storage.migrationAvailable || storage.legacy || storage.persistent === false));
+}
+
 function remoteInstanceVisualSeed(remote) {
   return remote?.url || remote?.name || remote?.id || "remote";
 }
@@ -601,6 +621,8 @@ function renderDockerInstance(list, c, state) {
     parts.push(runtimeSummary);
     if (imageTag && imageTag !== runtimeBranch(c)) parts.push(`image ${imageTag}`);
   }
+  const workspaceSummary = workspaceStorageSummary(c);
+  if (workspaceSummary) parts.push(workspaceSummary);
   if (c?.uiUrl) parts.push(c.uiUrl);
   else if (c?.status) parts.push(c.status);
   meta.textContent = parts.join(" \u00B7 ");
@@ -682,6 +704,13 @@ function renderDockerInstance(list, c, state) {
       disabled: !containerId,
       title: "See recent Docker logs"
     }),
+    workspaceMigrationAvailable(c) ? menuButton("drive_file_move", "Persist a0/usr data", async () => {
+      if (!window.confirm(`Create persistent /a0/usr storage for ${displayName}?\n\nThe existing container will be kept until the persistent replacement starts successfully.`)) return;
+      await window.dockerManagerActions?.migrateLocalInstanceStorage?.(containerId);
+    }, {
+      disabled: !containerId || operationRunning,
+      title: "Create persistent /a0/usr storage"
+    }) : null,
     menuButton("content_copy", "Clone", () => {
       window.dockerManagerActions?.cloneLocalInstance?.(containerId);
     }, {

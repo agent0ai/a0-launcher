@@ -61,6 +61,11 @@ This scope owns:
 - Local instance display-name overrides are persisted through `state_store.js`
   because Docker labels on existing containers cannot be mutated safely.
 - Port preferences are stored as UI and SSH host-port preferences.
+- Workspace storage preferences are stored as `mode`, `hostRoot`, and
+  `volumePrefix`. The default mode is `host_directory`, default root is
+  `~/agent-zero`, and every new launcher-managed local container must mount a
+  per-instance workspace at `/a0/usr` unless the user explicitly selects the
+  no-volume ephemeral workspace mode for that run.
 - Instance defaults are stored as Main, Utility, and Embedding provider/model
   preferences with optional local API keys for new Instances.
 - Runtime endpoint selection is stored as a launcher-local Docker endpoint
@@ -73,7 +78,8 @@ This scope owns:
   for the renderer to display them without re-inspecting every container
   needlessly.
 - Storage-volume operations must remain separate from retained-instance
-  activation/removal.
+  activation/removal and from container deletion. Deleting an instance must not
+  remove its host workspace directory or named volume.
 - Long-running operations return an operation id and emit progress.
 - Image installs may target Docker channel tags (`latest`, `ready`, `testing`)
   in addition to semver releases and local development tags, because first-run
@@ -114,6 +120,11 @@ This scope owns:
 - Running an installed image from Installs should create a new launcher-managed
   container with a unique Docker name and open host ports, so repeated runs of
   the same image can coexist.
+- Running, active-instance creation, developer custom-image runs, and clones
+  should label workspace storage metadata and use Docker `Mounts` for the
+  canonical `/a0/usr` mount. Explicit ephemeral runs should still be labeled
+  with storage metadata even though they do not receive the mount. Clones must
+  receive a fresh workspace rather than reusing the source workspace mount.
 - Per-container start/stop/delete/clone/rename actions from the Instances card
   menu still belong in this product layer. Container mutations must target the
   requested container id, return an operation id, refresh state afterward, and
@@ -124,6 +135,11 @@ This scope owns:
 - Cloning an instance should snapshot the source container, create a new
   launcher-managed container from that snapshot, and remap published ports to
   Docker-assigned open host ports.
+- Persisting `/a0/usr` data for a legacy or intentional ephemeral instance
+  should be explicit. Create a persistent replacement, preserve the old
+  container until the replacement starts successfully, copy `/a0/usr` through
+  the Docker adapter archive path when possible, and include source/replacement
+  names in the completion progress payload for the renderer notice.
 - Cancellation should be best-effort and explicit about whether the active Docker
   operation can actually stop.
 - Destructive flows should require renderer acknowledgement when the active

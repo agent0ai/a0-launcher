@@ -953,6 +953,50 @@ export class DockerodeDocker extends DockerInterface {
     }
   }
 
+  async copyContainerPathToContainer(sourceContainerId, sourcePath, targetContainerId, targetPath) {
+    const sourceId = (sourceContainerId || '').trim();
+    const targetId = (targetContainerId || '').trim();
+    if (!sourceId) throw makeDockerInterfaceError('INVALID_INPUT', 'sourceContainerId is required');
+    if (!targetId) throw makeDockerInterfaceError('INVALID_INPUT', 'targetContainerId is required');
+
+    const sourceTargetPath = validateContainerFilePath(sourcePath);
+    const targetParentPath = validateContainerFilePath(targetPath);
+
+    try {
+      const source = this.docker.getContainer(sourceId);
+      const target = this.docker.getContainer(targetId);
+      const stream = await new Promise((resolve, reject) => {
+        source.getArchive({ path: sourceTargetPath }, (err, archiveStream) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(archiveStream);
+        });
+      });
+      await new Promise((resolve, reject) => {
+        target.putArchive(stream, { path: targetParentPath }, (err, data) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(data);
+        });
+      });
+      return { copied: true };
+    } catch (error) {
+      if (Number(error?.statusCode) === 404 || error?.code === 'NOT_FOUND') return { copied: false };
+      throw normalizeDockerError(error, {
+        op: 'copyContainerPathToContainer',
+        sourceContainerId: sourceId,
+        targetContainerId: targetId,
+        sourcePath: sourceTargetPath,
+        targetPath: targetParentPath,
+        env: this.#envSummary()
+      });
+    }
+  }
+
   async commitContainer(containerId, imageRef, options = {}) {
     const id = (containerId || '').trim();
     if (!id) throw makeDockerInterfaceError('INVALID_INPUT', 'containerId is required');

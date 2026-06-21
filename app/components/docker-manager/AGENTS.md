@@ -88,8 +88,11 @@ This scope owns:
 - On a first image pull with no local Instances, the operation modal may show a
   saved Instance defaults panel before the slideshow. Ask for providers,
   models, and API keys before the optional first-Instance name/run choice.
+  The first-Instance step may also ask for workspace storage: default to a
+  persistent workspace, allow named Docker volumes as the advanced persistent
+  choice, and show a clear warning for the explicit no-volume ephemeral choice.
   Persist provider/model defaults to Settings, but keep the "start my first
-  Instance" checkbox transient to that install operation.
+  Instance" checkbox and storage choice transient to that install operation.
 - Active modal progress should show the current phase once, in the progress
   header above the bar. Do not repeat the same phase as body detail under the
   modal title.
@@ -117,6 +120,10 @@ This scope owns:
   variables as the explicit escape hatch.
 - Port mappings and environment text stay advanced activation inputs. They
   should not become a required path for normal users.
+- Advanced activation may expose a storage override, but the default path should
+  use saved workspace storage preferences and create a separate `/a0/usr`
+  workspace for every new local instance unless the user explicitly selects the
+  no-volume ephemeral mode.
 - The Advanced tab may expose developer-mode custom image, tag, environment,
   port, mount, and editable Compose-file controls. Keep it opt-in, validate
   through Docker Manager IPC, and never expose a generic command runner or a
@@ -136,6 +143,15 @@ This scope owns:
 - Local instance cards should prefer runtime source metadata such as git branch
   over Docker image tag for the primary visual identity, while keeping a
   divergent image tag visible as provenance in compact metadata.
+- Local instance cards should show workspace state quietly. Persistent host
+  directories, named volumes, custom mounts, and legacy ephemeral workspaces
+  should be distinguishable without turning Docker storage into the primary
+  card story. Intentionally ephemeral workspaces should not be labeled legacy.
+- `Persist a0/usr data` belongs in the local instance overflow menu only when
+  the Docker Manager marks the container as legacy or non-persistent. The
+  action must call a named renderer action, keep the old container retained
+  until the shell operation succeeds, and show a completion dialog reminding the
+  user to verify the new persistent Instance before deleting the old one.
 - Renaming a local instance changes the launcher-visible display name. It must
   not rely on mutating existing Docker labels, because Docker labels are
   immutable after container creation.
@@ -149,6 +165,8 @@ This scope owns:
 - Retained instances are rollback candidates; storage-volume cleanup belongs in
   Advanced and must remain clearly separate from instance start/stop actions.
 - Storage UI must say `Storage volumes` when referring to Docker volumes.
+  Workspace storage preferences may live in the Advanced storage tab, but copy
+  should distinguish workspace directories from Docker named volumes.
 - Settings owns persistence for preferred UI/SSH ports and Instance
   provider/model defaults. Do not scatter those persistent controls into
   install or instance cards except for the first-pull defaults prompt.

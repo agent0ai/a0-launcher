@@ -75,6 +75,12 @@ const DEFAULT_PORT_PREFERENCES = Object.freeze({
   ssh: 55022
 });
 
+const DEFAULT_STORAGE_PREFERENCES = Object.freeze({
+  mode: 'host_directory',
+  hostRoot: '~/agent-zero',
+  volumePrefix: 'a0-launcher'
+});
+
 const MAX_REMOTE_INSTANCES = 64;
 const MAX_LOCAL_INSTANCE_NAMES = 256;
 
@@ -137,6 +143,48 @@ function normalizePreferenceText(value, maxLength) {
     .trim()
     .replace(/[^\x20-\x7E]/g, '')
     .slice(0, maxLength);
+}
+
+function normalizeStorageMode(value, fallback = DEFAULT_STORAGE_PREFERENCES.mode) {
+  const mode = String(value || '').trim();
+  if (mode === 'host_directory' || mode === 'named_volume') return mode;
+  return fallback === 'named_volume' ? 'named_volume' : 'host_directory';
+}
+
+function normalizeHostRoot(value) {
+  const text = normalizePreferenceText(value, 512);
+  if (!text || /[\0\r\n]/.test(text)) return DEFAULT_STORAGE_PREFERENCES.hostRoot;
+  return text;
+}
+
+function normalizeVolumePrefix(value) {
+  const text = normalizePreferenceText(value, 120)
+    .replace(/[^A-Za-z0-9_.-]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+  if (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(text)) return text;
+  return DEFAULT_STORAGE_PREFERENCES.volumePrefix;
+}
+
+function normalizeStoragePreferences(value) {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    mode: normalizeStorageMode(input.mode),
+    hostRoot: normalizeHostRoot(input.hostRoot),
+    volumePrefix: normalizeVolumePrefix(input.volumePrefix)
+  };
+}
+
+async function readStoragePreferences() {
+  const state = await readJson(stateFile(), {});
+  return normalizeStoragePreferences(state?.storagePreferences);
+}
+
+async function writeStoragePreferences(storagePreferences) {
+  const prefs = normalizeStoragePreferences(storagePreferences);
+  const state = await readJson(stateFile(), {});
+  await writeJson(stateFile(), { ...state, storagePreferences: prefs, updatedAt: new Date().toISOString() });
+  return prefs;
 }
 
 function normalizeInstanceDefaults(value) {
@@ -479,6 +527,12 @@ module.exports = {
   // Port preferences
   readPortPreferences,
   writePortPreferences,
+
+  // Workspace storage preferences
+  DEFAULT_STORAGE_PREFERENCES,
+  normalizeStoragePreferences,
+  readStoragePreferences,
+  writeStoragePreferences,
 
   // Instance defaults
   readInstanceDefaults,

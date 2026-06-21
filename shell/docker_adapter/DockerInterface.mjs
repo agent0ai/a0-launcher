@@ -450,6 +450,20 @@ export class DockerInterface {
   }
 
   /**
+   * Copy a container filesystem path into another container using Docker's archive API.
+   * Intended for bounded product workflows such as workspace migration.
+   *
+   * @param {string} sourceContainerId
+   * @param {string} sourcePath
+   * @param {string} targetContainerId
+   * @param {string} targetPath
+   * @returns {Promise<{copied: boolean}>}
+   */
+  async copyContainerPathToContainer(_sourceContainerId, _sourcePath, _targetContainerId, _targetPath) {
+    throw new Error('DockerInterface.copyContainerPathToContainer is abstract');
+  }
+
+  /**
    * Commit a container's writable layer to a local image reference.
    * Used by product-level clone workflows that need a real container snapshot.
    *

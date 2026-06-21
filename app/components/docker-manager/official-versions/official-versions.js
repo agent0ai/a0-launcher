@@ -288,6 +288,23 @@ function openActivateDialog(entry, state) {
               <div class="dm-field-hint">Use Docker-style host:container mappings. <strong>0:80</strong> lets Docker choose an open local host port for the Agent Zero UI.</div>
             </div>
             <div class="dm-field">
+              <label for="activateStorageMode">Workspace storage</label>
+              <select id="activateStorageMode" class="dm-text-input">
+                <option value="">Use storage preferences</option>
+                <option value="host_directory">Host directory</option>
+                <option value="named_volume">Named Docker volume</option>
+              </select>
+              <div class="dm-field-hint">Every instance mounts a separate workspace at <strong>/a0/usr</strong>.</div>
+            </div>
+            <div class="dm-field">
+              <label for="activateStorageHostRoot">Host root</label>
+              <input id="activateStorageHostRoot" class="dm-text-input" type="text" autocomplete="off" placeholder="~/agent-zero">
+            </div>
+            <div class="dm-field">
+              <label for="activateStorageVolumeName">Volume name</label>
+              <input id="activateStorageVolumeName" class="dm-text-input" type="text" autocomplete="off" placeholder="optional exact Docker volume name">
+            </div>
+            <div class="dm-field">
               <label for="activateEnvVars">Environment variables</label>
               <textarea id="activateEnvVars" class="dm-textarea" spellcheck="false" placeholder="A0_SET__model_config__chat_model__provider=openrouter&#10;A0_SET__model_config__chat_model__name=anthropic/claude-sonnet-4.6&#10;API_KEY_OPENROUTER=sk-..."></textarea>
               <div class="dm-field-hint">Agent Zero supports <strong>A0_SET_&lt;setting_name&gt;=&lt;value&gt;</strong> for initial defaults. Saved settings still take precedence, and restart is required for changes.</div>
@@ -311,9 +328,13 @@ function openActivateDialog(entry, state) {
   const form = dialog.querySelector("form");
   const nameInput = dialog.querySelector("#activateInstanceName");
   const portInput = dialog.querySelector("#activatePortMappings");
+  const storageModeInput = dialog.querySelector("#activateStorageMode");
+  const storageHostRootInput = dialog.querySelector("#activateStorageHostRoot");
+  const storageVolumeNameInput = dialog.querySelector("#activateStorageVolumeName");
   const envInput = dialog.querySelector("#activateEnvVars");
   if (nameInput) nameInput.value = defaultInstanceName(tag, state);
   if (portInput) portInput.value = "0:80";
+  if (storageHostRootInput) storageHostRootInput.value = state?.storagePreferences?.hostRoot || "~/agent-zero";
 
   dialog.querySelectorAll("[data-dialog-close]").forEach((btn) => {
     btn.addEventListener("click", () => closeDialog(dialog));
@@ -339,6 +360,11 @@ function openActivateDialog(entry, state) {
       envText: envResult.value || "",
       dataLossAck: selectedAck || "proceed_without_backup"
     };
+    if (storageModeInput?.value) {
+      options.storageMode = storageModeInput.value;
+      options.hostRoot = storageHostRootInput?.value || "";
+      options.volumeName = storageVolumeNameInput?.value || "";
+    }
     closeDialog(dialog);
     await window.dockerManagerActions?.activateTag?.(tag, options);
   });

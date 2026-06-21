@@ -139,6 +139,9 @@ This scope owns:
 - Container file reads must stay bounded, path-specific, and adapter-owned.
   They are for structured inspection such as product-layer runtime source
   metadata, not for exposing a generic command or filesystem browser.
+- Container archive copies must stay path-specific and adapter-owned. They are
+  allowed for product-layer workflows such as workspace migration, but must not
+  become a renderer-facing filesystem browser or generic `docker cp` surface.
 - Container commit support is a low-level snapshot primitive for product-layer
   clone workflows. Keep clone naming, labels, and port-policy decisions in
   `shell/docker_manager`.

@@ -82,3 +82,38 @@ test('readContainerTextFile returns null for missing paths', async () => {
 
   assert.equal(text, null);
 });
+
+test('copyContainerPathToContainer streams a container archive into another container', async () => {
+  const archive = Readable.from(tarArchiveForFile('usr/marker.txt', 'hello'));
+  const docker = new DockerodeDocker({ imageRepo: 'agent0ai/agent-zero' });
+  const calls = [];
+  docker.docker = {
+    getContainer: (containerId) => {
+      if (containerId === 'source-id') {
+        return {
+          getArchive: (options, callback) => {
+            calls.push(['getArchive', options]);
+            callback(null, archive);
+          }
+        };
+      }
+      if (containerId === 'target-id') {
+        return {
+          putArchive: (stream, options, callback) => {
+            calls.push(['putArchive', options, stream === archive]);
+            callback(null, {});
+          }
+        };
+      }
+      throw new Error(`unexpected container ${containerId}`);
+    }
+  };
+
+  const result = await docker.copyContainerPathToContainer('source-id', '/a0/usr', 'target-id', '/a0');
+
+  assert.deepEqual(result, { copied: true });
+  assert.deepEqual(calls, [
+    ['getArchive', { path: '/a0/usr' }],
+    ['putArchive', { path: '/a0' }, true]
+  ]);
+});

@@ -46,6 +46,7 @@ function operationHeadline(progress = null) {
     stop: { running: "Stopping Agent Zero", failed: "Stop failed", canceled: "Stop canceled" },
     delete_instance: { running: "Deleting Agent Zero instance", failed: "Delete failed", canceled: "Delete canceled" },
     clone_instance: { running: "Cloning instance", failed: "Clone failed", canceled: "Clone canceled" },
+    migrate_workspace: { running: "Persisting /a0/usr data", failed: "Persist failed", canceled: "Persist canceled" },
     developer_run: { running: "Running developer image", failed: "Developer image failed", canceled: "Developer image canceled" },
     operation: { running: "Working on Agent Zero", failed: "Operation failed", canceled: "Operation canceled" }
   };

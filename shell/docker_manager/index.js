@@ -2,6 +2,7 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
+const os = require('node:os');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { app } = require('electron');
@@ -29,6 +30,19 @@ const CONTAINER_SOURCE_MAX_BYTES = 256 * 1024;
 const RUNTIME_SETUP_RESUME_ARG = '--a0-resume-runtime-setup';
 const RUNTIME_SETUP_RUNONCE_VALUE = 'AgentZeroLauncherResumeRuntimeSetup';
 const execFileAsync = promisify(execFile);
+const WORKSPACE_MOUNT_TARGET = '/a0/usr';
+const STORAGE_MODE_HOST_DIRECTORY = 'host_directory';
+const STORAGE_MODE_NAMED_VOLUME = 'named_volume';
+const STORAGE_MODE_EPHEMERAL = 'ephemeral';
+
+const WORKSPACE_STORAGE_LABELS = Object.freeze({
+  mode: 'a0.launcher.storage.mode',
+  target: 'a0.launcher.storage.target',
+  hostPath: 'a0.launcher.storage.hostPath',
+  volumeName: 'a0.launcher.storage.volumeName',
+  persistent: 'a0.launcher.storage.persistent',
+  legacy: 'a0.launcher.storage.legacy'
+});
 
 const CHANNEL_TAGS = Object.freeze(['latest', 'ready', 'testing']);
 const CANONICAL_LOCAL_TAGS = Object.freeze(['local', 'development', 'main']);
@@ -454,6 +468,251 @@ function buildDigestHint(publishedDigest, localDigest) {
   return `Published: ${pub} / Local: ${loc}`;
 }
 
+function normalizeStorageMode(value, fallback = STORAGE_MODE_HOST_DIRECTORY) {
+  const mode = String(value || '').trim();
+  if (
+    mode === STORAGE_MODE_HOST_DIRECTORY ||
+    mode === STORAGE_MODE_NAMED_VOLUME ||
+    mode === STORAGE_MODE_EPHEMERAL
+  ) return mode;
+  if (fallback === '') return '';
+  return fallback === STORAGE_MODE_NAMED_VOLUME ? STORAGE_MODE_NAMED_VOLUME : STORAGE_MODE_HOST_DIRECTORY;
+}
+
+function expandHomePath(value) {
+  const raw = String(value || '').trim() || stateStore.DEFAULT_STORAGE_PREFERENCES.hostRoot;
+  if (raw === '~') return os.homedir() || raw;
+  if (raw.startsWith('~/') || raw.startsWith('~\\')) {
+    const home = os.homedir();
+    if (home) return path.join(home, raw.slice(2));
+  }
+  return raw;
+}
+
+function normalizeHostRootForUse(value) {
+  const expanded = expandHomePath(value);
+  return path.resolve(expanded);
+}
+
+function dockerVolumeName(value, fallback = 'a0-launcher-workspace') {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_.-]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .slice(0, 128);
+  if (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(cleaned)) return cleaned;
+  return fallback;
+}
+
+function workspaceSlug(instanceName, containerName) {
+  const candidate = containerName || instanceName || 'agent-zero';
+  return sanitizeInstanceName(candidate, 'agent-zero-workspace').slice(0, 96);
+}
+
+function normalizeStorageOverride(raw) {
+  const input = raw && typeof raw === 'object' ? raw : {};
+  const hasMode = typeof input.storageMode === 'string' && input.storageMode.trim();
+  const mode = hasMode ? normalizeStorageMode(input.storageMode) : '';
+  const hostRoot = typeof input.hostRoot === 'string' && input.hostRoot.trim() ? input.hostRoot.trim().slice(0, 512) : '';
+  const volumeName = typeof input.volumeName === 'string' && input.volumeName.trim()
+    ? dockerVolumeName(input.volumeName.trim())
+    : '';
+  if (!mode && !hostRoot && !volumeName) return null;
+  return { mode, hostRoot, volumeName };
+}
+
+async function resolveWorkspaceStorage(options = {}) {
+  const preferences = stateStore.normalizeStoragePreferences(options.preferences);
+  const override = normalizeStorageOverride(options.override);
+  const mode = normalizeStorageMode(override?.mode, preferences.mode);
+  const slug = workspaceSlug(options.instanceName, options.containerName);
+  const storage = {
+    mode,
+    target: WORKSPACE_MOUNT_TARGET,
+    persistent: true,
+    legacy: false
+  };
+
+  if (mode === STORAGE_MODE_EPHEMERAL) {
+    return {
+      ...storage,
+      persistent: false
+    };
+  }
+
+  if (mode === STORAGE_MODE_NAMED_VOLUME) {
+    storage.volumeName = dockerVolumeName(
+      override?.volumeName || `${preferences.volumePrefix || 'a0-launcher'}-${slug}-usr`,
+      `a0-launcher-${slug}-usr`
+    );
+    storage.mount = {
+      Type: 'volume',
+      Source: storage.volumeName,
+      Target: WORKSPACE_MOUNT_TARGET
+    };
+    return storage;
+  }
+
+  const root = normalizeHostRootForUse(override?.hostRoot || preferences.hostRoot);
+  storage.hostRoot = root;
+  storage.hostPath = path.join(root, slug, 'usr');
+  storage.mount = {
+    Type: 'bind',
+    Source: storage.hostPath,
+    Target: WORKSPACE_MOUNT_TARGET
+  };
+  await fs.mkdir(storage.hostPath, { recursive: true });
+  return storage;
+}
+
+function workspaceStorageLabels(storage) {
+  const labels = {
+    [WORKSPACE_STORAGE_LABELS.mode]: storage?.mode || '',
+    [WORKSPACE_STORAGE_LABELS.target]: WORKSPACE_MOUNT_TARGET,
+    [WORKSPACE_STORAGE_LABELS.persistent]: storage?.persistent === true ? 'true' : 'false',
+    [WORKSPACE_STORAGE_LABELS.legacy]: storage?.legacy === true ? 'true' : 'false'
+  };
+  if (storage?.hostPath) labels[WORKSPACE_STORAGE_LABELS.hostPath] = storage.hostPath;
+  if (storage?.volumeName) labels[WORKSPACE_STORAGE_LABELS.volumeName] = storage.volumeName;
+  return labels;
+}
+
+function mountTargetsWorkspace(mount) {
+  return String(mount?.Target || mount?.Destination || '').trim() === WORKSPACE_MOUNT_TARGET;
+}
+
+function bindTargetsWorkspace(bind) {
+  const parts = String(bind || '').split(':');
+  if (parts.length < 2) return false;
+  return parts[1] === WORKSPACE_MOUNT_TARGET;
+}
+
+function stripWorkspaceMounts(hostConfig) {
+  const next = { ...(hostConfig && typeof hostConfig === 'object' ? hostConfig : {}) };
+  if (Array.isArray(next.Mounts)) next.Mounts = next.Mounts.filter((mount) => !mountTargetsWorkspace(mount));
+  if (Array.isArray(next.Binds)) next.Binds = next.Binds.filter((bind) => !bindTargetsWorkspace(bind));
+  return next;
+}
+
+function applyWorkspaceStorage(createOptions, storage, { skipIfCustom = false } = {}) {
+  if (!createOptions || !storage) return createOptions;
+  const hostConfig = stripWorkspaceMounts(createOptions.HostConfig || {});
+  if (skipIfCustom) {
+    const sourceHostConfig = createOptions.HostConfig || {};
+    const hasCustomWorkspaceMount =
+      (Array.isArray(sourceHostConfig.Mounts) && sourceHostConfig.Mounts.some(mountTargetsWorkspace)) ||
+      (Array.isArray(sourceHostConfig.Binds) && sourceHostConfig.Binds.some(bindTargetsWorkspace));
+    if (hasCustomWorkspaceMount) {
+      createOptions.Labels = {
+        ...(createOptions.Labels || {}),
+        [WORKSPACE_STORAGE_LABELS.target]: WORKSPACE_MOUNT_TARGET,
+        [WORKSPACE_STORAGE_LABELS.persistent]: 'true',
+        [WORKSPACE_STORAGE_LABELS.mode]: 'custom_mount'
+      };
+      return createOptions;
+    }
+  }
+
+  if (storage.mount) {
+    hostConfig.Mounts = [
+      ...(Array.isArray(hostConfig.Mounts) ? hostConfig.Mounts : []),
+      storage.mount
+    ];
+  }
+  createOptions.HostConfig = hostConfig;
+  createOptions.Labels = {
+    ...(createOptions.Labels || {}),
+    ...workspaceStorageLabels(storage)
+  };
+  return createOptions;
+}
+
+function workspaceStorageFromLabels(labels) {
+  const source = labels && typeof labels === 'object' ? labels : {};
+  const target = source[WORKSPACE_STORAGE_LABELS.target] || WORKSPACE_MOUNT_TARGET;
+  const mode = normalizeStorageMode(source[WORKSPACE_STORAGE_LABELS.mode], '');
+  const persistent = source[WORKSPACE_STORAGE_LABELS.persistent] === 'true';
+  if (!persistent && source[WORKSPACE_STORAGE_LABELS.legacy] === 'true') {
+    return {
+      mode: 'legacy_ephemeral',
+      target,
+      persistent: false,
+      legacy: true,
+      migrationAvailable: true
+    };
+  }
+  if (!persistent && !mode) return null;
+  if (!persistent && mode === STORAGE_MODE_EPHEMERAL) {
+    return {
+      mode,
+      target,
+      persistent: false,
+      legacy: false,
+      hostPath: '',
+      volumeName: '',
+      migrationAvailable: true
+    };
+  }
+  return {
+    mode: mode || 'custom_mount',
+    target,
+    persistent,
+    legacy: false,
+    hostPath: source[WORKSPACE_STORAGE_LABELS.hostPath] || '',
+    volumeName: source[WORKSPACE_STORAGE_LABELS.volumeName] || '',
+    migrationAvailable: persistent === false
+  };
+}
+
+function workspaceStorageFromInspect(inspect) {
+  const labels = normalizeDockerLabels(inspect?.Config?.Labels);
+  const fromLabels = workspaceStorageFromLabels(labels);
+  const mounts = Array.isArray(inspect?.Mounts) ? inspect.Mounts : [];
+  const mount = mounts.find((item) => String(item?.Destination || '').trim() === WORKSPACE_MOUNT_TARGET) || null;
+  if (mount) {
+    const type = String(mount.Type || '').toLowerCase();
+    const mode = type === 'volume' ? STORAGE_MODE_NAMED_VOLUME : type === 'bind' ? STORAGE_MODE_HOST_DIRECTORY : fromLabels?.mode || 'custom_mount';
+    return {
+      mode,
+      target: WORKSPACE_MOUNT_TARGET,
+      persistent: true,
+      legacy: false,
+      hostPath: mode === STORAGE_MODE_HOST_DIRECTORY ? String(mount.Source || fromLabels?.hostPath || '') : '',
+      volumeName: mode === STORAGE_MODE_NAMED_VOLUME ? String(mount.Name || mount.Source || fromLabels?.volumeName || '') : '',
+      migrationAvailable: false
+    };
+  }
+  if (fromLabels?.persistent) return fromLabels;
+  if (fromLabels && fromLabels.mode === STORAGE_MODE_EPHEMERAL) return fromLabels;
+  return {
+    mode: 'legacy_ephemeral',
+    target: WORKSPACE_MOUNT_TARGET,
+    persistent: false,
+    legacy: true,
+    migrationAvailable: true
+  };
+}
+
+async function enrichContainersWithWorkspaceStorage(docker, containers) {
+  const out = [];
+  for (const container of Array.isArray(containers) ? containers : []) {
+    if (!container?.containerId) {
+      out.push(container);
+      continue;
+    }
+    try {
+      const inspect = await docker.inspectContainer(container.containerId);
+      out.push({ ...container, workspaceStorage: workspaceStorageFromInspect(inspect) });
+    } catch {
+      const labels = normalizeDockerLabels(container?.labels);
+      const fromLabels = workspaceStorageFromLabels(labels);
+      out.push({ ...container, workspaceStorage: fromLabels || null });
+    }
+  }
+  return out;
+}
+
 function emptyDerivedState(runtime = null) {
   return {
     versions: [],
@@ -461,6 +720,7 @@ function emptyDerivedState(runtime = null) {
     remoteInstances: [],
     retentionPolicy: { keepCount: 1 },
     portPreferences: { ui: 8880, ssh: 55022 },
+    storagePreferences: { ...stateStore.DEFAULT_STORAGE_PREFERENCES },
     instanceDefaults: {
       models: {
         Main: { provider: 'openrouter', model: '', apiKey: '' },
@@ -588,9 +848,10 @@ async function collectRuntimeDiagnostics(docker, env = null) {
 }
 
 async function buildUnavailableState(runtime) {
-  const [retentionPolicy, portPreferences, instanceDefaults, remoteInstances] = await Promise.all([
+  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances] = await Promise.all([
     stateStore.readRetentionPolicy().catch(() => ({ keepCount: 1 })),
     stateStore.readPortPreferences().catch(() => ({ ui: 8880, ssh: 55022 })),
+    stateStore.readStoragePreferences().catch(() => ({ ...stateStore.DEFAULT_STORAGE_PREFERENCES })),
     stateStore.readInstanceDefaults().catch(() => null),
     stateStore.readRemoteInstances().catch(() => [])
   ]);
@@ -599,6 +860,7 @@ async function buildUnavailableState(runtime) {
     ...empty,
     retentionPolicy,
     portPreferences,
+    storagePreferences,
     instanceDefaults: instanceDefaults || empty.instanceDefaults,
     remoteInstances
   };
@@ -931,10 +1193,11 @@ async function buildDerivedState(options = {}) {
     return await buildUnavailableState(runtime);
   }
 
-  const [retentionPolicy, portPreferences, instanceDefaults, remoteInstances, localInstanceNames, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
+  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, localInstanceNames, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
     await Promise.all([
       stateStore.readRetentionPolicy(),
       stateStore.readPortPreferences(),
+      stateStore.readStoragePreferences(),
       stateStore.readInstanceDefaults(),
       stateStore.readRemoteInstances(),
       stateStore.readLocalInstanceNames(),
@@ -946,7 +1209,7 @@ async function buildDerivedState(options = {}) {
       docker.listRemoteTags(imageRepo).catch(() => null)
     ]);
   const containers = applyLocalInstanceNames(
-    await enrichContainersWithRuntimeSource(docker, rawContainers),
+    await enrichContainersWithWorkspaceStorage(docker, await enrichContainersWithRuntimeSource(docker, rawContainers)),
     localInstanceNames
   );
 
@@ -1298,6 +1561,7 @@ async function buildDerivedState(options = {}) {
     remoteInstances,
     retentionPolicy,
     portPreferences,
+    storagePreferences,
     instanceDefaults,
     uiUrl,
     lastSyncedAt,
@@ -1522,7 +1786,8 @@ function normalizeActivationOptions(options = {}, tag = '') {
   return {
     instanceName: sanitizeInstanceName(raw.instanceName, fallbackName),
     portMappings: hasPortMappings ? parsePortMappings(raw.portMappings) : null,
-    env: parseEnvText(raw.envText)
+    env: parseEnvText(raw.envText),
+    storage: normalizeStorageOverride(raw)
   };
 }
 
@@ -1538,6 +1803,7 @@ function normalizeCustomImageOptions(options = {}) {
     portMappings: hasPortMappings ? parsePortMappings(raw.portMappings) : parsePortMappings('0:80'),
     env: parseEnvText(raw.envText),
     binds: parseMountsText(raw.mountsText),
+    storage: normalizeStorageOverride(raw),
     pull: raw.pull !== false
   };
 }
@@ -1594,6 +1860,12 @@ function cloneContainerName(sourceName) {
   const suffix = Date.now().toString(36);
   const base = sanitizeInstanceName(`${sourceName || 'instance'}-clone`, 'agent-zero-clone').slice(0, 48);
   return sanitizeInstanceName(`${base}-${suffix}`, `agent-zero-clone-${suffix}`);
+}
+
+function migratedInstanceContainerName(sourceName) {
+  const suffix = Date.now().toString(36);
+  const base = sanitizeInstanceName(`a0-inst-${sourceName || 'instance'}`, 'a0-inst').slice(0, 48);
+  return sanitizeInstanceName(`${base}-${suffix}`, `a0-inst-${suffix}`);
 }
 
 function cloneImageRefForContainer(containerId) {
@@ -1654,7 +1926,7 @@ function setIfPresent(target, key, value) {
   target[key] = value;
 }
 
-function buildCloneCreateOptions(inspect, containerId, cloneImageRef) {
+async function buildCloneCreateOptions(inspect, containerId, cloneImageRef, storagePreferences = null, options = {}) {
   const config = isPlainObject(inspect?.Config) ? inspect.Config : {};
   const host = isPlainObject(inspect?.HostConfig) ? inspect.HostConfig : {};
   const sourceLabels = normalizeDockerLabels(config.Labels);
@@ -1706,11 +1978,26 @@ function buildCloneCreateOptions(inspect, containerId, cloneImageRef) {
     hostConfig.NetworkMode = host.NetworkMode;
   }
 
+  const containerName = typeof options?.containerName === 'string' && options.containerName
+    ? options.containerName
+    : cloneContainerName(sourceName);
+  const role = typeof options?.role === 'string' && options.role ? options.role : 'clone';
+  const instanceName = typeof options?.instanceName === 'string' && options.instanceName
+    ? options.instanceName
+    : cloneFriendlyInstanceName(sourceName);
+
+  labels['a0.launcher.role'] = role;
+  labels['a0.launcher.instanceName'] = instanceName;
+  if (options?.migrationSource === true) {
+    labels['a0.launcher.migratedFromContainerId'] = String(containerId || '');
+    labels['a0.launcher.migratedAt'] = nowIso();
+  }
+
   const createOptions = {
-    name: cloneContainerName(sourceName),
+    name: containerName,
     Image: cloneImageRef,
     Labels: labels,
-    HostConfig: hostConfig
+    HostConfig: stripWorkspaceMounts(hostConfig)
   };
 
   setIfPresent(createOptions, 'Env', Array.isArray(config.Env) ? [...config.Env] : null);
@@ -1729,6 +2016,14 @@ function buildCloneCreateOptions(inspect, containerId, cloneImageRef) {
   if (typeof config.AttachStderr === 'boolean') createOptions.AttachStderr = config.AttachStderr;
   if (typeof config.StopSignal === 'string' && config.StopSignal) createOptions.StopSignal = config.StopSignal;
   if (Number.isFinite(Number(config.StopTimeout))) createOptions.StopTimeout = Math.max(0, Math.floor(Number(config.StopTimeout)));
+
+  const workspaceStorage = await resolveWorkspaceStorage({
+    preferences: storagePreferences || await stateStore.readStoragePreferences(),
+    override: options?.storage || null,
+    instanceName,
+    containerName
+  });
+  applyWorkspaceStorage(createOptions, workspaceStorage);
 
   return createOptions;
 }
@@ -1751,6 +2046,16 @@ async function setPortPreferences(portPreferences) {
   requireNoRunningOperation();
   const prefs = await stateStore.writePortPreferences(portPreferences);
   await refreshDockerManager({ forceRefresh: false });
+  return prefs;
+}
+
+async function setStoragePreferences(storagePreferences) {
+  requireNoRunningOperation();
+  const prefs = await stateStore.writeStoragePreferences(storagePreferences);
+  if (_cachedState) {
+    _cachedState = { ..._cachedState, storagePreferences: prefs };
+    events.emit('state', _cachedState);
+  }
   return prefs;
 }
 
@@ -1956,7 +2261,7 @@ async function getRemoteInstance(id) {
   return found;
 }
 
-async function createAndStartActiveContainer(docker, imageRepo, tag, portPreferences, activationOptions = null) {
+async function createAndStartActiveContainer(docker, imageRepo, tag, portPreferences, activationOptions = null, storagePreferences = null) {
   const activeName = retention.getActiveContainerName(imageRepo);
   const imageRef = imageRefForTag(imageRepo, tag);
 
@@ -2011,6 +2316,14 @@ async function createAndStartActiveContainer(docker, imageRepo, tag, portPrefere
     }
   };
 
+  const workspaceStorage = await resolveWorkspaceStorage({
+    preferences: storagePreferences || await stateStore.readStoragePreferences(),
+    override: activationOptions?.storage || null,
+    instanceName,
+    containerName: activeName
+  });
+  applyWorkspaceStorage(createOptions, workspaceStorage);
+
   if (Array.isArray(activationOptions?.env) && activationOptions.env.length) {
     createOptions.Env = activationOptions.env;
   }
@@ -2061,7 +2374,7 @@ function managedInstanceContainerName(tag, instanceName) {
   return sanitizeInstanceName(`${base}-${suffix}`, `a0-inst-${suffix}`);
 }
 
-async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, activationOptions = null) {
+async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, activationOptions = null, storagePreferences = null) {
   const imageRef = imageRefForTag(imageRepo, tag);
   const mappings = Array.isArray(activationOptions?.portMappings) && activationOptions.portMappings.length
     ? activationOptions.portMappings
@@ -2093,6 +2406,14 @@ async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, ac
     }
   };
 
+  const workspaceStorage = await resolveWorkspaceStorage({
+    preferences: storagePreferences || await stateStore.readStoragePreferences(),
+    override: activationOptions?.storage || null,
+    instanceName,
+    containerName
+  });
+  applyWorkspaceStorage(createOptions, workspaceStorage);
+
   if (Array.isArray(activationOptions?.env) && activationOptions.env.length) {
     createOptions.Env = activationOptions.env;
   }
@@ -2109,7 +2430,7 @@ async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, ac
   return { containerId, name: containerName };
 }
 
-async function createAndStartDeveloperContainer(docker, options) {
+async function createAndStartDeveloperContainer(docker, options, storagePreferences = null) {
   const mappings = Array.isArray(options?.portMappings) ? options.portMappings : parsePortMappings('0:80');
   const { exposedPorts, portBindings } = buildPortExposure(mappings);
   const uiMapping = preferredUiMapping(mappings);
@@ -2143,6 +2464,14 @@ async function createAndStartDeveloperContainer(docker, options) {
   if (Array.isArray(options?.binds) && options.binds.length) {
     createOptions.HostConfig.Binds = options.binds;
   }
+
+  const workspaceStorage = await resolveWorkspaceStorage({
+    preferences: storagePreferences || await stateStore.readStoragePreferences(),
+    override: options?.storage || null,
+    instanceName: options.instanceName,
+    containerName
+  });
+  applyWorkspaceStorage(createOptions, workspaceStorage, { skipIfCustom: true });
 
   const created = await docker.createContainer(createOptions);
   const containerId = created?.containerId;
@@ -2444,7 +2773,12 @@ async function cloneLocalInstance(containerId) {
       });
 
       updateOperationProgress({ headline: cloneHeadline, message: 'Creating clone on open ports', progress: null });
-      const createOptions = buildCloneCreateOptions(inspect, target.containerId, cloneImageRef);
+      const createOptions = await buildCloneCreateOptions(
+        inspect,
+        target.containerId,
+        cloneImageRef,
+        await stateStore.readStoragePreferences()
+      );
       const created = await docker.createContainer(createOptions);
       createdContainerId = created?.containerId || '';
       if (!createdContainerId) {
@@ -2482,6 +2816,159 @@ async function cloneLocalInstance(containerId) {
     }
   })().catch((error) => {
     logDockerManagerError('cloneLocalInstance.unhandled', error, { opId, containerId: id });
+  });
+
+  return { opId };
+}
+
+async function migrateLocalInstanceStorage(containerId, options = {}) {
+  const imageRepo = getBackendImageRepo();
+  const id = assertContainerId(containerId);
+  const storageOverride = normalizeStorageOverride(options);
+  if (storageOverride?.mode === STORAGE_MODE_EPHEMERAL) {
+    const err = new Error('Persisting /a0/usr data requires persistent storage.');
+    err.code = 'INVALID_STORAGE_MODE';
+    throw err;
+  }
+
+  requireNoRunningOperation();
+  const opId = beginOperation('migrate_workspace', null);
+
+  (async () => {
+    /** @type {any} */
+    let docker = null;
+    let cloneImageRef = '';
+    let createdContainerId = '';
+    let migrationHeadline = 'Persisting /a0/usr data';
+
+    try {
+      updateOperationProgress({ headline: migrationHeadline, message: 'Preparing migration', progress: null });
+      docker = await getManagedDocker(imageRepo);
+      const containers = await docker.listContainers(imageRepo);
+      const target = (containers || []).find((c) => c && c.containerId === id) || null;
+
+      if (!target || !target.containerId) {
+        const err = new Error('Instance not found');
+        err.code = 'INSTANCE_NOT_FOUND';
+        throw err;
+      }
+
+      const targetName = target.instanceName || target.containerName || String(target.containerId || '').slice(0, 12) || 'instance';
+      const inspect = await docker.inspectContainer(target.containerId);
+      const sourceStorage = workspaceStorageFromInspect(inspect);
+      if (sourceStorage?.persistent) {
+        const err = new Error('This instance already has persistent workspace storage.');
+        err.code = 'WORKSPACE_ALREADY_PERSISTENT';
+        throw err;
+      }
+
+      const friendlyName = sourceInstanceNameFromInspect(inspect, targetName);
+      const sourceContainerName = target.containerName || containerNameFromInspect(inspect) || targetName;
+      migrationHeadline = `Persisting ${friendlyName || 'instance'}`;
+      cloneImageRef = cloneImageRefForContainer(target.containerId);
+
+      updateOperationProgress({ headline: migrationHeadline, message: 'Snapshotting legacy instance', progress: null });
+      await docker.commitContainer(target.containerId, cloneImageRef, {
+        pause: true,
+        comment: 'A0 Launcher workspace migration',
+        author: 'A0 Launcher'
+      });
+
+      updateOperationProgress({ headline: migrationHeadline, message: 'Creating persistent replacement', progress: null });
+      const createOptions = await buildCloneCreateOptions(
+        inspect,
+        target.containerId,
+        cloneImageRef,
+        await stateStore.readStoragePreferences(),
+        {
+          role: 'instance',
+          instanceName: friendlyName,
+          containerName: migratedInstanceContainerName(friendlyName),
+          migrationSource: true,
+          storage: storageOverride
+        }
+      );
+      const replacementContainerName = createOptions.name || migratedInstanceContainerName(friendlyName);
+      const created = await docker.createContainer(createOptions);
+      createdContainerId = created?.containerId || '';
+      if (!createdContainerId) {
+        const err = new Error('Failed to create persistent replacement');
+        err.code = 'CREATE_FAILED';
+        throw err;
+      }
+
+      if (typeof docker.copyContainerPathToContainer === 'function') {
+        updateOperationProgress({ headline: migrationHeadline, message: 'Copying workspace data', progress: null });
+        const copied = await docker.copyContainerPathToContainer(
+          target.containerId,
+          WORKSPACE_MOUNT_TARGET,
+          createdContainerId,
+          '/a0'
+        );
+        if (copied?.copied === false) {
+          updateOperationProgress({ headline: migrationHeadline, message: 'No legacy workspace files found', progress: null });
+        }
+      }
+
+      updateOperationProgress({ headline: migrationHeadline, message: 'Starting persistent replacement', progress: null });
+      await docker.startContainer(createdContainerId);
+
+      updateOperationProgress({ headline: migrationHeadline, message: 'Waiting for replacement UI', progress: null });
+      const waitRes = await waitForUiReachable(docker, createdContainerId, {
+        timeoutMs: UI_READY_TIMEOUT_MS,
+        intervalMs: 450,
+        attemptTimeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
+        onTick: (seconds) => {
+          const s = Number.isFinite(Number(seconds)) && seconds > 0 ? ` - ${Math.floor(seconds)}s` : '';
+          updateOperationProgress({ headline: migrationHeadline, message: `Waiting for replacement UI${s}`, progress: null });
+        }
+      });
+      if (!waitRes.ok) {
+        const err = new Error('Persistent replacement started, but the Agent Zero UI is not reachable yet.');
+        err.code = 'UI_NOT_READY';
+        throw err;
+      }
+
+      updateOperationProgress({
+        workspaceMigration: {
+          sourceName: friendlyName || sourceContainerName || 'legacy instance',
+          sourceContainerName,
+          replacementName: friendlyName || replacementContainerName || 'persistent instance',
+          replacementContainerName,
+          mountTarget: WORKSPACE_MOUNT_TARGET
+        }
+      });
+      finishOperation('completed', null);
+      updateOperationProgress({ headline: migrationHeadline, progress: 100, message: 'Persisted' });
+    } catch (error) {
+      logDockerManagerError('migrateLocalInstanceStorage', error, { opId, containerId: id, cloneImageRef });
+      try {
+        if (docker && createdContainerId) {
+          await docker.deleteContainer(createdContainerId, { force: true });
+        }
+      } catch {
+        // ignore cleanup failure
+      }
+      try {
+        if (docker && cloneImageRef) {
+          await docker.removeLocalImage(cloneImageRef);
+        }
+      } catch {
+        // ignore cleanup failure
+      }
+
+      const message =
+        (error && typeof error === 'object' && error.code === 'WORKSPACE_ALREADY_PERSISTENT' && error.message) ||
+        (error && typeof error === 'object' && error.code === 'UI_NOT_READY' && error.message) ||
+        mapDockerInterfaceErrorToUiMessage(error) ||
+        error?.message ||
+        'Persisting /a0/usr data failed';
+      finishOperation('failed', message, error?.code || null);
+    } finally {
+      await refreshDockerManager({ forceRefresh: false }).catch(() => {});
+    }
+  })().catch((error) => {
+    logDockerManagerError('migrateLocalInstanceStorage.unhandled', error, { opId, containerId: id });
   });
 
   return { opId };
@@ -2750,7 +3237,14 @@ async function updateToLatest(dataLossAck) {
 
       // Create and start new active.
       updateOperationProgress({ message: 'Starting new version', progress: null });
-      createdNew = await createAndStartActiveContainer(docker, imageRepo, latest, portPreferences);
+      createdNew = await createAndStartActiveContainer(
+        docker,
+        imageRepo,
+        latest,
+        portPreferences,
+        null,
+        await stateStore.readStoragePreferences()
+      );
 
       updateOperationProgress({ message: 'Starting new version (waiting for UI)', progress: null });
       if (createdNew && createdNew.containerId) {
@@ -2951,7 +3445,13 @@ async function activateTag(tag, dataLossAck, options = {}) {
       }
 
       updateOperationProgress({ message: 'Starting instance', progress: null });
-      createdNew = await createAndStartManagedInstanceContainer(docker, imageRepo, t, activationOptions);
+      createdNew = await createAndStartManagedInstanceContainer(
+        docker,
+        imageRepo,
+        t,
+        activationOptions,
+        await stateStore.readStoragePreferences()
+      );
 
       updateOperationProgress({ message: 'Starting instance (waiting for UI)', progress: null });
       if (createdNew && createdNew.containerId) {
@@ -3044,7 +3544,7 @@ async function runCustomImage(options = {}) {
       }
 
       updateOperationProgress({ message: 'Creating developer container', progress: null, canCancel: false });
-      await createAndStartDeveloperContainer(docker, custom);
+      await createAndStartDeveloperContainer(docker, custom, await stateStore.readStoragePreferences());
       finishOperation('completed', null);
       updateOperationProgress({ progress: 100, message: 'Started' });
     } catch (error) {
@@ -3126,7 +3626,10 @@ async function getDockerInventory() {
     ]);
     images = Array.isArray(results[0]) ? results[0] : [];
     containers = applyLocalInstanceNames(
-      await enrichContainersWithRuntimeSource(docker, Array.isArray(results[1]) ? results[1] : []),
+      await enrichContainersWithWorkspaceStorage(
+        docker,
+        await enrichContainersWithRuntimeSource(docker, Array.isArray(results[1]) ? results[1] : [])
+      ),
       localInstanceNames
     );
     volumes = Array.isArray(results[2]) ? results[2] : [];
@@ -3242,11 +3745,13 @@ module.exports = {
   startActiveInstance,
   startLocalInstance,
   cloneLocalInstance,
+  migrateLocalInstanceStorage,
   renameLocalInstance,
   stopActiveInstance,
   stopLocalInstance,
   setRetentionPolicy,
   setPortPreferences,
+  setStoragePreferences,
   setInstanceDefaults,
   selectRuntimeEndpoint,
   provisionRuntime,
@@ -3267,6 +3772,15 @@ module.exports = {
   removeVolume,
   pruneVolumes,
   getContainerUiUrl,
+
+  _test: {
+    WORKSPACE_MOUNT_TARGET,
+    normalizeStorageOverride,
+    resolveWorkspaceStorage,
+    applyWorkspaceStorage,
+    workspaceStorageFromInspect,
+    buildCloneCreateOptions
+  },
 
   // Error helpers for IPC handlers
   toErrorResponse

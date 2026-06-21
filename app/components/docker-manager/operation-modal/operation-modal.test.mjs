@@ -346,6 +346,14 @@ test('first image pull asks for models before optional first Instance details', 
   assert.equal(document.querySelector('.dm-first-instance-step-run')?.classList.contains('hidden'), false);
   assert.ok(document.getElementById('firstSetupRunInstance'));
   assert.ok(document.getElementById('firstSetupInstanceName'));
+  const storageMode = document.getElementById('firstSetupStorageMode');
+  const storageWarning = document.querySelector('.dm-first-instance-storage-warning');
+  assert.ok(storageMode);
+  assert.equal(storageMode.value, 'host_directory');
+  assert.ok(storageWarning?.classList.contains('hidden'));
+  storageMode.value = 'ephemeral';
+  storageMode.dispatchEvent(new MiniEvent('change'));
+  assert.equal(storageWarning?.classList.contains('hidden'), false);
   assert.equal(buttonByText(document, 'Show slideshow'), null);
   assert.equal(buttonByText(document, 'Skip'), null);
   assert.ok(buttonByText(document, '< Back to model configuration'));
@@ -357,6 +365,7 @@ test('first image pull asks for models before optional first Instance details', 
   assert.equal(skipped, '');
   assert.equal(confirmed?.opId, 'op-first-install');
   assert.equal(confirmed?.runFirstInstance, false);
+  assert.equal(confirmed?.storageMode, 'ephemeral');
   assert.equal(document.querySelector('.dm-first-instance-setup'), null);
   assert.ok(document.querySelector('.dm-setup-showcase'));
   assert.ok(document.querySelector('.dm-operation-dialog').classList.contains('has-setup-showcase'));
@@ -396,6 +405,23 @@ test('running clone operation shows source-specific headline', () => {
   assert.equal(model.headline, 'Cloning agent-zero-latest');
   assert.equal(model.primary?.label, 'Cloning agent-zero-latest');
   assert.equal(model.detail, 'Snapshotting container');
+});
+
+test('workspace persistence operation uses persistence wording', () => {
+  installDom();
+  const model = normalizedOperationDialog({
+    progress: {
+      opId: 'op-persist',
+      type: 'migrate_workspace',
+      status: 'running',
+      message: 'Creating persistent replacement',
+      canCancel: false
+    }
+  });
+
+  assert.equal(model.headline, 'Persisting /a0/usr data');
+  assert.equal(model.primary?.label, 'Persisting /a0/usr data');
+  assert.equal(model.detail, 'Creating persistent replacement');
 });
 
 test('rate-limited install failure shows docker login and retry actions in modal', () => {

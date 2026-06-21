@@ -1207,6 +1207,13 @@ body {
   font-weight: 600;
 }
 
+.dm-dialog-copy {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 .dm-dialog-body {
   display: grid;
   gap: 0.9rem;
@@ -1679,6 +1686,10 @@ body {
 
 .dm-first-instance-name-field input:disabled {
   opacity: 0.55;
+}
+
+.dm-first-instance-storage-warning {
+  color: var(--color-accent);
 }
 
 .dm-text-button {

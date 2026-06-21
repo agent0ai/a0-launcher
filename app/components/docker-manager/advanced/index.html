@@ -112,6 +112,31 @@
             <span>Clear unused</span>
           </button>
         </div>
+        <div class="dm-advanced-form">
+          <div class="dm-field">
+            <label for="workspaceStorageMode">Workspace mode</label>
+            <select id="workspaceStorageMode" class="dm-text-input">
+              <option value="host_directory">Host directory</option>
+              <option value="named_volume">Named Docker volume</option>
+            </select>
+          </div>
+          <div class="dm-field">
+            <label for="workspaceHostRoot">Host root</label>
+            <input id="workspaceHostRoot" class="dm-text-input" type="text" autocomplete="off" placeholder="~/agent-zero">
+            <div class="dm-field-hint">New instances use a per-instance usr folder under this root.</div>
+          </div>
+          <div class="dm-field">
+            <label for="workspaceVolumePrefix">Volume prefix</label>
+            <input id="workspaceVolumePrefix" class="dm-text-input" type="text" autocomplete="off" placeholder="a0-launcher">
+            <div class="dm-field-hint">Used only when named Docker volumes are selected.</div>
+          </div>
+        </div>
+        <div class="dm-advanced-actions">
+          <button id="saveWorkspaceStorageBtn" class="button confirm" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">save</span>
+            <span>Save workspace storage</span>
+          </button>
+        </div>
         <div id="advancedVolumesList" class="sv-list"></div>
       </section>
     </div>

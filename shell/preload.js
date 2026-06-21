@@ -103,12 +103,29 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   startActive: () => ipcRenderer.invoke('docker-manager:startActive'),
   startLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:startLocalInstance', { containerId }),
   cloneLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:cloneLocalInstance', { containerId }),
+  migrateLocalInstanceStorage: (containerId, options) => {
+    const opts = options && typeof options === 'object' ? options : {};
+    return ipcRenderer.invoke('docker-manager:migrateLocalInstanceStorage', {
+      containerId,
+      storageMode: typeof opts.storageMode === 'string' ? opts.storageMode : '',
+      hostRoot: typeof opts.hostRoot === 'string' ? opts.hostRoot : '',
+      volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : ''
+    });
+  },
   stopActive: () => ipcRenderer.invoke('docker-manager:stopActive'),
   stopLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:stopLocalInstance', { containerId }),
   setRetentionPolicy: (keepCount) => ipcRenderer.invoke('docker-manager:setRetentionPolicy', { keepCount }),
   setPortPreferences: (prefs) => {
     const p = prefs && typeof prefs === 'object' ? prefs : {};
     return ipcRenderer.invoke('docker-manager:setPortPreferences', { ui: p.ui, ssh: p.ssh });
+  },
+  setStoragePreferences: (prefs) => {
+    const p = prefs && typeof prefs === 'object' ? prefs : {};
+    return ipcRenderer.invoke('docker-manager:setStoragePreferences', {
+      mode: typeof p.mode === 'string' ? p.mode : '',
+      hostRoot: typeof p.hostRoot === 'string' ? p.hostRoot : '',
+      volumePrefix: typeof p.volumePrefix === 'string' ? p.volumePrefix : ''
+    });
   },
   setInstanceDefaults: (defaults) => {
     const d = defaults && typeof defaults === 'object' ? defaults : {};
@@ -141,7 +158,10 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
       dataLossAck,
       instanceName: typeof opts.instanceName === 'string' ? opts.instanceName : '',
       portMappings: typeof opts.portMappings === 'string' ? opts.portMappings : '',
-      envText: typeof opts.envText === 'string' ? opts.envText : ''
+      envText: typeof opts.envText === 'string' ? opts.envText : '',
+      storageMode: typeof opts.storageMode === 'string' ? opts.storageMode : '',
+      hostRoot: typeof opts.hostRoot === 'string' ? opts.hostRoot : '',
+      volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : ''
     });
   },
   runCustomImage: (options) => {
@@ -153,6 +173,9 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
       portMappings: typeof opts.portMappings === 'string' ? opts.portMappings : '',
       envText: typeof opts.envText === 'string' ? opts.envText : '',
       mountsText: typeof opts.mountsText === 'string' ? opts.mountsText : '',
+      storageMode: typeof opts.storageMode === 'string' ? opts.storageMode : '',
+      hostRoot: typeof opts.hostRoot === 'string' ? opts.hostRoot : '',
+      volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : '',
       pull: opts.pull !== false
     });
   },

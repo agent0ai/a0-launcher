@@ -13,6 +13,9 @@ const FIRST_INSTANCE_SETUP_CLASS = "dm-first-instance-setup";
 const FIRST_INSTANCE_SETUP_PREFIX = "firstSetup";
 const STEP_MODELS = "models";
 const STEP_FIRST_INSTANCE = "first-instance";
+const STORAGE_MODE_HOST_DIRECTORY = "host_directory";
+const STORAGE_MODE_NAMED_VOLUME = "named_volume";
+const STORAGE_MODE_EPHEMERAL = "ephemeral";
 
 const acknowledgedOps = new Set();
 
@@ -89,6 +92,17 @@ function createModelRows(slots, defaults) {
   return grid;
 }
 
+function initialStorageMode(state = {}) {
+  const mode = asText(state?.storagePreferences?.mode);
+  return mode === STORAGE_MODE_NAMED_VOLUME ? STORAGE_MODE_NAMED_VOLUME : STORAGE_MODE_HOST_DIRECTORY;
+}
+
+function syncStorageWarning(section) {
+  const warning = section?.querySelector?.(".dm-first-instance-storage-warning");
+  const select = section?.querySelector?.("#firstSetupStorageMode");
+  if (warning) warning.classList.toggle("hidden", select?.value !== STORAGE_MODE_EPHEMERAL);
+}
+
 function hasLocalInstance(state = {}) {
   return Array.isArray(state?.containers) && state.containers.some((container) =>
     asText(container?.containerId) || asText(container?.containerName)
@@ -148,6 +162,35 @@ function createRunChoice(state) {
   field.appendChild(nameInput);
   field.appendChild(createEl("div", "dm-field-hint", "The name is only for the first Instance. Model defaults stay reusable."));
   runBlock.appendChild(field);
+
+  const storageField = createEl("div", "dm-field dm-first-instance-storage-field");
+  const storageLabel = createEl("label", "", "Workspace storage");
+  storageLabel.setAttribute("for", "firstSetupStorageMode");
+  storageField.appendChild(storageLabel);
+  const storageSelect = createEl("select", "dm-select");
+  storageSelect.id = "firstSetupStorageMode";
+  const storageOptions = [
+    [STORAGE_MODE_HOST_DIRECTORY, "Persistent workspace (recommended)"],
+    [STORAGE_MODE_NAMED_VOLUME, "Named Docker volume"],
+    [STORAGE_MODE_EPHEMERAL, "No persistent workspace"]
+  ];
+  for (const [value, labelText] of storageOptions) {
+    const option = createEl("option", "", labelText);
+    option.value = value;
+    storageSelect.appendChild(option);
+  }
+  storageSelect.value = initialStorageMode(state);
+  storageSelect.addEventListener("change", () => syncStorageWarning(runBlock));
+  storageField.appendChild(storageSelect);
+  storageField.appendChild(createEl("div", "dm-field-hint", "Persistent choices mount a separate workspace at /a0/usr."));
+  const storageWarning = createEl(
+    "div",
+    "dm-field-hint dm-first-instance-storage-warning hidden",
+    "No volume makes this Instance ephemeral: files and settings live inside the container and can be lost if it is replaced or deleted. You can persist it later from the Instance menu; the old container is kept until the replacement starts."
+  );
+  storageField.appendChild(storageWarning);
+  runBlock.appendChild(storageField);
+  syncStorageWarning(runBlock);
 
   const label = createEl("label", "dm-checkbox-line dm-first-instance-check");
   const checkbox = document.createElement("input");
@@ -223,7 +266,8 @@ function createFirstInstanceSetup(state, actions, onDone) {
       targetTag: asText(progress?.targetTag),
       instanceDefaults: defaults,
       runFirstInstance: section.querySelector("#firstSetupRunInstance")?.checked === true,
-      instanceName: section.querySelector("#firstSetupInstanceName")?.value || ""
+      instanceName: section.querySelector("#firstSetupInstanceName")?.value || "",
+      storageMode: section.querySelector("#firstSetupStorageMode")?.value || ""
     });
     if (!ok) return;
     acknowledgedOps.add(asText(progress?.opId));

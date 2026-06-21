@@ -2329,6 +2329,7 @@ function sanitizeDockerManagerState(state) {
   const remoteIn = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
   const policyIn = isPlainObject(state?.retentionPolicy) ? state.retentionPolicy : {};
   const portsIn = isPlainObject(state?.portPreferences) ? state.portPreferences : {};
+  const storagePrefsIn = isPlainObject(state?.storagePreferences) ? state.storagePreferences : {};
   const defaultsIn = isPlainObject(state?.instanceDefaults) ? state.instanceDefaults : {};
 
   const allowedCategory = new Set(['official_release', 'local_build']);
@@ -2461,6 +2462,22 @@ function sanitizeDockerManagerState(state) {
         ip: typeof p?.ip === 'string' ? p.ip : null
       }));
     }
+    if (isPlainObject(c.workspaceStorage)) {
+      const storage = {};
+      const allowedModes = new Set(['host_directory', 'named_volume', 'custom_mount', 'legacy_ephemeral', 'ephemeral']);
+      if (typeof c.workspaceStorage.mode === 'string' && allowedModes.has(c.workspaceStorage.mode)) {
+        storage.mode = c.workspaceStorage.mode;
+      }
+      if (typeof c.workspaceStorage.target === 'string') storage.target = c.workspaceStorage.target;
+      if (typeof c.workspaceStorage.hostPath === 'string') storage.hostPath = c.workspaceStorage.hostPath;
+      if (typeof c.workspaceStorage.volumeName === 'string') storage.volumeName = c.workspaceStorage.volumeName;
+      if (typeof c.workspaceStorage.persistent === 'boolean') storage.persistent = c.workspaceStorage.persistent;
+      if (typeof c.workspaceStorage.legacy === 'boolean') storage.legacy = c.workspaceStorage.legacy;
+      if (typeof c.workspaceStorage.migrationAvailable === 'boolean') {
+        storage.migrationAvailable = c.workspaceStorage.migrationAvailable;
+      }
+      if (Object.keys(storage).length) out.workspaceStorage = storage;
+    }
     containers.push(out);
   }
 
@@ -2525,6 +2542,22 @@ function sanitizeDockerManagerState(state) {
     if (prefs.ui !== prefs.ssh) {
       outState.portPreferences = prefs;
     }
+  }
+
+  {
+    const mode = storagePrefsIn.mode === 'named_volume' ? 'named_volume' : 'host_directory';
+    const cleanText = (value, fallback, maxLength = 512) => {
+      const text = String(value || '')
+        .trim()
+        .replace(/[^\x20-\x7E]/g, '')
+        .slice(0, maxLength);
+      return text || fallback;
+    };
+    outState.storagePreferences = {
+      mode,
+      hostRoot: cleanText(storagePrefsIn.hostRoot, '~/agent-zero'),
+      volumePrefix: cleanText(storagePrefsIn.volumePrefix, 'a0-launcher', 120)
+    };
   }
 
   if (typeof state?.lastSyncedAt === 'string') outState.lastSyncedAt = state.lastSyncedAt;
@@ -2644,6 +2677,18 @@ function sanitizeDockerManagerProgress(progress) {
   }
   if (typeof progress.error === 'string') out.error = progress.error;
   if (typeof progress.errorCode === 'string') out.errorCode = progress.errorCode;
+  if (isPlainObject(progress.workspaceMigration)) {
+    const migration = {};
+    const cleanText = (value, maxLength = 160) => String(value || '')
+      .trim()
+      .replace(/[^\x20-\x7E]/g, '')
+      .slice(0, maxLength);
+    for (const key of ['sourceName', 'sourceContainerName', 'replacementName', 'replacementContainerName', 'mountTarget']) {
+      const value = cleanText(progress.workspaceMigration[key]);
+      if (value) migration[key] = value;
+    }
+    if (Object.keys(migration).length) out.workspaceMigration = migration;
+  }
 
   return out.opId ? out : null;
 }
@@ -2778,6 +2823,24 @@ ipcMain.handle('docker-manager:cloneLocalInstance', async (_event, body) => {
   }
 });
 
+ipcMain.handle('docker-manager:migrateLocalInstanceStorage', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const accepted = await dockerManager.migrateLocalInstanceStorage(containerId, {
+      storageMode: typeof body.storageMode === 'string' ? body.storageMode : '',
+      hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      volumeName: typeof body.volumeName === 'string' ? body.volumeName : ''
+    });
+    if (!accepted || typeof accepted.opId !== 'string') {
+      return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Migration did not return an opId' });
+    }
+    return { opId: accepted.opId };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 ipcMain.handle('docker-manager:setRetentionPolicy', async (_event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
@@ -2796,6 +2859,20 @@ ipcMain.handle('docker-manager:setPortPreferences', async (_event, body) => {
     const ssh = body.ssh;
     const prefs = await dockerManager.setPortPreferences({ ui, ssh });
     return { ui: prefs.ui, ssh: prefs.ssh };
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:setStoragePreferences', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const prefs = await dockerManager.setStoragePreferences({
+      mode: typeof body.mode === 'string' ? body.mode : '',
+      hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      volumePrefix: typeof body.volumePrefix === 'string' ? body.volumePrefix : ''
+    });
+    return sanitizeDockerManagerState({ storagePreferences: prefs }).storagePreferences;
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -2932,7 +3009,10 @@ ipcMain.handle('docker-manager:activate', async (_event, body) => {
     const options = {
       instanceName: typeof body.instanceName === 'string' ? body.instanceName : '',
       portMappings: typeof body.portMappings === 'string' ? body.portMappings : '',
-      envText: typeof body.envText === 'string' ? body.envText : ''
+      envText: typeof body.envText === 'string' ? body.envText : '',
+      storageMode: typeof body.storageMode === 'string' ? body.storageMode : '',
+      hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      volumeName: typeof body.volumeName === 'string' ? body.volumeName : ''
     };
     const accepted = await dockerManager.activateTag(tag, dataLossAck, options);
     if (!accepted || typeof accepted.opId !== 'string') {
@@ -2954,6 +3034,9 @@ ipcMain.handle('docker-manager:runCustomImage', async (_event, body) => {
       portMappings: typeof body.portMappings === 'string' ? body.portMappings : '',
       envText: typeof body.envText === 'string' ? body.envText : '',
       mountsText: typeof body.mountsText === 'string' ? body.mountsText : '',
+      storageMode: typeof body.storageMode === 'string' ? body.storageMode : '',
+      hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      volumeName: typeof body.volumeName === 'string' ? body.volumeName : '',
       pull: body.pull !== false
     };
     const accepted = await dockerManager.runCustomImage(options);

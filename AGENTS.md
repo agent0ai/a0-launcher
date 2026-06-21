@@ -96,6 +96,10 @@ A0_LAUNCHER_LOCAL_REPO=/home/eclypso/a0/a0-launcher npm start
 - Backend release metadata defaults to `agent0ai/agent-zero`.
 - `A0_BACKEND_IMAGE_REPO` and `A0_BACKEND_GITHUB_REPO` may override those repos
   for testing.
+- Launcher-managed local instances should mount isolated persistent workspace
+  storage at `/a0/usr` by default. The default backing store is a per-instance
+  host directory under `~/agent-zero`; named Docker volumes are an advanced
+  alternative, and explicit no-volume runs are ephemeral.
 - `v*` tags are release inputs for executable builds.
 - Two-segment tags such as `v0.1` become semver `0.1.0` in the workflow.
 - Release executable artifacts are macOS x64/arm64 DMG plus updater ZIP,
@@ -123,6 +127,9 @@ Product language:
 
 - Say `Instances`, not `Sessions`, for running or retained containers.
 - Say `Storage volumes`, not just `Storage`, when referring to Docker volumes.
+- Keep instance deletion separate from workspace deletion. Host workspace
+  directories and named Docker volumes should survive container removal unless a
+  user takes an explicit storage cleanup action.
 - Keep Docker mechanics behind purposeful controls.
 - Put `Open UI` where the instance lives, not in the global header.
 - Keep the surface quiet and precise: avoid excessive borders, nested cards, and
