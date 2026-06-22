@@ -46,7 +46,13 @@ This scope owns:
   sibling `a0-connector` development checkout. Launcher-owned instance launches
   should pass the known host directly to the CLI and skip Docker discovery.
   Before launching, the shell should use a native directory picker so the user
-  chooses the CLI working folder; canceling that picker is a quiet no-op.
+  chooses the CLI working folder; canceling that picker is a quiet no-op. Start
+  the interactive CLI through a launcher-owned wrapper script rather than a
+  long inline shell command so Textual receives normal terminal input.
+- A0 CLI availability shown to the renderer is based on whether the `a0`
+  terminal command can be discovered on the host. Installing A0 CLI is a named
+  shell-owned intent that opens a fixed installer wrapper for the official
+  `a0-connector` install script; do not expose generic command execution.
 - External links should open through Electron `shell.openExternal` only after
   validation.
 - Instance UI tabs are shell-owned `WebContentsView`s. Renderer code may request

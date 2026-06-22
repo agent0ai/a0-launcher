@@ -44,7 +44,9 @@ This scope owns:
   defaults to the Docker `latest` tag.
 - During the first Agent Zero image pull, the operation modal may offer saved
   Instance provider/model defaults and an explicit one-time checkbox to start
-  the first Instance after the download finishes.
+  the first Instance after the download finishes. It may also offer an optional
+  A0 CLI install step before the setup slideshow; every first-pull setup step
+  must include a visible Skip affordance.
 - Long-running non-runtime Docker operations should use the same centered modal
   affordance rather than a top-of-page status strip. Keep the header quiet once
   the modal flow exists.
@@ -53,8 +55,9 @@ This scope owns:
   remote card only when that card points at a loopback URL backed by a
   discovered local container. Pass the card's local UI URL through the
   shell-owned terminal action; the shell prompts for the CLI working folder
-  before opening the terminal. Do not add a global footer or ambiguous
-  active-instance CLI button.
+  before opening the terminal. If the shell reports that the `a0` command is
+  not installed, show `Install A0 CLI` instead of `Open A0 CLI`. Do not add a
+  global footer or ambiguous active-instance CLI button.
 - The compact header shows the Agent Zero wordmark without visible launcher
   version text. Shell app/content metadata may remain in renderer state for
   diagnostics and update decisions, but it should not reintroduce version or

@@ -22,8 +22,9 @@ This scope owns:
   updates, activation, start/stop, delete, rollback, and recovery actions.
 - `runtime-gate/`: mandatory startup runtime setup modal, runtime setup
   progress, recovery actions, and non-dismissable gating.
-- `first-instance-setup/`: first image-pull defaults panel and optional first
-  Instance run choice shown before the setup slideshow.
+- `first-instance-setup/`: first image-pull defaults panel, optional first
+  Instance run choice, and optional A0 CLI install step shown before the setup
+  slideshow.
 - `setup-showcase/`: Agent Zero capability slideshow helper shown during the
   long Agent Zero image pull phase.
 - `onboarding/`: retired runtime setup banner files kept only for compatibility
@@ -91,6 +92,11 @@ This scope owns:
   The first-Instance step may also ask for workspace storage: default to a
   persistent workspace, allow named Docker volumes as the advanced persistent
   choice, and show a clear warning for the explicit no-volume ephemeral choice.
+  After the first-Instance step, show an optional A0 CLI install step that
+  explains local files, host browser access, and Computer Use in user-friendly
+  terms before the setup slideshow. Every first-pull setup phase needs a
+  visible Skip button; skipping the CLI step must preserve any already-saved
+  first-Instance run choice.
   Persist provider/model defaults to Settings, but keep the "start my first
   Instance" checkbox and storage choice transient to that install operation.
 - Active modal progress should show the current phase once, in the progress
@@ -142,6 +148,9 @@ This scope owns:
   the card overflow menu so they always apply to the specific instance shown.
   `Open A0 CLI` should let the shell show the native working-folder picker
   before terminal launch; canceling that picker should not display an error.
+  If the shell reports that the host `a0` command is unavailable, the same menu
+  slot should become `Install A0 CLI` and launch the shell-owned installer
+  intent instead of failing late.
   Clone opens a focused category selector for `/a0/usr` data; all categories are
   selected by default to match Agent Zero backup behavior, while clearing all
   categories intentionally creates a fresh empty workspace. Keep Agent profiles

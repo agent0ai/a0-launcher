@@ -52,7 +52,7 @@ const SETUP_SHOWCASE_SLIDES = Object.freeze([
   Object.freeze({
     id: "a0-cli",
     title: "A0 CLI: Your Browser and Computer",
-    description: "Install the A0 CLI to connect host files, Host Web Browser, and Computer Use beyond the Agent Zero sandbox.",
+    description: "Connect host files, Host Web Browser, and Computer Use beyond the Agent Zero sandbox when A0 CLI is installed.",
     mediaType: "video",
     media: `${SHOWCASE_ASSET_BASE}/computer-use.webm`,
     mediaLabel: "A0 CLI connected to Host Web Browser and Computer Use on the user's desktop."

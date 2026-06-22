@@ -1789,9 +1789,55 @@ body {
   max-width: 34rem;
 }
 
+.dm-first-instance-step-cli {
+  max-width: 36rem;
+}
+
 .dm-first-instance-run {
   display: grid;
   gap: 0.75rem;
+}
+
+.dm-first-instance-cli {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dm-first-instance-cli-copy {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.dm-first-instance-cli-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.dm-first-instance-cli-feature {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-panel) 62%, transparent);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.dm-first-instance-cli-feature .material-symbols-outlined {
+  color: var(--color-highlight);
+  font-size: 1rem;
+}
+
+.dm-first-instance-cli-install {
+  justify-self: start;
 }
 
 .dm-first-instance-check {

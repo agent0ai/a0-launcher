@@ -40,6 +40,8 @@ const BUILD_INFO_FILE = path.join(__dirname, 'build-info.json');
 const GITHUB_REPO_ENV_VAR = 'A0_LAUNCHER_GITHUB_REPO';
 const LOCAL_REPO_ENV_VAR = 'A0_LAUNCHER_LOCAL_REPO';
 const USE_LOCAL_CONTENT_ENV_VAR = 'A0_LAUNCHER_USE_LOCAL_CONTENT';
+const A0_CLI_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/agent0ai/a0-connector/main/install.sh';
+const A0_CLI_INSTALL_SCRIPT_URL_WINDOWS = 'https://raw.githubusercontent.com/agent0ai/a0-connector/main/install.ps1';
 
 function isTruthyEnv(value) {
   const v = (value || '').trim().toLowerCase();
@@ -1952,9 +1954,44 @@ function findCommandOnPath(command) {
   return '';
 }
 
+function findA0CliCommandBinary() {
+  const binary = process.platform === 'win32' ? 'a0.exe' : 'a0';
+  const pathCommand = findCommandOnPath('a0');
+  if (pathCommand) return pathCommand;
+
+  const home = os.homedir();
+  const candidates = process.platform === 'win32'
+    ? [
+        path.join(home, '.local', 'bin', binary)
+      ]
+    : [
+        path.join(home, '.local', 'bin', binary),
+        '/opt/homebrew/bin/a0',
+        '/usr/local/bin/a0',
+        '/usr/bin/a0'
+      ];
+
+  for (const candidate of candidates) {
+    const existing = existingFilePath(candidate);
+    if (existing) return existing;
+  }
+  return '';
+}
+
+function getA0CliStatus() {
+  const commandPath = findA0CliCommandBinary();
+  return {
+    installed: !!commandPath,
+    command: commandPath ? 'a0' : ''
+  };
+}
+
 function findA0CliBinary() {
   const override = existingFilePath(process.env.A0_CLI_PATH);
   if (override) return override;
+
+  const commandBinary = findA0CliCommandBinary();
+  if (commandBinary) return commandBinary;
 
   const repoRoot = path.resolve(__dirname, '..');
   const siblingConnector = path.resolve(repoRoot, '..', 'a0-connector');
@@ -2102,14 +2139,119 @@ function writeDockerLoginPowerShellWrapper(dockerCli) {
   return scriptPath;
 }
 
-function openA0CliTerminalWindows(host, cli, workingDirectory) {
-  const command = [
+function writeA0CliInstallShellWrapper() {
+  const scriptPath = path.join(terminalWrapperDir(), 'a0-cli-install.sh');
+  const script = [
+    '#!/usr/bin/env bash',
+    'set -u',
+    'clear 2>/dev/null || true',
+    'echo "Install A0 CLI"',
+    'echo',
+    'echo "A0 CLI lets Agent Zero work with your local files, browser, and computer when you allow it."',
+    'echo "This installer will add the a0 command to this computer."',
+    'echo',
+    `curl -LsSf ${shellSingleQuote(A0_CLI_INSTALL_SCRIPT_URL)} | sh`,
+    'code=$?',
+    'echo',
+    'if [ "$code" -eq 0 ]; then',
+    '  echo "A0 CLI installation completed. Open a new terminal and run: a0"',
+    'else',
+    '  echo "A0 CLI installation exited with code $code."',
+    'fi',
+    'echo',
+    'read -r -p "Press Enter to close this window..." _',
+    'exit "$code"',
+    ''
+  ].join('\n');
+  fsSync.writeFileSync(scriptPath, script, { encoding: 'utf8', mode: 0o700 });
+  try {
+    fsSync.chmodSync(scriptPath, 0o700);
+  } catch {
+    // Best-effort on platforms that ignore POSIX modes.
+  }
+  return scriptPath;
+}
+
+function writeA0CliInstallPowerShellWrapper() {
+  const scriptPath = path.join(terminalWrapperDir(), 'a0-cli-install.ps1');
+  const script = [
+    'Write-Host "Install A0 CLI"',
+    'Write-Host ""',
+    'Write-Host "A0 CLI lets Agent Zero work with your local files, browser, and computer when you allow it."',
+    'Write-Host "This installer will add the a0 command to this computer."',
+    'Write-Host ""',
+    `irm ${powerShellSingleQuote(A0_CLI_INSTALL_SCRIPT_URL_WINDOWS)} | iex`,
+    '$code = $LASTEXITCODE',
+    'if ($null -eq $code) { $code = 0 }',
+    'Write-Host ""',
+    'if ($code -eq 0) {',
+    '  Write-Host "A0 CLI installation completed. Open a new terminal and run: a0"',
+    '} else {',
+    '  Write-Host "A0 CLI installation exited with code $code."',
+    '}',
+    'Write-Host ""',
+    'Read-Host "Press Enter to close this window"',
+    'exit $code',
+    ''
+  ].join('\r\n');
+  fsSync.writeFileSync(scriptPath, script, { encoding: 'utf8' });
+  return scriptPath;
+}
+
+function writeA0CliLaunchShellWrapper(host, cli, workingDirectory) {
+  const scriptPath = path.join(terminalWrapperDir(), 'a0-cli-launch.sh');
+  const script = [
+    '#!/usr/bin/env bash',
+    'set -u',
+    `cd -- ${shellSingleQuote(workingDirectory)} || exit 1`,
+    `export AGENT_ZERO_HOST=${shellSingleQuote(host)}`,
+    'export TERM="${TERM:-xterm-256color}"',
+    'export COLORTERM="${COLORTERM:-truecolor}"',
+    'export LANG="${LANG:-C.UTF-8}"',
+    'export LC_CTYPE="${LC_CTYPE:-$LANG}"',
+    'export PATH="${HOME:+$HOME/.local/bin:}/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"',
+    `${shellSingleQuote(cli)} --host ${shellSingleQuote(host)} --no-docker-discovery --connect`,
+    'code=$?',
+    'echo',
+    'if [ "$code" -ne 0 ]; then',
+    '  echo "A0 CLI exited with code $code."',
+    'fi',
+    'if [ -n "${SHELL:-}" ] && [ -x "${SHELL:-}" ]; then',
+    '  exec "$SHELL" -l',
+    'fi',
+    'exec /bin/bash -l',
+    ''
+  ].join('\n');
+  fsSync.writeFileSync(scriptPath, script, { encoding: 'utf8', mode: 0o700 });
+  try {
+    fsSync.chmodSync(scriptPath, 0o700);
+  } catch {
+    // Best-effort on platforms that ignore POSIX modes.
+  }
+  return scriptPath;
+}
+
+function writeA0CliLaunchPowerShellWrapper(host, cli, workingDirectory) {
+  const scriptPath = path.join(terminalWrapperDir(), 'a0-cli-launch.ps1');
+  const script = [
     `$env:AGENT_ZERO_HOST = ${powerShellSingleQuote(host)}`,
     `Set-Location -LiteralPath ${powerShellSingleQuote(workingDirectory)}`,
     `& ${powerShellSingleQuote(cli)} --host ${powerShellSingleQuote(host)} --no-docker-discovery --connect`,
-    'if ($LASTEXITCODE) { Write-Host ""; Write-Host "A0 CLI exited with code $LASTEXITCODE" }'
-  ].join('; ');
-  const psArgs = ['-NoLogo', '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command];
+    '$code = $LASTEXITCODE',
+    'if ($null -eq $code) { $code = 0 }',
+    'if ($code -ne 0) {',
+    '  Write-Host ""',
+    '  Write-Host "A0 CLI exited with code $code."',
+    '}',
+    ''
+  ].join('\r\n');
+  fsSync.writeFileSync(scriptPath, script, { encoding: 'utf8' });
+  return scriptPath;
+}
+
+function openA0CliTerminalWindows(host, cli, workingDirectory) {
+  const scriptPath = writeA0CliLaunchPowerShellWrapper(host, cli, workingDirectory);
+  const psArgs = ['-NoLogo', '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
   const env = { ...process.env, AGENT_ZERO_HOST: host };
 
   if (findCommandOnPath('wt.exe')) {
@@ -2156,13 +2298,8 @@ function openA0CliTerminalWindows(host, cli, workingDirectory) {
 }
 
 function openA0CliTerminalMac(host, cli, workingDirectory) {
-  const shellPath = process.env.SHELL || '/bin/zsh';
-  const command = [
-    `cd -- ${shellSingleQuote(workingDirectory)}`,
-    `export AGENT_ZERO_HOST=${shellSingleQuote(host)}`,
-    `${shellSingleQuote(cli)} --host ${shellSingleQuote(host)} --no-docker-discovery --connect`,
-    `exec ${shellSingleQuote(shellPath)} -l`
-  ].join('; ');
+  const scriptPath = writeA0CliLaunchShellWrapper(host, cli, workingDirectory);
+  const command = `bash ${shellSingleQuote(scriptPath)}`;
 
   spawnDetached('osascript', [
     '-e',
@@ -2177,7 +2314,91 @@ function openA0CliTerminalMac(host, cli, workingDirectory) {
 }
 
 function openA0CliTerminalLinux(host, cli, workingDirectory) {
-  const command = `cd -- ${shellSingleQuote(workingDirectory)} && AGENT_ZERO_HOST=${shellSingleQuote(host)} ${shellSingleQuote(cli)} --host ${shellSingleQuote(host)} --no-docker-discovery --connect; exec bash`;
+  const scriptPath = writeA0CliLaunchShellWrapper(host, cli, workingDirectory);
+  const candidates = [
+    ['gnome-terminal', ['--', 'bash', scriptPath]],
+    ['konsole', ['-e', 'bash', scriptPath]],
+    ['xfce4-terminal', ['--working-directory', workingDirectory, '-e', `bash ${shellSingleQuote(scriptPath)}`]],
+    ['x-terminal-emulator', ['-e', 'bash', scriptPath]],
+    ['xterm', ['-e', 'bash', scriptPath]]
+  ];
+
+  let lastError = null;
+  for (const [cmd, args] of candidates) {
+    try {
+      const found = findCommandOnPath(cmd);
+      if (!found) continue;
+      spawnDetached(cmd, args, {
+        env: { ...process.env, AGENT_ZERO_HOST: host },
+        cwd: workingDirectory
+      });
+      return { opened: true, command: cmd };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const err = new Error(lastError?.message || 'No terminal emulator was found.');
+  err.code = 'TERMINAL_UNAVAILABLE';
+  throw err;
+}
+
+function openA0CliInstallTerminalWindows() {
+  const scriptPath = writeA0CliInstallPowerShellWrapper();
+  const psArgs = ['-NoLogo', '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+
+  if (findCommandOnPath('wt.exe')) {
+    try {
+      spawnDetached('wt.exe', ['new-tab', '--title', 'Install A0 CLI', 'powershell.exe', ...psArgs], { env: process.env });
+      return { opened: true, command: 'wt.exe' };
+    } catch {
+      // Fall through to PowerShell's own console window.
+    }
+  }
+
+  const launcherScript = [
+    `$argumentList = ${powerShellArrayLiteral(psArgs)}`,
+    "Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentList -WindowStyle Normal"
+  ].join('; ');
+  const launched = childProcess.spawnSync('powershell.exe', [
+    '-NoLogo',
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    launcherScript
+  ], {
+    encoding: 'utf8',
+    env: process.env,
+    windowsHide: true
+  });
+  if (launched.error || launched.status !== 0) {
+    const detail = launched.error?.message || launched.stderr?.trim() || `PowerShell exited with code ${launched.status}`;
+    const err = new Error(`Could not open the A0 CLI installer. ${detail}`);
+    err.code = 'TERMINAL_UNAVAILABLE';
+    throw err;
+  }
+  return { opened: true, command: 'powershell.exe' };
+}
+
+function openA0CliInstallTerminalMac() {
+  const scriptPath = writeA0CliInstallShellWrapper();
+  const command = `bash ${shellSingleQuote(scriptPath)}`;
+
+  spawnDetached('osascript', [
+    '-e',
+    `tell application "Terminal" to do script ${appleScriptString(command)}`,
+    '-e',
+    'tell application "Terminal" to activate'
+  ], {
+    env: process.env
+  });
+  return { opened: true, command: 'Terminal.app' };
+}
+
+function openA0CliInstallTerminalLinux() {
+  const scriptPath = writeA0CliInstallShellWrapper();
+  const command = `bash ${shellSingleQuote(scriptPath)}`;
   const candidates = [
     ['x-terminal-emulator', ['-e', 'bash', '-lc', command]],
     ['gnome-terminal', ['--', 'bash', '-lc', command]],
@@ -2191,10 +2412,7 @@ function openA0CliTerminalLinux(host, cli, workingDirectory) {
     try {
       const found = findCommandOnPath(cmd);
       if (!found) continue;
-      spawnDetached(cmd, args, {
-        env: { ...process.env, AGENT_ZERO_HOST: host },
-        cwd: workingDirectory
-      });
+      spawnDetached(cmd, args, { env: process.env });
       return { opened: true, command: cmd };
     } catch (error) {
       lastError = error;
@@ -2294,6 +2512,16 @@ function openDockerLoginTerminal() {
   if (process.platform === 'linux') return openDockerLoginTerminalLinux(dockerCli);
 
   const err = new Error('Opening the Docker login terminal is not available on this system.');
+  err.code = 'TERMINAL_UNAVAILABLE';
+  throw err;
+}
+
+function openA0CliInstallTerminal() {
+  if (process.platform === 'win32') return openA0CliInstallTerminalWindows();
+  if (process.platform === 'darwin') return openA0CliInstallTerminalMac();
+  if (process.platform === 'linux') return openA0CliInstallTerminalLinux();
+
+  const err = new Error('Opening the A0 CLI installer is not available on this system.');
   err.code = 'TERMINAL_UNAVAILABLE';
   throw err;
 }
@@ -2595,6 +2823,7 @@ function sanitizeDockerManagerState(state) {
     retainedInstances,
     remoteInstances,
     retentionPolicy,
+    cli: getA0CliStatus(),
     instanceDefaults
   };
 
@@ -3328,6 +3557,14 @@ ipcMain.handle('docker-manager:openCliTerminal', async (event, body) => {
     const host = typeof body.host === 'string' ? body.host : '';
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
     return await openA0CliTerminal(host, ownerWindow);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:installCli', async () => {
+  try {
+    return openA0CliInstallTerminal();
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

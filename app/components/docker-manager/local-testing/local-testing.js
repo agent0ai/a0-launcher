@@ -743,6 +743,7 @@ function renderDockerInstance(list, c, state) {
   const displayName = c?.instanceName || c?.containerName || c?.containerId?.slice(0, 12) || "instance";
   const imageTag = imageTagForContainer(c);
   const cliHost = localUiUrl(c?.uiUrl);
+  const cliInstalled = state?.cli?.installed === true;
   const card = document.createElement("div");
   card.className = "dm-card";
 
@@ -868,15 +869,18 @@ function renderDockerInstance(list, c, state) {
       disabled: !containerId || operationRunning,
       title: "Clone this instance on open ports"
     }),
-    menuButton("terminal", "Open A0 CLI", () => {
-      window.dockerManagerActions?.openCliTerminal?.(cliHost);
+    menuButton(cliInstalled ? "terminal" : "download", cliInstalled ? "Open A0 CLI" : "Install A0 CLI", () => {
+      if (cliInstalled) window.dockerManagerActions?.openCliTerminal?.(cliHost);
+      else window.dockerManagerActions?.installCli?.();
     }, {
-      disabled: !isRunning || !cliHost || operationRunning,
-      title: !isRunning
-        ? "Start this instance before opening A0 CLI"
-        : cliHost
-          ? "Choose a folder and open A0 CLI for this instance"
-          : "A0 CLI requires a running local Web UI"
+      disabled: cliInstalled ? (!isRunning || !cliHost || operationRunning) : operationRunning,
+      title: cliInstalled
+        ? !isRunning
+          ? "Start this instance before opening A0 CLI"
+          : cliHost
+            ? "Choose a folder and open A0 CLI for this instance"
+            : "A0 CLI requires a running local Web UI"
+        : "Install A0 CLI on this computer"
     }),
     menuButton("stop_circle", "Stop", () => {
       window.dockerManagerActions?.stopLocalInstance?.(containerId);

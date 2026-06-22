@@ -218,6 +218,7 @@ function snapshot() {
     progress: store.progress || null,
     portPreferences: store.portPreferences || null,
     instanceDefaults: normalizeInstanceDefaults(store.instanceDefaults),
+    cli: store.cli || { installed: false, command: "" },
     retentionPolicy: store.retentionPolicy || null,
     instanceTabs: store.instanceTabs || { tabs: [], activeTabId: "" }
   };
@@ -327,6 +328,7 @@ async function refresh() {
       store.portPreferences = state?.portPreferences || null;
       store.storagePreferences = state?.storagePreferences || null;
       store.instanceDefaults = state?.instanceDefaults || null;
+      store.cli = state?.cli || { installed: false, command: "" };
       store.retentionPolicy = state?.retentionPolicy || null;
       if (!store.error) setBanner("", "");
     }
@@ -846,6 +848,23 @@ async function openCliTerminal(host = "") {
   }
 }
 
+async function installCli() {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.installCli !== "function") return false;
+  try {
+    const res = await api.installCli();
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    setBanner("info", "A0 CLI installer opened.");
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to open A0 CLI installer");
+    return false;
+  }
+}
+
 async function openDockerLoginTerminal() {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.openDockerLoginTerminal !== "function") return false;
@@ -1011,6 +1030,7 @@ window.dockerManagerActions = {
   runCustomImage,
   setStoragePreferences,
   openCliTerminal,
+  installCli,
   openDockerLoginTerminal,
   retryInstall,
   cancelOperation,
@@ -1076,6 +1096,7 @@ function initSubscriptions() {
         store.runtimeDiagnostics = state?.runtimeDiagnostics || store.runtimeDiagnostics || null;
         store.portPreferences = state?.portPreferences || null;
         store.instanceDefaults = state?.instanceDefaults || null;
+        store.cli = state?.cli || { installed: false, command: "" };
         store.retentionPolicy = state?.retentionPolicy || null;
         emitState();
       }
