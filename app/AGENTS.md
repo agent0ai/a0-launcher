@@ -52,7 +52,8 @@ This scope owns:
   instance card. Clone belongs to local containers and may appear on a saved
   remote card only when that card points at a loopback URL backed by a
   discovered local container. Pass the card's local UI URL through the
-  shell-owned terminal action; do not add a global footer or ambiguous
+  shell-owned terminal action; the shell prompts for the CLI working folder
+  before opening the terminal. Do not add a global footer or ambiguous
   active-instance CLI button.
 - The compact header shows the Agent Zero wordmark without visible launcher
   version text. Shell app/content metadata may remain in renderer state for

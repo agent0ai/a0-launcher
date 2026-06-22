@@ -45,6 +45,8 @@ This scope owns:
   Windows, macOS, and Linux when the `a0` CLI is installed or available in a
   sibling `a0-connector` development checkout. Launcher-owned instance launches
   should pass the known host directly to the CLI and skip Docker discovery.
+  Before launching, the shell should use a native directory picker so the user
+  chooses the CLI working folder; canceling that picker is a quiet no-op.
 - External links should open through Electron `shell.openExternal` only after
   validation.
 - Instance UI tabs are shell-owned `WebContentsView`s. Renderer code may request

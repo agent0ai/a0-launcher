@@ -833,6 +833,7 @@ async function openCliTerminal(host = "") {
   }
   try {
     const res = await api.openCliTerminal(target);
+    if (res?.canceled) return false;
     if (isErrorResponse(res)) {
       setBanner("error", res.message);
       return false;

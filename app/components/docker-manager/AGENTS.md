@@ -140,6 +140,8 @@ This scope owns:
   Secondary management and inspection actions such as `Rename`, `See logs`,
   `Open storage folder`, `Clone`, `Open A0 CLI`, `Stop`, and `Delete` belong in
   the card overflow menu so they always apply to the specific instance shown.
+  `Open A0 CLI` should let the shell show the native working-folder picker
+  before terminal launch; canceling that picker should not display an error.
   Clone opens a focused category selector for `/a0/usr` data; all categories are
   selected by default to match Agent Zero backup behavior, while clearing all
   categories intentionally creates a fresh empty workspace. Keep Agent profiles

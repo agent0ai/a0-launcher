@@ -875,7 +875,7 @@ function renderDockerInstance(list, c, state) {
       title: !isRunning
         ? "Start this instance before opening A0 CLI"
         : cliHost
-          ? "Open A0 CLI for this instance"
+          ? "Choose a folder and open A0 CLI for this instance"
           : "A0 CLI requires a running local Web UI"
     }),
     menuButton("stop_circle", "Stop", () => {

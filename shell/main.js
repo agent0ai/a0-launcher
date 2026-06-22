@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, net, ipcMain, shell, Tray, Menu, nativeImage, protocol } = require('electron');
+const { app, BrowserWindow, WebContentsView, net, ipcMain, shell, Tray, Menu, nativeImage, protocol, dialog } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const os = require('node:os');
@@ -1884,6 +1884,39 @@ function existingFilePath(filePath) {
   }
 }
 
+function existingDirectoryPath(dirPath) {
+  const candidate = typeof dirPath === 'string' ? dirPath : '';
+  if (!candidate) return '';
+  try {
+    const resolved = path.resolve(candidate);
+    return fsSync.statSync(resolved).isDirectory() ? resolved : '';
+  } catch {
+    return '';
+  }
+}
+
+async function chooseA0CliWorkingDirectory(ownerWindow) {
+  const options = {
+    title: 'Open A0 CLI From Folder',
+    buttonLabel: 'Open A0 CLI',
+    defaultPath: os.homedir(),
+    properties: ['openDirectory', 'createDirectory']
+  };
+  const result = ownerWindow && !ownerWindow.isDestroyed()
+    ? await dialog.showOpenDialog(ownerWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result?.canceled) return '';
+
+  const selected = Array.isArray(result?.filePaths) ? result.filePaths[0] : '';
+  const directory = existingDirectoryPath(selected);
+  if (!directory) {
+    const err = new Error('Choose an existing folder before opening the A0 CLI terminal.');
+    err.code = 'INVALID_INPUT';
+    throw err;
+  }
+  return directory;
+}
+
 function firstPathLine(value) {
   return String(value || '')
     .split(/\r?\n/)
@@ -2069,9 +2102,10 @@ function writeDockerLoginPowerShellWrapper(dockerCli) {
   return scriptPath;
 }
 
-function openA0CliTerminalWindows(host, cli) {
+function openA0CliTerminalWindows(host, cli, workingDirectory) {
   const command = [
     `$env:AGENT_ZERO_HOST = ${powerShellSingleQuote(host)}`,
+    `Set-Location -LiteralPath ${powerShellSingleQuote(workingDirectory)}`,
     `& ${powerShellSingleQuote(cli)} --host ${powerShellSingleQuote(host)} --no-docker-discovery --connect`,
     'if ($LASTEXITCODE) { Write-Host ""; Write-Host "A0 CLI exited with code $LASTEXITCODE" }'
   ].join('; ');
@@ -2080,7 +2114,15 @@ function openA0CliTerminalWindows(host, cli) {
 
   if (findCommandOnPath('wt.exe')) {
     try {
-      spawnDetached('wt.exe', ['new-tab', '--title', 'A0 CLI', 'powershell.exe', ...psArgs], { env });
+      spawnDetached('wt.exe', [
+        'new-tab',
+        '--title',
+        'A0 CLI',
+        '--startingDirectory',
+        workingDirectory,
+        'powershell.exe',
+        ...psArgs
+      ], { env, cwd: workingDirectory });
       return { opened: true, command: 'wt.exe' };
     } catch {
       // Fall through to PowerShell's own console window.
@@ -2089,7 +2131,7 @@ function openA0CliTerminalWindows(host, cli) {
 
   const launcherScript = [
     `$argumentList = ${powerShellArrayLiteral(psArgs)}`,
-    "Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentList -WindowStyle Normal"
+    `Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentList -WorkingDirectory ${powerShellSingleQuote(workingDirectory)} -WindowStyle Normal`
   ].join('; ');
   const launched = childProcess.spawnSync('powershell.exe', [
     '-NoLogo',
@@ -2101,6 +2143,7 @@ function openA0CliTerminalWindows(host, cli) {
   ], {
     encoding: 'utf8',
     env,
+    cwd: workingDirectory,
     windowsHide: true
   });
   if (launched.error || launched.status !== 0) {
@@ -2112,9 +2155,10 @@ function openA0CliTerminalWindows(host, cli) {
   return { opened: true, command: 'powershell.exe' };
 }
 
-function openA0CliTerminalMac(host, cli) {
+function openA0CliTerminalMac(host, cli, workingDirectory) {
   const shellPath = process.env.SHELL || '/bin/zsh';
   const command = [
+    `cd -- ${shellSingleQuote(workingDirectory)}`,
     `export AGENT_ZERO_HOST=${shellSingleQuote(host)}`,
     `${shellSingleQuote(cli)} --host ${shellSingleQuote(host)} --no-docker-discovery --connect`,
     `exec ${shellSingleQuote(shellPath)} -l`
@@ -2126,13 +2170,14 @@ function openA0CliTerminalMac(host, cli) {
     '-e',
     'tell application "Terminal" to activate'
   ], {
-    env: { ...process.env, AGENT_ZERO_HOST: host }
+    env: { ...process.env, AGENT_ZERO_HOST: host },
+    cwd: workingDirectory
   });
   return { opened: true, command: 'Terminal.app' };
 }
 
-function openA0CliTerminalLinux(host, cli) {
-  const command = `AGENT_ZERO_HOST=${shellSingleQuote(host)} ${shellSingleQuote(cli)} --host ${shellSingleQuote(host)} --no-docker-discovery --connect; exec bash`;
+function openA0CliTerminalLinux(host, cli, workingDirectory) {
+  const command = `cd -- ${shellSingleQuote(workingDirectory)} && AGENT_ZERO_HOST=${shellSingleQuote(host)} ${shellSingleQuote(cli)} --host ${shellSingleQuote(host)} --no-docker-discovery --connect; exec bash`;
   const candidates = [
     ['x-terminal-emulator', ['-e', 'bash', '-lc', command]],
     ['gnome-terminal', ['--', 'bash', '-lc', command]],
@@ -2147,7 +2192,8 @@ function openA0CliTerminalLinux(host, cli) {
       const found = findCommandOnPath(cmd);
       if (!found) continue;
       spawnDetached(cmd, args, {
-        env: { ...process.env, AGENT_ZERO_HOST: host }
+        env: { ...process.env, AGENT_ZERO_HOST: host },
+        cwd: workingDirectory
       });
       return { opened: true, command: cmd };
     } catch (error) {
@@ -2252,7 +2298,7 @@ function openDockerLoginTerminal() {
   throw err;
 }
 
-function openA0CliTerminal(host) {
+async function openA0CliTerminal(host, ownerWindow) {
   const h = String(host || '').trim();
   if (!isAllowedLocalUrl(h)) {
     const err = new Error('Start an instance before opening the A0 CLI terminal.');
@@ -2261,9 +2307,12 @@ function openA0CliTerminal(host) {
   }
 
   const cli = findA0CliBinary();
-  if (process.platform === 'win32') return openA0CliTerminalWindows(h, cli);
-  if (process.platform === 'darwin') return openA0CliTerminalMac(h, cli);
-  if (process.platform === 'linux') return openA0CliTerminalLinux(h, cli);
+  const workingDirectory = await chooseA0CliWorkingDirectory(ownerWindow);
+  if (!workingDirectory) return { opened: false, canceled: true };
+
+  if (process.platform === 'win32') return openA0CliTerminalWindows(h, cli, workingDirectory);
+  if (process.platform === 'darwin') return openA0CliTerminalMac(h, cli, workingDirectory);
+  if (process.platform === 'linux') return openA0CliTerminalLinux(h, cli, workingDirectory);
 
   const err = new Error('Opening the A0 CLI terminal is not available on this system.');
   err.code = 'TERMINAL_UNAVAILABLE';
@@ -3273,11 +3322,12 @@ ipcMain.handle('docker-manager:openHomepage', async () => {
   }
 });
 
-ipcMain.handle('docker-manager:openCliTerminal', async (_event, body) => {
+ipcMain.handle('docker-manager:openCliTerminal', async (event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const host = typeof body.host === 'string' ? body.host : '';
-    return openA0CliTerminal(host);
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    return await openA0CliTerminal(host, ownerWindow);
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
