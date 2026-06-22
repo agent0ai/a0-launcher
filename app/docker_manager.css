@@ -29,6 +29,10 @@ body {
   --dm-surface-strong: color-mix(in srgb, var(--color-panel) 92%, var(--color-background) 8%);
   --dm-blue: var(--color-highlight);
   --dm-radius-max: 6px;
+  --dm-page-gutter-x: clamp(1rem, 2.2vw, 3rem);
+  --dm-page-gutter-y: clamp(1rem, 1.6vw, 2rem);
+  --dm-layout-gap: clamp(1rem, 1.6vw, 2rem);
+  --dm-sidebar-width: clamp(12rem, 12vw, 16rem);
 }
 
 .hidden {
@@ -36,12 +40,13 @@ body {
 }
 
 .dm-page {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 1.25rem 1rem 2.5rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--dm-page-gutter-y) var(--dm-page-gutter-x) clamp(2rem, 3vw, 3.5rem);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--dm-layout-gap);
 }
 
 .dm-header {
@@ -56,8 +61,8 @@ body {
 
 .dm-layout {
   display: grid;
-  grid-template-columns: 210px 1fr;
-  gap: 1.5rem;
+  grid-template-columns: var(--dm-sidebar-width) minmax(0, 1fr);
+  gap: var(--dm-layout-gap);
   align-items: start;
 }
 
@@ -129,6 +134,7 @@ body {
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+  width: 100%;
 }
 
 .dm-tab-content {
@@ -145,9 +151,10 @@ body {
 }
 
 .sv-page {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 1.25rem 1rem 2.5rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 .sv-main {
@@ -356,7 +363,7 @@ body {
 }
 
 .dm-official-list-scroll {
-  max-height: min(36rem, calc(100vh - 13rem));
+  max-height: calc(100vh - 13rem);
   padding-top: 0.25rem;
   padding-bottom: 0.25rem;
   scroll-padding-block: 0.25rem;
@@ -999,12 +1006,12 @@ body {
 }
 
 .dm-advanced-tab-panel[data-advanced-panel="developer"] {
-  max-width: 58rem;
+  max-width: none;
 }
 
 .dm-advanced-tab-panel[data-advanced-panel="diagnostics"],
 .dm-advanced-tab-panel[data-advanced-panel="storage"] {
-  max-width: 64rem;
+  max-width: none;
 }
 
 .dm-advanced-panel-head {
@@ -1080,7 +1087,7 @@ body {
 .dm-diagnostics-report {
   display: grid;
   gap: 1.1rem;
-  max-width: 58rem;
+  max-width: none;
 }
 
 .dm-diagnostic-summary {
@@ -2264,7 +2271,7 @@ body {
 }
 
 body.dm-instance-home-active .dm-page {
-  padding-top: calc(1.25rem + 2.95rem);
+  padding-top: calc(var(--dm-page-gutter-y) + 2.95rem);
 }
 
 .dm-instance-tabs.home-active {
@@ -2394,7 +2401,7 @@ body.dm-instance-home-active .dm-page {
 
 @media (max-width: 760px) {
   body.dm-instance-home-active .dm-page {
-    padding-top: calc(1.25rem + 2.9rem);
+    padding-top: calc(var(--dm-page-gutter-y) + 2.9rem);
   }
 
   .dm-instance-tab {
