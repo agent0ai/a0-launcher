@@ -88,26 +88,15 @@ function imageTagForContainer(c) {
     "";
 }
 
+function instanceVisualBadge(c) {
+  return runtimeBranch(c) || imageTagForContainer(c);
+}
+
 function dockerInstanceRuntimeSummary(c) {
   const branch = runtimeBranch(c);
   const shortCommit = runtimeShortCommit(c);
   if (branch && shortCommit) return `${branch} @ ${shortCommit}`;
   return branch || shortCommit || "";
-}
-
-function workspaceStorageSummary(c) {
-  const storage = c?.workspaceStorage || null;
-  if (!storage) return "";
-  if (storage.legacy || storage.mode === "legacy_ephemeral") {
-    return storage.migrationAvailable ? "Legacy ephemeral workspace - migration available" : "Legacy ephemeral workspace";
-  }
-  if (storage.mode === "ephemeral" || storage.persistent === false) {
-    return storage.migrationAvailable ? "Ephemeral workspace - migration available" : "Ephemeral workspace";
-  }
-  if (storage.mode === "named_volume") return "Named volume workspace";
-  if (storage.mode === "host_directory") return "Persistent workspace";
-  if (storage.mode === "custom_mount") return "Custom workspace mount";
-  return storage.persistent ? "Persistent workspace" : "";
 }
 
 function workspaceMigrationAvailable(c) {
@@ -741,15 +730,15 @@ function renderDockerInstance(list, c, state) {
   const operationRunning = state?.progress?.status === "running";
   const containerId = c?.containerId || "";
   const displayName = c?.instanceName || c?.containerName || c?.containerId?.slice(0, 12) || "instance";
-  const imageTag = imageTagForContainer(c);
+  const visualBadge = instanceVisualBadge(c);
   const cliHost = localUiUrl(c?.uiUrl);
   const cliInstalled = state?.cli?.installed === true;
   const card = document.createElement("div");
   card.className = "dm-card";
 
   const visual = createInstanceVisual(displayName, {
-    badge: imageTag,
-    seed: `${displayName}:${imageTag || containerId}`
+    badge: visualBadge,
+    seed: `${displayName}:${visualBadge || containerId}`
   });
 
   const body = document.createElement("div");
@@ -761,18 +750,20 @@ function renderDockerInstance(list, c, state) {
 
   const meta = document.createElement("div");
   meta.className = "dm-card-meta";
-  const parts = [];
   const runtimeSummary = dockerInstanceRuntimeSummary(c);
-  if (runtimeSummary) {
-    parts.push(runtimeSummary);
-    if (imageTag && imageTag !== runtimeBranch(c)) parts.push(`image ${imageTag}`);
+  if (runtimeSummary || c?.status) {
+    const summary = document.createElement("div");
+    summary.className = "dm-card-meta-line";
+    summary.textContent = runtimeSummary || c.status;
+    meta.appendChild(summary);
   }
-  const workspaceSummary = workspaceStorageSummary(c);
-  if (workspaceSummary) parts.push(workspaceSummary);
-  if (c?.uiUrl) parts.push(c.uiUrl);
-  else if (c?.status) parts.push(c.status);
-  meta.textContent = parts.join(" \u00B7 ");
-  body.appendChild(meta);
+  if (c?.uiUrl) {
+    const url = document.createElement("div");
+    url.className = "dm-card-meta-line dm-card-meta-url";
+    url.textContent = c.uiUrl;
+    meta.appendChild(url);
+  }
+  if (meta.childNodes.length) body.appendChild(meta);
 
   const footer = document.createElement("div");
   footer.className = "dm-card-footer";

@@ -522,9 +522,19 @@ body {
 }
 
 .dm-card-meta {
+  display: grid;
+  gap: 0.08rem;
   color: var(--color-text-muted);
   font-size: 0.78rem;
   line-height: 1.4;
+}
+
+.dm-card-meta-line {
+  min-width: 0;
+}
+
+.dm-card-meta-url {
+  overflow-wrap: anywhere;
 }
 
 .dm-card-footer {

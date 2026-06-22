@@ -159,12 +159,17 @@ This scope owns:
   container is paused and resumed, and that running AI work stops and must be
   resumed manually.
 - Local instance cards should use the launcher-visible instance name as the
-  primary visual identity. Keep Docker image version and runtime source
-  provenance compact and secondary.
-- Local instance cards should show workspace state quietly. Persistent host
+  primary visual identity. The visual version chip should prefer the runtime
+  branch reported from inside the container over the original Docker image tag,
+  because self-updated containers can run `ready` code from a `latest` image.
+  Keep the metadata compact: show runtime branch/commit first, put the URL on
+  its own line, and avoid listing routine `image latest` or persistent
+  workspace fragments in the primary card text.
+- Local instance cards should keep workspace state quiet. Persistent host
   directories, named volumes, custom mounts, and legacy ephemeral workspaces
-  should be distinguishable without turning Docker storage into the primary
-  card story. Intentionally ephemeral workspaces should not be labeled legacy.
+  should be distinguishable through relevant controls and storage affordances
+  without turning Docker storage into the primary card story. Intentionally
+  ephemeral workspaces should not be labeled legacy.
 - `Open storage folder` should appear only for persistent workspace storage
   that exposes an actual host directory path. Do not show it for named Docker
   volumes when the host file manager cannot open a stable user-facing folder.
