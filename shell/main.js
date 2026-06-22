@@ -2836,7 +2836,10 @@ ipcMain.handle('docker-manager:cloneLocalInstance', async (_event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const containerId = typeof body.containerId === 'string' ? body.containerId : '';
-    const accepted = await dockerManager.cloneLocalInstance(containerId);
+    const workspaceCategories = Array.isArray(body.workspaceCategories) || isPlainObject(body.workspaceCategories)
+      ? body.workspaceCategories
+      : null;
+    const accepted = await dockerManager.cloneLocalInstance(containerId, { workspaceCategories });
     if (!accepted || typeof accepted.opId !== 'string') {
       return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Clone did not return an opId' });
     }

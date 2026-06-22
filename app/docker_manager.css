@@ -443,21 +443,19 @@ body {
 }
 
 .dm-card-instance-visual {
+  --dm-instance-visual-bg: color-mix(in srgb, var(--dm-version-bg) 68%, var(--color-panel));
   position: relative;
   overflow: hidden;
   align-items: center;
   padding: 1.1rem 1rem 2.25rem;
-  background: color-mix(in srgb, var(--dm-version-bg) 68%, var(--color-panel));
-  border-bottom-color: var(--dm-version-border);
-}
-
-.dm-card-instance-visual::after {
-  content: "";
-  position: absolute;
-  inset: auto 1rem 1.85rem 1rem;
-  height: 1px;
-  background: var(--dm-version-border);
-  opacity: 0.65;
+  background: linear-gradient(
+    to bottom,
+    var(--dm-instance-visual-bg) 0%,
+    var(--dm-instance-visual-bg) 68%,
+    color-mix(in srgb, var(--dm-instance-visual-bg) 46%, var(--dm-surface-strong) 54%) 88%,
+    var(--dm-surface-strong) 100%
+  );
+  border-bottom-color: transparent;
 }
 
 .dm-card-instance-name {
@@ -1397,6 +1395,60 @@ body {
   min-width: 2rem;
 }
 
+.dm-clone-dialog {
+  width: min(42rem, 100%);
+}
+
+.dm-clone-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dm-clone-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.dm-clone-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: start;
+  min-width: 0;
+  padding: 0.62rem;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.dm-clone-option input {
+  margin-top: 0.1rem;
+  accent-color: var(--color-highlight);
+}
+
+.dm-clone-option-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.dm-clone-option-label {
+  color: var(--color-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.dm-clone-option-detail {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
 .dm-logs-backdrop {
   position: fixed;
   inset: 0;
@@ -2234,6 +2286,10 @@ body.dm-instance-home-active .dm-page {
   }
 
   .dm-advanced-form {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-clone-options {
     grid-template-columns: 1fr;
   }
 

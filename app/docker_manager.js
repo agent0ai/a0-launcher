@@ -725,12 +725,13 @@ async function startLocalInstance(containerId) {
   );
 }
 
-async function cloneLocalInstance(containerId) {
+async function cloneLocalInstance(containerId, options = {}) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.cloneLocalInstance !== "function") return false;
+  const payload = options && typeof options === "object" ? options : {};
   const res = await runDockerOperation(
     "Clone",
-    () => api.cloneLocalInstance(containerId || ""),
+    () => api.cloneLocalInstance(containerId || "", payload),
     "Clone requested."
   );
   return !isErrorResponse(res);

@@ -140,6 +140,13 @@ This scope owns:
   Secondary management and inspection actions such as `Rename`, `See logs`,
   `Open storage folder`, `Clone`, `Open A0 CLI`, `Stop`, and `Delete` belong in
   the card overflow menu so they always apply to the specific instance shown.
+  Clone opens a focused category selector for `/a0/usr` data; all categories are
+  selected by default to match Agent Zero backup behavior, while clearing all
+  categories intentionally creates a fresh empty workspace. Keep Agent profiles
+  as their own category for `/a0/usr/agents`, separate from generic workspace
+  files. Clone and persistence-migration entry points must warn that the source
+  container is paused and resumed, and that running AI work stops and must be
+  resumed manually.
 - Local instance cards should use the launcher-visible instance name as the
   primary visual identity. Keep Docker image version and runtime source
   provenance compact and secondary.

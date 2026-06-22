@@ -450,6 +450,44 @@ export class DockerInterface {
   }
 
   /**
+   * Write a bounded UTF-8 text file into a container.
+   * Intended for product workflows that need to materialize generated config
+   * files; this is not exposed to the renderer as a file browser.
+   *
+   * @param {string} containerId
+   * @param {string} filePath
+   * @param {string} text
+   * @returns {Promise<{written: boolean}>}
+   */
+  async writeContainerTextFile(_containerId, _filePath, _text) {
+    throw new Error('DockerInterface.writeContainerTextFile is abstract');
+  }
+
+  /**
+   * Ensure a container directory exists.
+   *
+   * @param {string} containerId
+   * @param {string} directoryPath
+   * @returns {Promise<{created: boolean}>}
+   */
+  async ensureContainerDirectory(_containerId, _directoryPath) {
+    throw new Error('DockerInterface.ensureContainerDirectory is abstract');
+  }
+
+  /**
+   * List immediate children of a container directory.
+   *
+   * @param {string} containerId
+   * @param {string} directoryPath
+   * @param {Object=} options
+   * @param {number=} options.maxBytes
+   * @returns {Promise<Array<{name: string, type: string}>>}
+   */
+  async listContainerDirectory(_containerId, _directoryPath, _options = {}) {
+    throw new Error('DockerInterface.listContainerDirectory is abstract');
+  }
+
+  /**
    * Copy a container filesystem path into another container using Docker's archive API.
    * Intended for bounded product workflows such as workspace migration.
    *

@@ -102,7 +102,19 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   installOrSync: (tag) => ipcRenderer.invoke('docker-manager:install', { tag }),
   startActive: () => ipcRenderer.invoke('docker-manager:startActive'),
   startLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:startLocalInstance', { containerId }),
-  cloneLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:cloneLocalInstance', { containerId }),
+  cloneLocalInstance: (containerId, options) => {
+    const opts = options && typeof options === 'object' ? options : {};
+    const hasWorkspaceCategories = Object.prototype.hasOwnProperty.call(opts, 'workspaceCategories');
+    return ipcRenderer.invoke('docker-manager:cloneLocalInstance', {
+      containerId,
+      workspaceCategories: hasWorkspaceCategories && (
+        Array.isArray(opts.workspaceCategories) ||
+        (opts.workspaceCategories && typeof opts.workspaceCategories === 'object')
+      )
+        ? opts.workspaceCategories
+        : null
+    });
+  },
   openLocalInstanceStorageFolder: (containerId) =>
     ipcRenderer.invoke('docker-manager:openLocalInstanceStorageFolder', { containerId }),
   migrateLocalInstanceStorage: (containerId, options) => {

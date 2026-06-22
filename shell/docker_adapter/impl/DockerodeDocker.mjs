@@ -1,5 +1,7 @@
 import Dockerode from 'dockerode';
 import { once } from 'node:events';
+import path from 'node:path';
+import { Readable } from 'node:stream';
 import { DockerInterface } from '../DockerInterface.mjs';
 import { resolveDockerAuthConfigForImage } from './DockerAuthConfig.mjs';
 import { DockerHubRegistry } from './DockerHubRegistry.mjs';
@@ -137,6 +139,13 @@ function clampReadBytes(value) {
   return Math.max(1, Math.min(1024 * 1024, Math.floor(max)));
 }
 
+function clampArchiveListBytes(value) {
+  const fallback = 8 * 1024 * 1024;
+  const max = Number(value);
+  if (!Number.isFinite(max)) return fallback;
+  return Math.max(1, Math.min(64 * 1024 * 1024, Math.floor(max)));
+}
+
 function textOrNull(value, maxLength = 240) {
   const text = typeof value === 'string' ? value.trim() : '';
   if (!text) return null;
@@ -186,6 +195,104 @@ function tarHeaderSize(header) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function tarHeaderName(header) {
+  const name = header.subarray(0, 100).toString('utf8').replace(/\0.*$/u, '');
+  const prefix = header.subarray(345, 500).toString('utf8').replace(/\0.*$/u, '');
+  return `${prefix ? `${prefix}/` : ''}${name}`.replace(/^\.\/+/, '');
+}
+
+function tarPaddedSize(size) {
+  return Math.ceil(size / 512) * 512;
+}
+
+function tarWriteString(header, value, offset, length) {
+  const text = String(value || '').slice(0, length);
+  header.write(text, offset, Math.min(Buffer.byteLength(text), length), 'utf8');
+}
+
+function tarWriteOctal(header, value, offset, length) {
+  const text = Math.max(0, Number(value) || 0)
+    .toString(8)
+    .padStart(Math.max(0, length - 1), '0')
+    .slice(-(length - 1));
+  header.write(text, offset, length - 1, 'ascii');
+  header[offset + length - 1] = 0;
+}
+
+function tarFinalizeChecksum(header) {
+  for (let i = 148; i < 156; i += 1) header[i] = 32;
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  const text = sum.toString(8).padStart(6, '0').slice(-6);
+  header.write(text, 148, 6, 'ascii');
+  header[154] = 0;
+  header[155] = 32;
+}
+
+function tarArchiveForEntry(name, data = Buffer.alloc(0), typeflag = '0') {
+  const cleanName = String(name || '').replace(/^\/+/, '');
+  if (!cleanName || cleanName.includes('\0')) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'archive entry name is invalid');
+  }
+  const body = Buffer.isBuffer(data) ? data : Buffer.from(String(data || ''), 'utf8');
+  const header = Buffer.alloc(512);
+  tarWriteString(header, cleanName, 0, 100);
+  tarWriteOctal(header, typeflag === '5' ? 0o755 : 0o644, 100, 8);
+  tarWriteOctal(header, 0, 108, 8);
+  tarWriteOctal(header, 0, 116, 8);
+  tarWriteOctal(header, typeflag === '5' ? 0 : body.length, 124, 12);
+  tarWriteOctal(header, Math.floor(Date.now() / 1000), 136, 12);
+  header[156] = typeflag.charCodeAt(0);
+  tarWriteString(header, 'ustar', 257, 6);
+  tarWriteString(header, '00', 263, 2);
+  tarFinalizeChecksum(header);
+
+  const paddedSize = tarPaddedSize(body.length);
+  return Buffer.concat([
+    header,
+    body,
+    Buffer.alloc(paddedSize - body.length),
+    Buffer.alloc(1024)
+  ]);
+}
+
+function immediateChildrenFromTar(archive, directoryPath) {
+  if (!Buffer.isBuffer(archive) || archive.length < 512) return [];
+  const rootName = path.posix.basename(String(directoryPath || '').replace(/\/+$/u, ''));
+  const entries = new Map();
+
+  let offset = 0;
+  while (offset + 512 <= archive.length) {
+    const header = archive.subarray(offset, offset + 512);
+    if (isZeroTarBlock(header)) break;
+
+    const size = tarHeaderSize(header);
+    const dataStart = offset + 512;
+    const dataEnd = dataStart + size;
+    if (dataEnd > archive.length) break;
+
+    const rawName = tarHeaderName(header).replace(/\/+$/u, '');
+    let parts = rawName.split('/').filter(Boolean);
+    if (parts[0] === rootName) parts = parts.slice(1);
+    if (parts.length > 0) {
+      const name = parts[0];
+      if (name && name !== '.' && name !== '..' && !name.includes('/')) {
+        const typeflag = header[156];
+        const type = typeflag === 53 || parts.length > 1 ? 'directory' : 'file';
+        const previous = entries.get(name);
+        entries.set(name, {
+          name,
+          type: previous?.type === 'directory' || type === 'directory' ? 'directory' : 'file'
+        });
+      }
+    }
+
+    offset = dataStart + tarPaddedSize(size);
+  }
+
+  return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function extractFirstRegularFileFromTar(archive, maxBytes) {
   if (!Buffer.isBuffer(archive) || archive.length < 512) return null;
 
@@ -204,8 +311,7 @@ function extractFirstRegularFileFromTar(archive, maxBytes) {
       return archive.subarray(dataStart, Math.min(dataEnd, dataStart + maxBytes));
     }
 
-    const paddedSize = Math.ceil(size / 512) * 512;
-    offset = dataStart + paddedSize;
+    offset = dataStart + tarPaddedSize(size);
   }
 
   return null;
@@ -950,6 +1056,106 @@ export class DockerodeDocker extends DockerInterface {
     } catch (error) {
       if (Number(error?.statusCode) === 404 || error?.code === 'NOT_FOUND') return null;
       throw normalizeDockerError(error, { op: 'readContainerTextFile', containerId: id, filePath: targetPath, env: this.#envSummary() });
+    }
+  }
+
+  async writeContainerTextFile(containerId, filePath, text) {
+    const id = (containerId || '').trim();
+    if (!id) throw makeDockerInterfaceError('INVALID_INPUT', 'containerId is required');
+
+    const targetPath = validateContainerFilePath(filePath);
+    const parentPath = path.posix.dirname(targetPath);
+    const fileName = path.posix.basename(targetPath);
+    if (!fileName || fileName === '.' || fileName === '..') {
+      throw makeDockerInterfaceError('INVALID_INPUT', 'filePath must include a file name');
+    }
+
+    try {
+      const c = this.docker.getContainer(id);
+      const archive = tarArchiveForEntry(fileName, Buffer.from(String(text || ''), 'utf8'), '0');
+      await new Promise((resolve, reject) => {
+        c.putArchive(Readable.from(archive), { path: parentPath }, (err, data) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(data);
+        });
+      });
+      return { written: true };
+    } catch (error) {
+      throw normalizeDockerError(error, {
+        op: 'writeContainerTextFile',
+        containerId: id,
+        filePath: targetPath,
+        env: this.#envSummary()
+      });
+    }
+  }
+
+  async ensureContainerDirectory(containerId, directoryPath) {
+    const id = (containerId || '').trim();
+    if (!id) throw makeDockerInterfaceError('INVALID_INPUT', 'containerId is required');
+
+    const targetPath = validateContainerFilePath(directoryPath).replace(/\/+$/u, '') || '/';
+    if (targetPath === '/') return { created: false };
+    const parentPath = path.posix.dirname(targetPath);
+    const dirName = path.posix.basename(targetPath);
+    if (!dirName || dirName === '.' || dirName === '..') {
+      throw makeDockerInterfaceError('INVALID_INPUT', 'directoryPath must include a directory name');
+    }
+
+    try {
+      const c = this.docker.getContainer(id);
+      const archive = tarArchiveForEntry(`${dirName}/`, Buffer.alloc(0), '5');
+      await new Promise((resolve, reject) => {
+        c.putArchive(Readable.from(archive), { path: parentPath }, (err, data) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(data);
+        });
+      });
+      return { created: true };
+    } catch (error) {
+      throw normalizeDockerError(error, {
+        op: 'ensureContainerDirectory',
+        containerId: id,
+        directoryPath: targetPath,
+        env: this.#envSummary()
+      });
+    }
+  }
+
+  async listContainerDirectory(containerId, directoryPath, options = {}) {
+    const id = (containerId || '').trim();
+    if (!id) throw makeDockerInterfaceError('INVALID_INPUT', 'containerId is required');
+
+    const targetPath = validateContainerFilePath(directoryPath);
+    const maxBytes = clampArchiveListBytes(options?.maxBytes);
+
+    try {
+      const c = this.docker.getContainer(id);
+      const stream = await new Promise((resolve, reject) => {
+        c.getArchive({ path: targetPath }, (err, archiveStream) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(archiveStream);
+        });
+      });
+      const archive = await streamToBuffer(stream, maxBytes);
+      return immediateChildrenFromTar(archive, targetPath);
+    } catch (error) {
+      if (Number(error?.statusCode) === 404 || error?.code === 'NOT_FOUND') return [];
+      throw normalizeDockerError(error, {
+        op: 'listContainerDirectory',
+        containerId: id,
+        directoryPath: targetPath,
+        env: this.#envSummary()
+      });
     }
   }
 

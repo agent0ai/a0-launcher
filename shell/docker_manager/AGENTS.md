@@ -136,8 +136,14 @@ This scope owns:
 - Per-container log inspection belongs in this product layer as a bounded
   read-only snapshot. It may not expose generic Docker commands to the renderer.
 - Cloning an instance should snapshot the source container, create a new
-  launcher-managed container from that snapshot, and remap published ports to
-  Docker-assigned open host ports.
+  launcher-managed container from that snapshot, remap published ports to
+  Docker-assigned open host ports, and copy the selected `/a0/usr` workspace
+  categories into the clone's fresh workspace. With all categories selected,
+  clone should copy the full `/a0/usr` tree to match Agent Zero backup behavior.
+  `/a0/usr/agents` is the Agent profiles category and should stay separate from
+  generic workspace files. Clone and persistence-migration entry points should
+  warn that snapshotting pauses and resumes the source container, and running AI
+  work stops and must be resumed manually.
 - Persisting `/a0/usr` data for a legacy or intentional ephemeral instance
   should be explicit. Create a persistent replacement, preserve the old
   container until the replacement starts successfully, copy `/a0/usr` through

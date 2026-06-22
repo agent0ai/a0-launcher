@@ -120,6 +120,78 @@ function workspaceStorageFolderAvailable(c) {
   return !!(storage?.persistent && typeof storage.hostPath === "string" && storage.hostPath.trim());
 }
 
+const CLONE_WORKSPACE_OPTIONS = Object.freeze([
+  {
+    id: "auth",
+    label: "Auth",
+    detail: "Web login, root and RFC passwords."
+  },
+  {
+    id: "secrets",
+    label: "Secrets and API keys",
+    detail: "Provider keys, secrets.env and OAuth account state."
+  },
+  {
+    id: "providers",
+    label: "Provider/model configuration",
+    detail: "Model presets and _model_config settings."
+  },
+  {
+    id: "mcp",
+    label: "MCPs",
+    detail: "Client/server MCP settings and A2A toggle."
+  },
+  {
+    id: "settings",
+    label: "Settings and preferences",
+    detail: "Timezone, workdir and variables."
+  },
+  {
+    id: "agents",
+    label: "Agent profiles",
+    detail: "Files under /a0/usr/agents."
+  },
+  {
+    id: "chats",
+    label: "Chats",
+    detail: "Saved conversations and message files."
+  },
+  {
+    id: "skills",
+    label: "Skills",
+    detail: "Global user skills in /a0/usr/skills."
+  },
+  {
+    id: "plugins",
+    label: "Plugins",
+    detail: "Custom plugin files except model and OAuth state."
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    detail: "Project folders, repositories and project metadata."
+  },
+  {
+    id: "memory",
+    label: "Memory and knowledge",
+    detail: "Memory, knowledge, schedules and time travel data."
+  },
+  {
+    id: "files",
+    label: "Workspace files",
+    detail: "Workdir, uploads, downloads and API files."
+  }
+]);
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function remoteInstanceVisualSeed(remote) {
   return remote?.url || remote?.name || remote?.id || "remote";
 }
@@ -326,6 +398,82 @@ function openRenameInstanceDialog({ title, currentName, onRename }) {
   window.setTimeout(() => {
     input?.focus();
     input?.select?.();
+  }, 0);
+}
+
+function openCloneInstanceDialog(instance) {
+  const existing = document.getElementById("cloneInstanceDialog");
+  if (existing) existing.remove();
+
+  const containerId = instance?.containerId || "";
+  const displayName = instance?.instanceName || instance?.containerName || "this instance";
+  const dialog = document.createElement("div");
+  dialog.id = "cloneInstanceDialog";
+  dialog.className = "dm-dialog-backdrop";
+  dialog.setAttribute("role", "presentation");
+
+  const optionRows = CLONE_WORKSPACE_OPTIONS.map((option) => `
+    <label class="dm-clone-option">
+      <input type="checkbox" name="cloneWorkspaceCategory" value="${escapeHtml(option.id)}" checked>
+      <span class="dm-clone-option-copy">
+        <span class="dm-clone-option-label">${escapeHtml(option.label)}</span>
+        <span class="dm-clone-option-detail">${escapeHtml(option.detail)}</span>
+      </span>
+    </label>
+  `).join("");
+
+  dialog.innerHTML = `
+    <form class="dm-dialog dm-clone-dialog" role="dialog" aria-modal="true" aria-labelledby="cloneInstanceTitle">
+      <div class="dm-dialog-header">
+        <h2 id="cloneInstanceTitle" class="dm-dialog-title">Clone instance</h2>
+        <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">×</button>
+      </div>
+      <div class="dm-dialog-body">
+        <p class="dm-dialog-copy">Choose the /a0/usr data to copy into the new workspace for <strong>${escapeHtml(displayName)}</strong>. Clearing every option creates a clone with a fresh empty /a0/usr workspace. Cloning pauses and resumes the source container during the snapshot; any running AI work stops and must be resumed manually.</p>
+        <div class="dm-clone-toolbar">
+          <button class="button" type="button" data-clone-select-all>Select all</button>
+          <button class="button" type="button" data-clone-clear>Clear</button>
+        </div>
+        <div class="dm-clone-options">
+          ${optionRows}
+        </div>
+      </div>
+      <div class="dm-dialog-footer">
+        <button class="button" type="button" data-dialog-close>Cancel</button>
+        <button class="button confirm" type="submit">Clone</button>
+      </div>
+    </form>
+  `;
+
+  const form = dialog.querySelector("form");
+  const boxes = () => [...dialog.querySelectorAll('input[name="cloneWorkspaceCategory"]')];
+
+  dialog.querySelectorAll("[data-dialog-close]").forEach((btn) => {
+    btn.addEventListener("click", () => closeDialog(dialog));
+  });
+  dialog.querySelector("[data-clone-select-all]")?.addEventListener("click", () => {
+    boxes().forEach((box) => { box.checked = true; });
+  });
+  dialog.querySelector("[data-clone-clear]")?.addEventListener("click", () => {
+    boxes().forEach((box) => { box.checked = false; });
+  });
+  dialog.addEventListener("mousedown", (event) => {
+    if (event.target === dialog) closeDialog(dialog);
+  });
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const selected = boxes()
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+    closeDialog(dialog);
+    await window.dockerManagerActions?.cloneLocalInstance?.(containerId, {
+      workspaceCategories: selected
+    });
+  });
+
+  document.body.appendChild(dialog);
+  window.setTimeout(() => {
+    boxes()[0]?.focus();
   }, 0);
 }
 
@@ -708,14 +856,14 @@ function renderDockerInstance(list, c, state) {
       title: "Open the persistent /a0/usr folder on this computer"
     }) : null,
     workspaceMigrationAvailable(c) ? menuButton("drive_file_move", "Persist a0/usr data", async () => {
-      if (!window.confirm(`Create persistent /a0/usr storage for ${displayName}?\n\nThe existing container will be kept until the persistent replacement starts successfully.`)) return;
+      if (!window.confirm(`Create persistent /a0/usr storage for ${displayName}?\n\nThe source container will be paused and resumed during the snapshot. Any running AI work stops and must be resumed manually.\n\nThe existing container will be kept until the persistent replacement starts successfully.`)) return;
       await window.dockerManagerActions?.migrateLocalInstanceStorage?.(containerId);
     }, {
       disabled: !containerId || operationRunning,
       title: "Create persistent /a0/usr storage"
     }) : null,
     menuButton("content_copy", "Clone", () => {
-      window.dockerManagerActions?.cloneLocalInstance?.(containerId);
+      openCloneInstanceDialog(c);
     }, {
       disabled: !containerId || operationRunning,
       title: "Clone this instance on open ports"
@@ -815,7 +963,10 @@ function renderRemoteInstance(list, remote, state) {
 
   if (cloneTarget?.containerId) {
     menuItems.push(menuButton("content_copy", "Clone locally", () => {
-      window.dockerManagerActions?.cloneLocalInstance?.(cloneTarget.containerId);
+      openCloneInstanceDialog({
+        ...cloneTarget,
+        instanceName: remote?.name || cloneTarget.instanceName || cloneTarget.containerName || "Remote instance"
+      });
     }, {
       disabled: operationRunning,
       title: "Clone this local loopback instance on open ports"

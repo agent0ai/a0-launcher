@@ -34,6 +34,20 @@ const WORKSPACE_MOUNT_TARGET = '/a0/usr';
 const STORAGE_MODE_HOST_DIRECTORY = 'host_directory';
 const STORAGE_MODE_NAMED_VOLUME = 'named_volume';
 const STORAGE_MODE_EPHEMERAL = 'ephemeral';
+const CLONE_WORKSPACE_CATEGORY_IDS = Object.freeze([
+  'auth',
+  'secrets',
+  'providers',
+  'mcp',
+  'settings',
+  'agents',
+  'chats',
+  'skills',
+  'plugins',
+  'projects',
+  'memory',
+  'files'
+]);
 
 const WORKSPACE_STORAGE_LABELS = Object.freeze({
   mode: 'a0.launcher.storage.mode',
@@ -42,6 +56,63 @@ const WORKSPACE_STORAGE_LABELS = Object.freeze({
   volumeName: 'a0.launcher.storage.volumeName',
   persistent: 'a0.launcher.storage.persistent',
   legacy: 'a0.launcher.storage.legacy'
+});
+
+const CLONE_RESERVED_PLUGIN_ENTRIES = Object.freeze(['_model_config', '_oauth']);
+const CLONE_ENV_AUTH_KEYS = Object.freeze([
+  'AUTH_LOGIN',
+  'AUTH_PASSWORD',
+  'ROOT_PASSWORD',
+  'RFC_PASSWORD'
+]);
+const CLONE_ENV_SETTINGS_KEYS = Object.freeze([
+  'DEFAULT_USER_TIMEZONE',
+  'DEFAULT_USER_UTC_OFFSET_MINUTES'
+]);
+const CLONE_SETTINGS_FIELDS = Object.freeze({
+  auth: Object.freeze([
+    'auth_login',
+    'auth_password',
+    'root_password',
+    'rfc_password'
+  ]),
+  secrets: Object.freeze([
+    'api_keys',
+    'secrets',
+    'mcp_server_token'
+  ]),
+  providers: Object.freeze([
+    'litellm_global_kwargs'
+  ]),
+  mcp: Object.freeze([
+    'mcp_servers',
+    'mcp_client_init_timeout',
+    'mcp_client_tool_timeout',
+    'mcp_server_enabled',
+    'a2a_server_enabled'
+  ]),
+  settings: Object.freeze([
+    'agent_profile',
+    'agent_knowledge_subdir',
+    'timezone',
+    'time_format',
+    'workdir_path',
+    'workdir_show',
+    'workdir_max_depth',
+    'workdir_max_files',
+    'workdir_max_folders',
+    'workdir_max_lines',
+    'workdir_gitignore',
+    'file_browser_remember_last_directory',
+    'rfc_auto_docker',
+    'rfc_url',
+    'rfc_port_http',
+    'websocket_server_restart_enabled',
+    'uvicorn_access_logs_enabled',
+    'update_check_enabled',
+    'chat_inherit_project',
+    'variables'
+  ])
 });
 
 const CHANNEL_TAGS = Object.freeze(['latest', 'ready', 'testing']);
@@ -436,6 +507,111 @@ function nowIso() {
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cloneWorkspaceDefaultSelection() {
+  return Object.fromEntries(CLONE_WORKSPACE_CATEGORY_IDS.map((id) => [id, true]));
+}
+
+function normalizeCloneWorkspaceSelection(raw = null) {
+  const defaults = cloneWorkspaceDefaultSelection();
+  if (raw === null || raw === undefined || raw === true) return defaults;
+  if (raw === false) {
+    return Object.fromEntries(CLONE_WORKSPACE_CATEGORY_IDS.map((id) => [id, false]));
+  }
+
+  let source = null;
+  if (Array.isArray(raw)) {
+    source = Object.fromEntries(raw.map((id) => [id, true]));
+  } else if (isPlainObject(raw?.workspaceCategories)) {
+    source = raw.workspaceCategories;
+  } else if (Array.isArray(raw?.workspaceCategories)) {
+    source = Object.fromEntries(raw.workspaceCategories.map((id) => [id, true]));
+  } else if (isPlainObject(raw)) {
+    source = raw;
+  }
+
+  if (!source) return defaults;
+  const out = {};
+  for (const id of CLONE_WORKSPACE_CATEGORY_IDS) {
+    out[id] = source[id] === true || source[id] === 'true' || source[id] === 1;
+  }
+  return out;
+}
+
+function selectedCloneWorkspaceCategoryIds(selection) {
+  const normalized = normalizeCloneWorkspaceSelection(selection);
+  return CLONE_WORKSPACE_CATEGORY_IDS.filter((id) => normalized[id] === true);
+}
+
+function cloneWorkspaceSelectionIsAll(selection) {
+  const normalized = normalizeCloneWorkspaceSelection(selection);
+  return CLONE_WORKSPACE_CATEGORY_IDS.every((id) => normalized[id] === true);
+}
+
+function cloneWorkspaceSelectionIsEmpty(selection) {
+  const normalized = normalizeCloneWorkspaceSelection(selection);
+  return CLONE_WORKSPACE_CATEGORY_IDS.every((id) => normalized[id] !== true);
+}
+
+function cloneWorkspaceSelectionLabel(selection) {
+  return selectedCloneWorkspaceCategoryIds(selection).join(',');
+}
+
+function cloneSettingsFieldsForSelection(selection) {
+  const normalized = normalizeCloneWorkspaceSelection(selection);
+  const fields = new Set();
+  for (const [category, categoryFields] of Object.entries(CLONE_SETTINGS_FIELDS)) {
+    if (!normalized[category]) continue;
+    for (const field of categoryFields) fields.add(field);
+  }
+  return fields;
+}
+
+function envLineKey(line) {
+  const match = String(line || '').match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+  return match ? match[1] : '';
+}
+
+function cloneEnvKeyAllowed(key, selection) {
+  const normalized = normalizeCloneWorkspaceSelection(selection);
+  if (normalized.auth && CLONE_ENV_AUTH_KEYS.includes(key)) return true;
+  if (normalized.settings && (CLONE_ENV_SETTINGS_KEYS.includes(key) || key.startsWith('A0_SET_'))) return true;
+  if (normalized.secrets) {
+    if (key.startsWith('API_KEY_')) return true;
+    if (/_?(?:TOKEN|SECRET|KEY|PAT)$/i.test(key)) return true;
+    if (/(?:TOKEN|SECRET|API_KEY|PAT)/i.test(key)) return true;
+  }
+  return false;
+}
+
+function filterEnvTextForClone(text, selection) {
+  const lines = String(text || '').split(/\r?\n/u);
+  const out = [];
+  for (const line of lines) {
+    const key = envLineKey(line);
+    if (!key) continue;
+    if (cloneEnvKeyAllowed(key, selection)) out.push(line);
+  }
+  return out.length ? `${out.join('\n')}\n` : '';
+}
+
+function filterSettingsJsonForClone(text, selection) {
+  const fields = cloneSettingsFieldsForSelection(selection);
+  if (!fields.size) return '';
+  let parsed = null;
+  try {
+    parsed = JSON.parse(String(text || '{}'));
+  } catch {
+    return '';
+  }
+  if (!isPlainObject(parsed)) return '';
+  const out = {};
+  if (Object.prototype.hasOwnProperty.call(parsed, 'version')) out.version = parsed.version;
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(parsed, field)) out[field] = parsed[field];
+  }
+  return Object.keys(out).length ? `${JSON.stringify(out, null, 4)}\n` : '';
 }
 
 function isoToMs(value) {
@@ -1926,6 +2102,168 @@ function portMapLabelFromBindings(portBindings) {
   return parts.join(',');
 }
 
+async function copyContainerPathIfPresent(docker, sourceContainerId, sourcePath, targetContainerId, targetParentPath) {
+  const copied = await docker.copyContainerPathToContainer(
+    sourceContainerId,
+    sourcePath,
+    targetContainerId,
+    targetParentPath
+  );
+  return copied?.copied !== false;
+}
+
+async function writeFilteredCloneTextFile(docker, sourceContainerId, sourcePath, targetContainerId, targetPath, filter) {
+  if (typeof docker.readContainerTextFile !== 'function' || typeof docker.writeContainerTextFile !== 'function') return false;
+  const sourceText = await docker.readContainerTextFile(sourceContainerId, sourcePath, { maxBytes: 1024 * 1024 });
+  if (sourceText === null || sourceText === undefined) return false;
+  const filtered = filter(sourceText);
+  if (!filtered) return false;
+  const result = await docker.writeContainerTextFile(targetContainerId, targetPath, filtered);
+  return result?.written !== false;
+}
+
+async function ensureCloneTargetDirectory(docker, containerId, directoryPath) {
+  if (typeof docker.ensureContainerDirectory !== 'function') return;
+  await docker.ensureContainerDirectory(containerId, directoryPath);
+}
+
+async function copyClonePluginEntries(docker, sourceContainerId, targetContainerId, selection) {
+  const normalized = normalizeCloneWorkspaceSelection(selection);
+  const needsPluginRoot = normalized.providers || normalized.secrets || normalized.plugins;
+  if (!needsPluginRoot) return 0;
+  await ensureCloneTargetDirectory(docker, targetContainerId, `${WORKSPACE_MOUNT_TARGET}/plugins`);
+
+  let copiedCount = 0;
+  if (normalized.providers) {
+    if (await copyContainerPathIfPresent(
+      docker,
+      sourceContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/plugins/_model_config`,
+      targetContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/plugins`
+    )) copiedCount += 1;
+  }
+  if (normalized.secrets) {
+    if (await copyContainerPathIfPresent(
+      docker,
+      sourceContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/plugins/_oauth`,
+      targetContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/plugins`
+    )) copiedCount += 1;
+  }
+
+  if (!normalized.plugins) return copiedCount;
+  if (typeof docker.listContainerDirectory !== 'function') {
+    const err = new Error('Selective plugin cloning requires directory inspection support.');
+    err.code = 'CLONE_PLUGIN_LIST_UNAVAILABLE';
+    throw err;
+  }
+
+  const entries = await docker.listContainerDirectory(sourceContainerId, `${WORKSPACE_MOUNT_TARGET}/plugins`);
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const name = String(entry?.name || '').trim();
+    if (!name || name.includes('/') || name === '.' || name === '..') continue;
+    if (CLONE_RESERVED_PLUGIN_ENTRIES.includes(name)) continue;
+    if (await copyContainerPathIfPresent(
+      docker,
+      sourceContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/plugins/${name}`,
+      targetContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/plugins`
+    )) copiedCount += 1;
+  }
+  return copiedCount;
+}
+
+async function copySelectedWorkspaceData(docker, sourceContainerId, targetContainerId, selection, onProgress = null) {
+  const normalized = normalizeCloneWorkspaceSelection(selection);
+  if (cloneWorkspaceSelectionIsEmpty(normalized)) return { copied: false, selectedCategories: [] };
+  if (typeof docker.copyContainerPathToContainer !== 'function') {
+    const err = new Error('Workspace copy is not supported by the selected Docker runtime.');
+    err.code = 'WORKSPACE_COPY_UNAVAILABLE';
+    throw err;
+  }
+
+  const selectedCategories = selectedCloneWorkspaceCategoryIds(normalized);
+  if (cloneWorkspaceSelectionIsAll(normalized)) {
+    onProgress?.('Copying all /a0/usr data');
+    const copied = await copyContainerPathIfPresent(
+      docker,
+      sourceContainerId,
+      WORKSPACE_MOUNT_TARGET,
+      targetContainerId,
+      '/a0'
+    );
+    return { copied, selectedCategories, fullWorkspace: true };
+  }
+
+  let copiedCount = 0;
+
+  onProgress?.('Copying credentials and settings');
+  if (normalized.auth || normalized.secrets || normalized.settings) {
+    if (await writeFilteredCloneTextFile(
+      docker,
+      sourceContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/.env`,
+      targetContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/.env`,
+      (text) => filterEnvTextForClone(text, normalized)
+    )) copiedCount += 1;
+  }
+  if (normalized.auth || normalized.secrets || normalized.settings || normalized.mcp || normalized.providers) {
+    if (await writeFilteredCloneTextFile(
+      docker,
+      sourceContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/settings.json`,
+      targetContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/settings.json`,
+      (text) => filterSettingsJsonForClone(text, normalized)
+    )) copiedCount += 1;
+  }
+  if (normalized.secrets) {
+    if (await copyContainerPathIfPresent(
+      docker,
+      sourceContainerId,
+      `${WORKSPACE_MOUNT_TARGET}/secrets.env`,
+      targetContainerId,
+      WORKSPACE_MOUNT_TARGET
+    )) copiedCount += 1;
+  }
+
+  onProgress?.('Copying plugin data');
+  copiedCount += await copyClonePluginEntries(docker, sourceContainerId, targetContainerId, normalized);
+
+  const pathGroups = [
+    ['agents', ['agents']],
+    ['chats', ['chats']],
+    ['skills', ['skills']],
+    ['projects', ['projects']],
+    ['memory', ['memory', 'knowledge', 'scheduler', '.time_travel']],
+    ['files', ['workdir', 'uploads', 'downloads', 'api']]
+  ];
+  for (const [category, names] of pathGroups) {
+    if (!normalized[category]) continue;
+    onProgress?.(`Copying ${category} data`);
+    for (const name of names) {
+      if (await copyContainerPathIfPresent(
+        docker,
+        sourceContainerId,
+        `${WORKSPACE_MOUNT_TARGET}/${name}`,
+        targetContainerId,
+        WORKSPACE_MOUNT_TARGET
+      )) copiedCount += 1;
+    }
+  }
+
+  return {
+    copied: copiedCount > 0,
+    copiedCount,
+    selectedCategories,
+    fullWorkspace: false
+  };
+}
+
 function setIfPresent(target, key, value) {
   if (value === null || value === undefined || value === '') return;
   if (Array.isArray(value) && !value.length) return;
@@ -1940,6 +2278,7 @@ async function buildCloneCreateOptions(inspect, containerId, cloneImageRef, stor
   const sourceName = sourceInstanceNameFromInspect(inspect, String(containerId || '').slice(0, 12) || 'instance');
   const sourceImage = typeof config.Image === 'string' ? config.Image : '';
   const versionTag = sourceLabels['a0.launcher.versionTag'] || splitImageAndTag(sourceImage, '').tag || '';
+  const workspaceSelection = normalizeCloneWorkspaceSelection(options?.workspaceCategories);
 
   const portBindings = clonePortBindings(host.PortBindings);
   const exposedPorts = cloneExposedPorts(config.ExposedPorts, portBindings);
@@ -1953,7 +2292,9 @@ async function buildCloneCreateOptions(inspect, containerId, cloneImageRef, stor
     'a0.launcher.cloneSourceContainerId': String(containerId || ''),
     'a0.launcher.cloneSourceName': containerNameFromInspect(inspect) || sourceName,
     'a0.launcher.cloneCreatedAt': nowIso(),
-    'a0.launcher.cloneImageRef': cloneImageRef
+    'a0.launcher.cloneImageRef': cloneImageRef,
+    'a0.launcher.cloneWorkspaceCategories': cloneWorkspaceSelectionLabel(workspaceSelection),
+    'a0.launcher.cloneWorkspaceFull': cloneWorkspaceSelectionIsAll(workspaceSelection) ? 'true' : 'false'
   };
   if (versionTag) labels['a0.launcher.versionTag'] = versionTag;
   if (sourceImage) labels['a0.launcher.imageRef'] = sourceImage;
@@ -2739,9 +3080,10 @@ async function startLocalInstance(containerId) {
   return { opId };
 }
 
-async function cloneLocalInstance(containerId) {
+async function cloneLocalInstance(containerId, options = {}) {
   const imageRepo = getBackendImageRepo();
   const id = assertContainerId(containerId);
+  const workspaceSelection = normalizeCloneWorkspaceSelection(options?.workspaceCategories);
 
   requireNoRunningOperation();
   const opId = beginOperation('clone_instance', null);
@@ -2784,7 +3126,10 @@ async function cloneLocalInstance(containerId) {
         inspect,
         target.containerId,
         cloneImageRef,
-        await stateStore.readStoragePreferences()
+        await stateStore.readStoragePreferences(),
+        {
+          workspaceCategories: workspaceSelection
+        }
       );
       const created = await docker.createContainer(createOptions);
       createdContainerId = created?.containerId || '';
@@ -2792,6 +3137,21 @@ async function cloneLocalInstance(containerId) {
         const err = new Error('Failed to create container');
         err.code = 'CREATE_FAILED';
         throw err;
+      }
+
+      if (!cloneWorkspaceSelectionIsEmpty(workspaceSelection)) {
+        const categoryCount = selectedCloneWorkspaceCategoryIds(workspaceSelection).length;
+        const message = cloneWorkspaceSelectionIsAll(workspaceSelection)
+          ? 'Copying /a0/usr data'
+          : `Copying selected /a0/usr data (${categoryCount})`;
+        updateOperationProgress({ headline: cloneHeadline, message, progress: null });
+        await copySelectedWorkspaceData(
+          docker,
+          target.containerId,
+          createdContainerId,
+          workspaceSelection,
+          (copyMessage) => updateOperationProgress({ headline: cloneHeadline, message: copyMessage, progress: null })
+        );
       }
 
       updateOperationProgress({ headline: cloneHeadline, message: 'Starting clone', progress: null });
@@ -3813,7 +4173,13 @@ module.exports = {
     applyWorkspaceStorage,
     workspaceStorageFromInspect,
     workspaceHostPathFromInspect,
-    buildCloneCreateOptions
+    buildCloneCreateOptions,
+    normalizeCloneWorkspaceSelection,
+    selectedCloneWorkspaceCategoryIds,
+    cloneWorkspaceSelectionIsAll,
+    filterEnvTextForClone,
+    filterSettingsJsonForClone,
+    copySelectedWorkspaceData
   },
 
   // Error helpers for IPC handlers
