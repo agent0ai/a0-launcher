@@ -617,7 +617,7 @@ function ensureLogsPanel(c) {
   refreshBtn.addEventListener("click", () => openLogsPanel(c));
 
   const closeBtn = document.createElement("button");
-  closeBtn.className = "button dm-icon-button";
+  closeBtn.className = "button dm-icon-button dm-close-button";
   closeBtn.type = "button";
   closeBtn.title = "Close logs";
   closeBtn.setAttribute("aria-label", "Close logs");

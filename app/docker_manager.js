@@ -64,7 +64,7 @@ function showToast(type, message, title = "", displayTime = 4, group = "") {
   content.appendChild(msg);
 
   const dismiss = document.createElement("button");
-  dismiss.className = "dm-toast-dismiss";
+  dismiss.className = "dm-toast-dismiss dm-close-button";
   dismiss.type = "button";
   dismiss.title = "Dismiss";
   dismiss.setAttribute("aria-label", "Dismiss");
