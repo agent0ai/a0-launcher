@@ -103,6 +103,7 @@ const DOCKER_CONTEXT_TIMEOUT_MS = 1200;
  * @property {boolean=} discoverDockerContexts
  * @property {Function=} runCommand
  * @property {Function=} dockerodeClass
+ * @property {Function=} prepareDockerHost
  */
 
 export class DockerInterface {
@@ -147,10 +148,18 @@ export class DockerInterface {
       return info;
     }
 
-    const probed = await Promise.all(candidates.map((candidate) =>
+    let probed = await Promise.all(candidates.map((candidate) =>
       this.#probeRuntimeCandidate(candidate, Dockerode, timeoutMs, options, context)
     ));
-    const selected = this.#selectRuntimeCandidate(probed);
+    let selected = this.#selectRuntimeCandidate(probed);
+
+    if (!selected?.available && options.enableWindowsWslProxy !== false) {
+      const prepared = await this.#probeKnownWindowsWslCandidates(probed, Dockerode, timeoutMs, options, context);
+      if (prepared) {
+        probed = prepared;
+        selected = this.#selectRuntimeCandidate(probed);
+      }
+    }
 
     if (selected?.available) {
       const dockerHost = this.#parseDockerHost(selected.dockerHost);
@@ -197,13 +206,17 @@ export class DockerInterface {
       return result;
     }
 
-    const candidateTimeoutMs = this.#isWindowsWslProxyHost(dockerHost, context.platform)
+    const isWindowsWslProxyHost = this.#isWindowsWslProxyHost(dockerHost, context.platform);
+    const candidateTimeoutMs = isWindowsWslProxyHost
       ? Math.max(timeoutMs, 10000)
       : timeoutMs;
 
-    const shouldPrepareHost = ['preference', 'env', 'active_context'].includes(candidate.source);
+    const shouldPrepareHost = (
+      ['preference', 'env', 'active_context'].includes(candidate.source) ||
+      (options.prepareKnownWindowsWsl === true && candidate.source === 'known_socket' && isWindowsWslProxyHost)
+    );
     if (options.enableWindowsWslProxy !== false && shouldPrepareHost) {
-      await this.#prepareDockerHost(dockerHost, context.platform).catch(() => {});
+      await this.#prepareDockerHost(dockerHost, context.platform, options).catch(() => {});
     }
 
     const docker = new Dockerode(this.#dockerodeOptionsFromHost(dockerHost, candidateTimeoutMs));
@@ -226,6 +239,23 @@ export class DockerInterface {
     }
 
     return result;
+  }
+
+  static async #probeKnownWindowsWslCandidates(probed, Dockerode, timeoutMs, options, context) {
+    if (context.platform !== 'win32') return null;
+    let retried = false;
+    const next = await Promise.all(probed.map((candidate) => {
+      const hostInfo = this.#parseDockerHost(candidate?.dockerHost || '');
+      if (candidate?.source !== 'known_socket' || !this.#isWindowsWslProxyHost(hostInfo, context.platform)) {
+        return candidate;
+      }
+      retried = true;
+      return this.#probeRuntimeCandidate(candidate, Dockerode, timeoutMs, {
+        ...options,
+        prepareKnownWindowsWsl: true
+      }, context);
+    }));
+    return retried ? next : null;
   }
 
   /**
@@ -918,9 +948,13 @@ export class DockerInterface {
     return platform === 'win32' && hostInfo?.kind === 'tcp' && hostInfo.host === '127.0.0.1' && Number(hostInfo.port) === 23750;
   }
 
-  static async #prepareDockerHost(hostInfo, platform = process.platform) {
+  static async #prepareDockerHost(hostInfo, platform = process.platform, options = {}) {
     if (platform !== 'win32') return;
     if (!this.#isWindowsWslProxyHost(hostInfo, platform)) return;
+    if (typeof options.prepareDockerHost === 'function') {
+      await options.prepareDockerHost(hostInfo);
+      return;
+    }
     const { ensureWindowsWslDockerProxy } = await import('./impl/WindowsWslDockerProxy.mjs');
     await ensureWindowsWslDockerProxy();
   }

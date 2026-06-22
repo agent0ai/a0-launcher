@@ -623,3 +623,27 @@ test('ready state closes the modal and runtime gate cannot be dismissed with Esc
   assert.equal(document.getElementById('runtimeSetupDialog'), null);
   assert.equal(document.querySelector('.dm-page').inert, false);
 });
+
+test('reachable Docker suppresses stale non-ready runtime assessments', () => {
+  const document = installDom();
+  const staleRuntime = {
+    stateLoaded: true,
+    dockerAvailable: true,
+    runtime: {
+      platform: 'win32',
+      state: 'engine_stopped',
+      mode: 'wsl_engine',
+      action: 'start',
+      canProvision: true,
+      detail: 'Agent Zero local runtime is ready to start.'
+    },
+    containers: [
+      { containerId: 'abc123', containerName: 'agent-zero-latest', role: 'instance' }
+    ]
+  };
+
+  assert.equal(shouldShowRuntimeGate(staleRuntime), false);
+  assert.equal(renderRuntimeGate(staleRuntime, {}), false);
+  assert.equal(document.getElementById('runtimeSetupDialog'), null);
+  assert.equal(document.querySelector('.dm-page').inert, false);
+});

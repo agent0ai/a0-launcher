@@ -381,6 +381,7 @@ test('DockerInterface classifies Windows npipe and loopback WSL endpoints', asyn
     timeoutMs: 250,
     enableWindowsWslProxy: false,
     discoverDockerContexts: false,
+    candidateHosts: [],
     dockerodeClass: fakeDockerodeClass()
   });
   assert.equal(dockerDesktop.dockerHost.kind, 'npipe');
@@ -392,12 +393,75 @@ test('DockerInterface classifies Windows npipe and loopback WSL endpoints', asyn
     timeoutMs: 250,
     enableWindowsWslProxy: false,
     discoverDockerContexts: false,
+    candidateHosts: [],
     dockerodeClass: fakeDockerodeClass()
   });
   assert.equal(wslEngine.dockerHost.kind, 'tcp');
   assert.equal(wslEngine.dockerHost.host, '127.0.0.1');
   assert.equal(wslEngine.dockerHost.port, 23750);
   assert.equal(wslEngine.dockerFlavor, 'wsl_engine');
+});
+
+test('DockerInterface prepares the built-in Windows WSL endpoint before probing', async () => {
+  const preparedHosts = [];
+  let prepared = false;
+  class FakeDockerode {
+    constructor(options = {}) {
+      this.options = options;
+    }
+
+    async ping() {
+      const tcpHost = this.options.host ? `${this.options.host}:${this.options.port || 2375}` : '';
+      if (prepared && tcpHost === '127.0.0.1:23750') return true;
+      const error = new Error('Docker endpoint is not reachable');
+      error.code = 'ECONNREFUSED';
+      throw error;
+    }
+
+    async version() {
+      return { Version: 'test' };
+    }
+  }
+
+  const env = await DockerInterface.detectEnvironment({
+    platform: 'win32',
+    timeoutMs: 250,
+    discoverDockerContexts: false,
+    candidateHosts: [
+      { provider: 'wsl_engine', label: 'Agent Zero local runtime', dockerHost: 'tcp://127.0.0.1:23750', source: 'known_socket' }
+    ],
+    prepareDockerHost: async (hostInfo) => {
+      prepared = true;
+      preparedHosts.push(hostInfo.raw);
+    },
+    dockerodeClass: FakeDockerode
+  });
+
+  assert.deepEqual(preparedHosts, ['tcp://127.0.0.1:23750']);
+  assert.equal(env.dockerAvailable, true);
+  assert.equal(env.dockerFlavor, 'wsl_engine');
+  assert.equal(env.runtimeCandidates[0].available, true);
+});
+
+test('DockerInterface does not prepare the built-in Windows WSL endpoint when another runtime is reachable', async () => {
+  const preparedHosts = [];
+  const env = await DockerInterface.detectEnvironment({
+    platform: 'win32',
+    timeoutMs: 250,
+    discoverDockerContexts: false,
+    candidateHosts: [
+      { provider: 'docker_desktop', label: 'Docker Desktop', dockerHost: 'npipe:////./pipe/docker_engine', source: 'known_socket' },
+      { provider: 'wsl_engine', label: 'Agent Zero local runtime', dockerHost: 'tcp://127.0.0.1:23750', source: 'known_socket' }
+    ],
+    prepareDockerHost: async (hostInfo) => {
+      preparedHosts.push(hostInfo.raw);
+    },
+    dockerodeClass: fakeDockerodeClass(['//./pipe/docker_engine'])
+  });
+
+  assert.deepEqual(preparedHosts, []);
+  assert.equal(env.dockerAvailable, true);
+  assert.equal(env.dockerFlavor, 'docker_desktop');
 });
 
 test('DockerInterface selects a single available native endpoint without extra choices', async () => {

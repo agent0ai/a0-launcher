@@ -293,7 +293,7 @@ function runtimeEndpointOptions(state = {}) {
 }
 
 function isRuntimeReady(state = {}) {
-  return !!state?.stateLoaded && !!state?.dockerAvailable && (!state.runtime || state.runtime.state === "ready");
+  return !!state?.stateLoaded && (!!state?.dockerAvailable || state?.runtime?.state === "ready");
 }
 
 function runtimeSetupKey(progress = null) {
@@ -316,8 +316,7 @@ function shouldShowRuntimeSuccess(state = {}) {
 function shouldShowRuntimeGate(state = {}) {
   if (!state?.stateLoaded) return false;
   if (shouldShowRuntimeSuccess(state)) return true;
-  if (!state?.dockerAvailable) return true;
-  return !!state.runtime && state.runtime.state !== "ready";
+  return !isRuntimeReady(state);
 }
 
 function normalizedRuntimeGate(state = {}) {

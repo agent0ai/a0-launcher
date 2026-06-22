@@ -54,6 +54,10 @@ This scope owns:
   should distinguish installable Linux Engine setup, stopped daemons,
   relogin-required states, and manual install fallback without exposing
   package-manager details as the main path.
+- If Docker is already reachable through the Docker Manager state, stale
+  non-ready runtime assessments must not reopen the blocking runtime modal.
+  Only completed runtime setup progress may keep the modal open to guide the
+  immediate next step.
 - Docker Desktop installed-but-stopped states must be warning states that tell
   the user to start Docker Desktop. Do not show a download/reinstall action for
   that state.

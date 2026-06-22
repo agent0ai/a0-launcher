@@ -994,6 +994,10 @@ function normalizeRuntimeAssessment(assessment, env = null) {
   return runtime;
 }
 
+function runtimeReadyAssessment(env = null) {
+  return normalizeRuntimeAssessment({ state: 'ready', detail: 'Runtime is ready.' }, env);
+}
+
 async function getRuntimeProvisioner() {
   const { RuntimeProvisioner } = await import('../docker_adapter/RuntimeProvisioner.mjs');
   return await RuntimeProvisioner.forPlatform({
@@ -1003,7 +1007,7 @@ async function getRuntimeProvisioner() {
 
 async function assessRuntime(env = null) {
   if (env?.dockerAvailable) {
-    return normalizeRuntimeAssessment({ state: 'ready', detail: 'Runtime is ready.' }, env);
+    return runtimeReadyAssessment(env);
   }
 
   const provisioner = await getRuntimeProvisioner();
@@ -1398,9 +1402,15 @@ async function buildDerivedState(options = {}) {
   const docker = await getManagedDocker(imageRepo, { forceRefresh });
 
   const env = await docker.getEnvironment();
-  const runtime = await assessRuntime(env);
+  let runtime = await assessRuntime(env);
+  let runtimeDiagnostics = null;
   if (!env?.dockerAvailable) {
-    return await buildUnavailableState(runtime);
+    runtimeDiagnostics = await collectRuntimeDiagnostics(docker, env);
+    if (runtimeDiagnostics?.reachable) {
+      runtime = runtimeReadyAssessment(env);
+    } else {
+      return await buildUnavailableState(runtime);
+    }
   }
 
   const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, localInstanceNames, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
@@ -1777,7 +1787,8 @@ async function buildDerivedState(options = {}) {
     lastSyncedAt,
     offline,
     storage,
-    runtime
+    runtime,
+    runtimeDiagnostics
   };
 }
 
@@ -4005,7 +4016,7 @@ async function getDockerInventory() {
   ]);
   const docker = await getManagedDocker(imageRepo);
   const env = await docker.getEnvironment();
-  const runtime = await assessRuntime(env);
+  let runtime = await assessRuntime(env);
   const runtimeDiagnostics = await collectRuntimeDiagnostics(docker, env);
 
   // Even when the ping-based env detection reports unavailable, attempt listing
@@ -4036,6 +4047,9 @@ async function getDockerInventory() {
   }
 
   const dockerAvailable = !!(env?.dockerAvailable || runtimeDiagnostics?.reachable || listingSucceeded);
+  if (dockerAvailable && runtime?.state !== 'ready') {
+    runtime = runtimeReadyAssessment(env);
+  }
 
   return {
     dockerAvailable,

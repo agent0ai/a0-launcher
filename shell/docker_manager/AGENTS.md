@@ -108,6 +108,9 @@ This scope owns:
 - Runtime setup is additive and reuse-first: existing Docker Desktop, native
   Engine, and rootless endpoints are used before Linux Engine provisioning is
   offered.
+- If Docker diagnostics or inventory operations prove an endpoint is usable
+  after a pessimistic availability probe, normalize the runtime state to ready
+  before exposing it to the renderer.
 - Runtime setup may persist a `runtimeSetupResume` marker under the Docker
   Manager state file so reboot-required Windows setup can relaunch once and
   continue when the next step no longer needs elevation.
