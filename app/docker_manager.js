@@ -349,6 +349,7 @@ async function refresh() {
     store.loading = false;
     store.stateLoaded = true;
     emitState();
+    maybeStartPendingFirstInstanceFromState(snapshot());
   }
 }
 
@@ -551,12 +552,104 @@ async function installOrSync(tag) {
   );
 }
 
-let pendingFirstInstanceRun = null;
+const FIRST_INSTANCE_RUN_KEY = "a0Launcher.pendingFirstInstanceRun.v1";
+const FIRST_INSTANCE_RUN_TTL_MS = 24 * 60 * 60 * 1000;
+
 const handledFirstInstanceRunOps = new Set();
 
 function normalizeWorkspaceStorageMode(value) {
   const mode = typeof value === "string" ? value.trim() : "";
   return mode === "host_directory" || mode === "named_volume" || mode === "ephemeral" ? mode : "";
+}
+
+function storageAvailable() {
+  try {
+    return typeof window.localStorage?.getItem === "function";
+  } catch {
+    return false;
+  }
+}
+
+function normalizePendingFirstInstanceRun(value) {
+  const input = value && typeof value === "object" ? value : {};
+  const opId = typeof input.opId === "string" ? input.opId.trim() : "";
+  const targetTag = typeof input.targetTag === "string" ? input.targetTag.trim() : "";
+  if (!opId || !targetTag) return null;
+
+  const now = Date.now();
+  const createdAtMs = Number(input.createdAtMs);
+  const createdAt = Number.isFinite(createdAtMs) && createdAtMs > 0 ? createdAtMs : now;
+  if (now - createdAt > FIRST_INSTANCE_RUN_TTL_MS) return null;
+
+  const pending = {
+    opId,
+    targetTag,
+    instanceName: typeof input.instanceName === "string" ? input.instanceName.trim() : "",
+    storageMode: normalizeWorkspaceStorageMode(input.storageMode),
+    createdAtMs: createdAt
+  };
+  return pending;
+}
+
+function loadPendingFirstInstanceRun() {
+  if (!storageAvailable()) return null;
+  try {
+    const pending = normalizePendingFirstInstanceRun(JSON.parse(window.localStorage.getItem(FIRST_INSTANCE_RUN_KEY) || "null"));
+    if (!pending) window.localStorage.removeItem(FIRST_INSTANCE_RUN_KEY);
+    return pending;
+  } catch {
+    try {
+      window.localStorage.removeItem(FIRST_INSTANCE_RUN_KEY);
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+}
+
+function savePendingFirstInstanceRun(pending) {
+  if (!storageAvailable()) return;
+  try {
+    if (!pending) {
+      window.localStorage.removeItem(FIRST_INSTANCE_RUN_KEY);
+      return;
+    }
+    const stored = {
+      opId: pending.opId,
+      targetTag: pending.targetTag,
+      instanceName: pending.instanceName || "",
+      storageMode: pending.storageMode || "",
+      createdAtMs: pending.createdAtMs || Date.now()
+    };
+    window.localStorage.setItem(FIRST_INSTANCE_RUN_KEY, JSON.stringify(stored));
+  } catch {
+    // Best-effort only; the in-memory copy still covers the current renderer.
+  }
+}
+
+let pendingFirstInstanceRun = loadPendingFirstInstanceRun();
+
+function hasLocalInstance(state = {}) {
+  return Array.isArray(state?.containers) && state.containers.some((container) =>
+    (typeof container?.containerId === "string" && container.containerId.trim()) ||
+    (typeof container?.containerName === "string" && container.containerName.trim())
+  );
+}
+
+function stateHasInstalledTag(state = {}, targetTag = "") {
+  const tag = typeof targetTag === "string" ? targetTag.trim() : "";
+  if (!tag) return false;
+
+  const versions = Array.isArray(state?.versions) ? state.versions : [];
+  if (versions.some((version) => {
+    if (version?.id !== tag) return false;
+    if (version?.isActive === true) return true;
+    return ["installed", "update_available"].includes(version?.availability);
+  })) {
+    return true;
+  }
+
+  return Array.isArray(state?.images) && state.images.some((image) => image?.tag === tag);
 }
 
 async function setInstanceDefaults(instanceDefaults, options = {}) {
@@ -604,11 +697,16 @@ async function confirmFirstInstanceSetup(payload = {}) {
       targetTag,
       instanceName: typeof input.instanceName === "string" ? input.instanceName.trim() : "",
       storageMode: normalizeWorkspaceStorageMode(input.storageMode),
-      instanceDefaults: defaults
+      instanceDefaults: defaults,
+      createdAtMs: Date.now()
     };
+    savePendingFirstInstanceRun(pendingFirstInstanceRun);
     setBanner("info", "Defaults saved. Your first Instance will start when the download finishes.");
   } else {
-    if (pendingFirstInstanceRun?.opId === opId) pendingFirstInstanceRun = null;
+    if (pendingFirstInstanceRun?.opId === opId) {
+      pendingFirstInstanceRun = null;
+      savePendingFirstInstanceRun(null);
+    }
     setBanner("info", "Instance defaults saved.");
   }
   return true;
@@ -616,25 +714,37 @@ async function confirmFirstInstanceSetup(payload = {}) {
 
 function skipFirstInstanceSetup(payload = {}) {
   const opId = typeof payload?.opId === "string" ? payload.opId.trim() : "";
-  if (opId && pendingFirstInstanceRun?.opId === opId) pendingFirstInstanceRun = null;
+  if (opId && pendingFirstInstanceRun?.opId === opId) {
+    pendingFirstInstanceRun = null;
+    savePendingFirstInstanceRun(null);
+  }
   return true;
 }
 
-async function startPendingFirstInstance(progress = null) {
+async function startPendingFirstInstance(progress = null, startOptions = {}) {
   const opId = typeof progress?.opId === "string" ? progress.opId.trim() : "";
-  if (!opId || handledFirstInstanceRunOps.has(opId)) return;
   const pending = pendingFirstInstanceRun;
-  if (!pending || pending.opId !== opId) return;
-  handledFirstInstanceRunOps.add(opId);
+  if (!pending) return;
+  if (opId && pending.opId !== opId) return;
+  if (!opId && startOptions?.allowInstalledState !== true) return;
+
+  const runKey = opId || `installed:${pending.opId}:${pending.targetTag}`;
+  if (handledFirstInstanceRunOps.has(runKey)) return;
+  handledFirstInstanceRunOps.add(runKey);
   pendingFirstInstanceRun = null;
+  savePendingFirstInstanceRun(null);
 
   const targetTag = pending.targetTag || (typeof progress?.targetTag === "string" ? progress.targetTag.trim() : "");
-  if (!targetTag) return;
+  if (!targetTag) {
+    handledFirstInstanceRunOps.delete(runKey);
+    return;
+  }
 
   const defaults = normalizeInstanceDefaults(pending.instanceDefaults || store.instanceDefaults);
   const envResult = buildInstanceEnvText(defaults);
   if (!envResult.ok) {
     setBanner("error", envResult.message);
+    handledFirstInstanceRunOps.delete(runKey);
     return;
   }
 
@@ -647,12 +757,38 @@ async function startPendingFirstInstance(progress = null) {
   };
   if (pending.storageMode) options.storageMode = pending.storageMode;
 
-  await activateTag(targetTag, options);
+  const res = await activateTag(targetTag, options);
+  if (isErrorResponse(res)) {
+    pendingFirstInstanceRun = pending;
+    savePendingFirstInstanceRun(pending);
+    handledFirstInstanceRunOps.delete(runKey);
+  }
 }
 
 function clearPendingFirstInstanceRun(progress = null) {
   const opId = typeof progress?.opId === "string" ? progress.opId.trim() : "";
-  if (opId && pendingFirstInstanceRun?.opId === opId) pendingFirstInstanceRun = null;
+  if (opId && pendingFirstInstanceRun?.opId === opId) {
+    pendingFirstInstanceRun = null;
+    savePendingFirstInstanceRun(null);
+  }
+}
+
+function maybeStartPendingFirstInstanceFromState(state = {}) {
+  const pending = pendingFirstInstanceRun;
+  if (!pending?.targetTag) return;
+  if (hasLocalInstance(state)) {
+    pendingFirstInstanceRun = null;
+    savePendingFirstInstanceRun(null);
+    return;
+  }
+
+  const progress = state?.progress || null;
+  if (progress?.status === "running") return;
+  if (!stateHasInstalledTag(state, pending.targetTag)) return;
+
+  startPendingFirstInstance(null, { allowInstalledState: true }).catch((e) => {
+    setBanner("error", e?.message || "Unable to start the first Instance");
+  });
 }
 
 let postOperationRefreshTimer = 0;
@@ -1099,6 +1235,7 @@ function initSubscriptions() {
         store.cli = state?.cli || { installed: false, command: "" };
         store.retentionPolicy = state?.retentionPolicy || null;
         emitState();
+        maybeStartPendingFirstInstanceFromState(snapshot());
       }
     });
   }

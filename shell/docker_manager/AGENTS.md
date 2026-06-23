@@ -54,6 +54,11 @@ This scope owns:
 - UI readiness probes should also allow enough time for a local Agent Zero HTTP
   response to produce headers on slower Windows/WSL loopback paths; avoid
   per-attempt timeouts that create false failed starts while the UI is reachable.
+- Running an installed image as a new managed Instance should not delete the
+  container merely because the UI readiness probe timed out after the container
+  started. Keep the Instance visible and report that Agent Zero is still
+  starting; rollback cleanup remains appropriate for update/switch replacement
+  flows that must restore a previous active Instance.
 - Prefer structured state over renderer-side inference. If the UI needs a
   status, add it to the Docker Manager state shape.
 - Runtime diagnostics for the Advanced tab belong in the Docker Manager state

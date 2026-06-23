@@ -2760,6 +2760,10 @@ function managedInstanceContainerName(tag, instanceName) {
   return sanitizeInstanceName(`${base}-${suffix}`, `a0-inst-${suffix}`);
 }
 
+function shouldKeepCreatedManagedInstanceOnError(error, createdNew) {
+  return error?.code === 'UI_NOT_READY' && !!createdNew?.containerId;
+}
+
 async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, activationOptions = null, storagePreferences = null) {
   const imageRef = imageRefForTag(imageRepo, tag);
   const mappings = Array.isArray(activationOptions?.portMappings) && activationOptions.portMappings.length
@@ -3882,6 +3886,15 @@ async function activateTag(tag, dataLossAck, options = {}) {
       updateOperationProgress({ progress: 100, message: 'Completed' });
     } catch (error) {
       logDockerManagerError('activateTag', error, { opId, tag: t });
+      if (shouldKeepCreatedManagedInstanceOnError(error, createdNew)) {
+        finishOperation('completed', null);
+        updateOperationProgress({
+          progress: 100,
+          message: 'Instance created. Agent Zero is still starting.'
+        });
+        return;
+      }
+
       try {
         if (createdNew && createdNew.containerId) {
           await docker.deleteContainer(createdNew.containerId, { force: true });
@@ -4219,6 +4232,7 @@ module.exports = {
     workspaceStorageFromInspect,
     workspaceHostPathFromInspect,
     waitForUiReachable,
+    shouldKeepCreatedManagedInstanceOnError,
     buildCloneCreateOptions,
     normalizeCloneWorkspaceSelection,
     selectedCloneWorkspaceCategoryIds,

@@ -106,7 +106,10 @@ This scope owns:
   visible Skip button; skipping the CLI step must preserve any already-saved
   first-Instance run choice.
   Persist provider/model defaults to Settings, but keep the "start my first
-  Instance" checkbox and storage choice transient to that install operation.
+  Instance" checkbox and storage choice as a one-shot install-scoped intent,
+  not a reusable preference. That intent may survive renderer reloads or a
+  terminal detour during the active first install, and must be cleared on skip,
+  install failure/cancel, or when the first local Instance exists.
 - Active modal progress should show the current phase once, in the progress
   header above the bar. Do not repeat the same phase as body detail under the
   modal title.
