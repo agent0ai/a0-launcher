@@ -265,6 +265,18 @@ function setBanner(type, message) {
   emitState();
 }
 
+function upsertRemoteInstance(remote = null) {
+  if (!remote || typeof remote !== "object") return;
+  const id = typeof remote.id === "string" ? remote.id.trim() : "";
+  const url = typeof remote.url === "string" ? remote.url.trim() : "";
+  if (!id || !url) return;
+  const current = Array.isArray(store.remoteInstances) ? store.remoteInstances : [];
+  store.remoteInstances = [
+    ...current.filter((item) => item?.id !== id),
+    remote
+  ];
+}
+
 async function loadMeta() {
   try {
     const v = await window.electronAPI?.getContentVersion?.();
@@ -1077,11 +1089,12 @@ async function addRemoteInstance(remote = {}) {
       setBanner("error", res.message);
       return false;
     }
-    setBanner("info", "Remote instance added.");
+    upsertRemoteInstance(res);
+    setBanner("info", "Remote Instance added.");
     await refresh();
-    return true;
+    return res || true;
   } catch (e) {
-    setBanner("error", e?.message || "Unable to add remote instance");
+    setBanner("error", e?.message || "Unable to add remote Instance");
     return false;
   }
 }

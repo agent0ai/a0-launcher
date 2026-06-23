@@ -217,6 +217,10 @@ function buttonByText(document, text) {
   return buttons(document).find((button) => button.textContent === text) || null;
 }
 
+function buttonByAction(document, action) {
+  return buttons(document).find((button) => button.dataset.runtimeAction === action) || null;
+}
+
 test('no Docker on Linux shows blocking setup action', () => {
   const document = installDom();
   const state = {
@@ -238,9 +242,33 @@ test('no Docker on Linux shows blocking setup action', () => {
   let setupCount = 0;
   assert.equal(renderRuntimeGate(state, { provisionRuntime: () => { setupCount += 1; } }), true);
   assert.ok(document.getElementById('runtimeSetupDialog'));
+  assert.ok(buttonByAction(document, 'add_remote_instance'));
   assert.equal(document.querySelector('.dm-page').inert, true);
   buttonByText(document, 'Continue').dispatchEvent(new MiniEvent('click'));
   assert.equal(setupCount, 1);
+});
+
+test('saved remote instances bypass local runtime setup', () => {
+  const document = installDom();
+  const state = {
+    stateLoaded: true,
+    dockerAvailable: false,
+    runtime: {
+      platform: 'linux',
+      state: 'not_provisioned',
+      action: 'install',
+      canProvision: true,
+      detail: 'No container runtime was found.'
+    },
+    remoteInstances: [
+      { id: 'remote-1', name: 'VPS', url: 'https://agent-zero.example.com/' }
+    ]
+  };
+
+  assert.equal(shouldShowRuntimeGate(state), false);
+  assert.equal(renderRuntimeGate(state, {}), false);
+  assert.equal(document.getElementById('runtimeSetupDialog'), null);
+  assert.equal(document.querySelector('.dm-page').inert, false);
 });
 
 test('Docker Desktop installed but stopped starts Docker Desktop instead of opening an install guide', () => {
@@ -375,6 +403,7 @@ test('completed runtime setup prompts for image download only when no image is i
   assert.equal(document.querySelector('.dm-runtime-install-text')?.textContent, 'Download Agent Zero to create your first Instance.');
   assert.equal(document.querySelector('#runtimeSetupTag')?.value, 'latest');
   assert.equal(document.querySelector('#runtimeEndpointChoice'), null);
+  assert.ok(buttonByAction(document, 'add_remote_instance'));
   assert.equal(buttonByText(document, 'Refresh'), null);
   assert.equal(document.querySelector('.dm-runtime-steps'), null);
 

@@ -2223,6 +2223,35 @@ body {
   line-height: 1.45;
 }
 
+.dm-runtime-remote-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--dm-surface) 76%, var(--color-background) 24%);
+}
+
+.dm-runtime-remote-copy {
+  min-width: 0;
+}
+
+.dm-runtime-remote-title {
+  color: var(--color-text);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.dm-runtime-remote-detail {
+  margin-top: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
 .dm-runtime-gate-secondary,
 .dm-runtime-gate-primary {
   display: flex;
@@ -2247,6 +2276,10 @@ body {
 
   .dm-setup-showcase-media-frame {
     min-height: 10rem;
+  }
+
+  .dm-runtime-remote-option {
+    grid-template-columns: 1fr;
   }
 }
 

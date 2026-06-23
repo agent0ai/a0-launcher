@@ -1,25 +1,9 @@
 import { createInstanceVisual } from "../card-visuals.js";
+import { openAddRemoteInstanceDialog } from "../remote-instance-dialog.js";
 
 function byId(id) { return document.getElementById(id); }
 
 let logsRequestSeq = 0;
-
-function normalizeUrlInput(value) {
-  let raw = String(value || "").trim();
-  if (!raw) return null;
-  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(raw)) raw = `http://${raw}`;
-  try {
-    const parsed = new URL(raw);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function defaultRemoteName(value) {
-  const parsed = normalizeUrlInput(value);
-  return parsed?.hostname || "";
-}
 
 function localUiUrl(value) {
   const raw = String(value || "").trim();
@@ -262,75 +246,6 @@ function createCardMenu(items) {
   menu.appendChild(trigger);
   menu.appendChild(popover);
   return menu;
-}
-
-function openAddRemoteInstanceDialog() {
-  const existing = document.getElementById("remoteInstanceDialog");
-  if (existing) existing.remove();
-
-  const dialog = document.createElement("div");
-  dialog.id = "remoteInstanceDialog";
-  dialog.className = "dm-dialog-backdrop";
-  dialog.setAttribute("role", "presentation");
-  dialog.innerHTML = `
-    <form class="dm-dialog" role="dialog" aria-modal="true" aria-labelledby="remoteInstanceTitle">
-      <div class="dm-dialog-header">
-        <h2 id="remoteInstanceTitle" class="dm-dialog-title">Add remote instance</h2>
-        <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">×</button>
-      </div>
-      <div class="dm-dialog-body">
-        <div class="dm-field">
-          <label for="remoteInstanceUrl">Instance URL</label>
-          <input id="remoteInstanceUrl" class="dm-text-input" type="text" inputmode="url" autocomplete="url" placeholder="https://agent-zero.example.com">
-          <div class="dm-field-hint">Use the URL where this Agent Zero instance is already running. If no protocol is entered, the launcher will use http://.</div>
-        </div>
-        <div class="dm-field">
-          <label for="remoteInstanceName">Display name</label>
-          <input id="remoteInstanceName" class="dm-text-input" type="text" maxlength="80" autocomplete="off" placeholder="Remote instance">
-          <div class="dm-field-hint">Optional. This is only the friendly name shown in Instances.</div>
-        </div>
-      </div>
-      <div class="dm-dialog-footer">
-        <button class="button" type="button" data-dialog-close>Cancel</button>
-        <button class="button confirm" type="submit">Add instance</button>
-      </div>
-    </form>
-  `;
-
-  const form = dialog.querySelector("form");
-  const urlInput = dialog.querySelector("#remoteInstanceUrl");
-  const nameInput = dialog.querySelector("#remoteInstanceName");
-
-  urlInput?.addEventListener("input", () => {
-    if (!nameInput || nameInput.dataset.dirty) return;
-    nameInput.value = defaultRemoteName(urlInput.value);
-  });
-  nameInput?.addEventListener("input", () => {
-    nameInput.dataset.dirty = "1";
-  });
-
-  dialog.querySelectorAll("[data-dialog-close]").forEach((btn) => {
-    btn.addEventListener("click", () => closeDialog(dialog));
-  });
-  dialog.addEventListener("mousedown", (event) => {
-    if (event.target === dialog) closeDialog(dialog);
-  });
-  form?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const url = urlInput?.value || "";
-    if (!normalizeUrlInput(url)) {
-      window.toastFrontendError?.("Enter a valid instance URL.", "Agent Zero");
-      return;
-    }
-    const ok = await window.dockerManagerActions?.addRemoteInstance?.({
-      url,
-      name: nameInput?.value || ""
-    });
-    if (ok) closeDialog(dialog);
-  });
-
-  document.body.appendChild(dialog);
-  window.setTimeout(() => urlInput?.focus(), 0);
 }
 
 function openRenameInstanceDialog({ title, currentName, onRename }) {
@@ -1034,7 +949,7 @@ function render(state) {
 
   list.innerHTML = "";
   if (!containers.length && !remoteInstances.length) {
-    list.innerHTML = '<div class="dm-empty">No instances found. Run an install or add a remote instance.</div>';
+    list.innerHTML = '<div class="dm-empty">No Instances found. Run an install or add a remote Instance.</div>';
     return;
   }
 

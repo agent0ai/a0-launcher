@@ -34,9 +34,11 @@ This scope owns:
 - Components invoke behavior through `window.dockerManagerActions`, not through
   raw IPC names.
 - Runtime setup state is part of the canonical renderer snapshot. If the
-  runtime is not ready after initial state loads, the renderer must show the
-  blocking startup runtime modal before any launcher workspace feature can be
-  used. Docker mechanics stay in the shell.
+  runtime is not ready after initial state loads and no saved remote Instances
+  exist, the renderer must show the startup runtime modal with a first-step
+  affordance to add a remote Instance. Saved remote Instances must keep the
+  launcher usable without local Docker setup. Docker mechanics stay in the
+  shell.
 - The setup capability slideshow is for the long Agent Zero image pull/extract
   wait, not for Docker runtime setup or short install preflight checks.
 - When runtime setup completes, the same modal shell owns the next step without

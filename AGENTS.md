@@ -9,8 +9,10 @@ contract to read before editing any project file.
 
 The launcher is an Electron desktop app that lets people install, activate,
 switch, inspect, and open Dockerized Agent Zero instances without needing to
-learn Docker first. Build it as if elegance and reliability are the same
-requirement: clear, restrained, robust, and worthy of the Agent Zero brand.
+learn Docker first. It also lets people save and open remote Agent Zero
+instances running on a VPS or URL without setting up local Docker. Build it as
+if elegance and reliability are the same requirement: clear, restrained,
+robust, and worthy of the Agent Zero brand.
 
 ## Ownership
 
@@ -126,6 +128,9 @@ Agent Zero runtime assumptions:
 Product language:
 
 - Say `Instances`, not `Sessions`, for running or retained containers.
+- Remote Instances are a first-run path, not an advanced fallback. Do not force
+  local Docker setup or an image pull before a user can add a remote Agent Zero
+  URL.
 - Say `Storage volumes`, not just `Storage`, when referring to Docker volumes.
 - Keep instance deletion separate from workspace deletion. Host workspace
   directories and named Docker volumes should survive container removal unless a

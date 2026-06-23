@@ -1,4 +1,5 @@
 import { estimatedProgressFromSteps, progressMetaText } from "../progress-eta.js";
+import { openAddRemoteInstanceDialog } from "../remote-instance-dialog.js";
 
 const RUNTIME_GATE_ID = "runtimeSetupDialog";
 
@@ -253,6 +254,11 @@ function hasLocalInstances(state = {}) {
   });
 }
 
+function hasRemoteInstances(state = {}) {
+  const remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+  return remoteInstances.some((remote) => asText(remote?.id) && asText(remote?.url));
+}
+
 function successModeForState(state = {}) {
   if (!hasInstalledAgentZeroImage(state)) return "install";
   if (!hasLocalInstances(state)) return "run";
@@ -315,6 +321,7 @@ function shouldShowRuntimeSuccess(state = {}) {
 
 function shouldShowRuntimeGate(state = {}) {
   if (!state?.stateLoaded) return false;
+  if (hasRemoteInstances(state)) return false;
   if (shouldShowRuntimeSuccess(state)) return true;
   return !isRuntimeReady(state);
 }
@@ -556,6 +563,52 @@ function renderSetupChoice(model, parent, selectedTag = "") {
   return select;
 }
 
+function remoteOptionDetail(model = {}) {
+  if (model.successMode === "install") return "Add its URL instead of downloading a local image.";
+  if (model.successMode === "run") return "Add its URL instead of starting one here.";
+  if (model.successMode === "continue") return "Add its URL and open it in the launcher too.";
+  return "Add its URL and use the launcher without local Docker setup.";
+}
+
+function renderRemoteOption(model, parent) {
+  const wrap = document.createElement("div");
+  wrap.className = "dm-runtime-remote-option";
+
+  const copy = document.createElement("div");
+  copy.className = "dm-runtime-remote-copy";
+
+  const title = document.createElement("div");
+  title.className = "dm-runtime-remote-title";
+  title.textContent = "Agent Zero is already hosted?";
+
+  const detail = document.createElement("div");
+  detail.className = "dm-runtime-remote-detail";
+  detail.textContent = remoteOptionDetail(model);
+
+  copy.appendChild(title);
+  copy.appendChild(detail);
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "button";
+  button.dataset.runtimeAction = "add_remote_instance";
+
+  const icon = document.createElement("span");
+  icon.className = "material-symbols-outlined";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "add_link";
+
+  const label = document.createElement("span");
+  label.textContent = "Add remote Instance";
+
+  button.appendChild(icon);
+  button.appendChild(label);
+  wrap.appendChild(copy);
+  wrap.appendChild(button);
+  parent.appendChild(wrap);
+  return button;
+}
+
 function setPageBlocked(blocked) {
   const page = document.querySelector(".dm-page");
   if (!page) return;
@@ -610,6 +663,28 @@ function bindBlockingKeys() {
   if (blockingKeyHandlerDocument === document) return;
   document.addEventListener("keydown", blockModalKeyboard, true);
   blockingKeyHandlerDocument = document;
+}
+
+function openRemoteInstanceSetup(actions = {}, state = {}) {
+  removeRuntimeGate();
+  openAddRemoteInstanceDialog({
+    title: "Add remote Instance",
+    submitLabel: "Add Instance",
+    intro: "Connect this launcher to Agent Zero already running on a VPS or another URL. You can set up local Docker later.",
+    onCancel: () => {
+      renderRuntimeGate(window.__dmLastState || state, actions);
+    },
+    onAdded: async (remote) => {
+      const instanceId = asText(remote?.id);
+      if (instanceId) {
+        await actions?.openInstanceUi?.({
+          kind: "remote",
+          instanceId,
+          title: asText(remote?.name) || "Remote Instance"
+        });
+      }
+    }
+  });
 }
 
 async function runAction(action, runtime, actions, root = null) {
@@ -692,6 +767,8 @@ function renderRuntimeGate(state = {}, actions = {}) {
   renderSuccess(model, body);
   renderRuntimeChoice(model, body, previousRuntimeEndpointId);
   renderSetupChoice(model, body, previousSetupTag);
+  const remoteButton = renderRemoteOption(model, body);
+  remoteButton.addEventListener("click", () => openRemoteInstanceSetup(actions, state));
   if (!model.success) {
     renderProgress(model, body);
     renderRuntimeDetails(model, body);
