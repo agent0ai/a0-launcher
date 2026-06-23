@@ -45,16 +45,16 @@ const SETUP_SHOWCASE_SLIDES = Object.freeze([
     id: "space-agent",
     title: "Space Agent",
     description: "Let the AI reshape the workspace, build tools into the running interface, and extend itself through simple SKILL.md files.",
-    mediaType: "video",
-    media: `${SHOWCASE_ASSET_BASE}/space-agent-demo.webm`,
+    mediaType: "image",
+    media: `${SHOWCASE_ASSET_BASE}/space-agent-demo-poster.png`,
     mediaLabel: "Space Agent workspace with AI-built tools running inside the interface."
   }),
   Object.freeze({
     id: "a0-cli",
     title: "A0 CLI: Your Browser and Computer",
     description: "Connect host files, Host Web Browser, and Computer Use beyond the Agent Zero sandbox when A0 CLI is installed.",
-    mediaType: "video",
-    media: `${SHOWCASE_ASSET_BASE}/computer-use.webm`,
+    mediaType: "image",
+    media: `${SHOWCASE_ASSET_BASE}/computer-use-poster.png`,
     mediaLabel: "A0 CLI connected to Host Web Browser and Computer Use on the user's desktop."
   })
 ]);

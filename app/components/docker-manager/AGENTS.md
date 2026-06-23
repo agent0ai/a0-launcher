@@ -103,7 +103,9 @@ This scope owns:
   affected card as queued/running and report failures with toast feedback.
 - The Agent Zero setup slideshow belongs only to the image pull/extract wait in
   the install operation modal. Do not show it during Docker runtime setup or
-  short preflight checks.
+  short preflight checks. Slides should use renderer-visible still image assets
+  so the blocking install modal never depends on video playback to show
+  meaningful media.
 - On a first image pull with no local Instances, the operation modal may show a
   saved Instance defaults panel before the slideshow. Ask for providers,
   models, and API keys before the optional first-Instance name/run choice.
