@@ -73,6 +73,12 @@ This scope owns:
 - Local instance display-name overrides are persisted through `state_store.js`
   because Docker labels on existing containers cannot be mutated safely.
 - Port preferences are stored as UI and SSH host-port preferences.
+- Host-port requests using `0` must be settled to explicit loopback host ports
+  before Docker container creation so a container's published port remains
+  stable across later starts, deletions of other containers, and new runs.
+  Replacement flows should preserve the source container's inspected settled
+  ports when Docker exposes them; clones still receive fresh explicit open
+  ports so they can run beside the source.
 - Workspace storage preferences are stored as `mode`, `hostRoot`, and
   `volumePrefix`. The default mode is `host_directory`, default root is
   `~/agent-zero`, and every new launcher-managed local container must mount a

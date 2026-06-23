@@ -18,6 +18,9 @@ const {
   workspaceStorageFromInspect,
   workspaceHostPathFromInspect,
   waitForUiReachable,
+  parsePortMappings,
+  settlePortMappings,
+  replacementPortMappingsFromInspect,
   buildCloneCreateOptions,
   normalizeCloneWorkspaceSelection,
   selectedCloneWorkspaceCategoryIds,
@@ -174,6 +177,61 @@ test('UI readiness wait retries while a published port is still warming up', asy
   } finally {
     await closeServer(server);
   }
+});
+
+test('dynamic port mappings are settled before Docker container creation', async () => {
+  const allocatorReservations = [];
+  let nextPort = 32100;
+  const mappings = await settlePortMappings(parsePortMappings('0:80, 55022:22'), {
+    allocateHostPort: async (reserved) => {
+      allocatorReservations.push([...reserved].sort((a, b) => a - b));
+      return nextPort++;
+    }
+  });
+
+  assert.deepEqual(mappings.map((mapping) => ({
+    hostPort: mapping.hostPort,
+    containerPort: mapping.containerPort,
+    key: mapping.key,
+    hostIp: mapping.hostIp
+  })), [
+    { hostPort: 32100, containerPort: 80, key: '80/tcp', hostIp: '127.0.0.1' },
+    { hostPort: 55022, containerPort: 22, key: '22/tcp', hostIp: '127.0.0.1' }
+  ]);
+  assert.deepEqual(allocatorReservations, [[55022]]);
+});
+
+test('replacement port mappings prefer settled Docker network ports', () => {
+  const runningDynamic = {
+    HostConfig: {
+      PortBindings: {
+        '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '' }]
+      }
+    },
+    NetworkSettings: {
+      Ports: {
+        '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '32769' }],
+        '22/tcp': null
+      }
+    }
+  };
+
+  assert.deepEqual(replacementPortMappingsFromInspect(runningDynamic), [
+    { hostPort: 32769, containerPort: 80, key: '80/tcp', hostIp: '127.0.0.1' }
+  ]);
+
+  const stoppedExplicit = {
+    HostConfig: {
+      PortBindings: {
+        '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '32080' }]
+      }
+    },
+    NetworkSettings: { Ports: {} }
+  };
+
+  assert.deepEqual(replacementPortMappingsFromInspect(stoppedExplicit), [
+    { hostPort: 32080, containerPort: 80, key: '80/tcp', hostIp: '127.0.0.1' }
+  ]);
 });
 
 test('host directory workspace storage creates a per-container /a0/usr mount and labels', async () => {
@@ -368,7 +426,10 @@ test('clone create options replace source workspace mounts with a fresh workspac
     'container-id',
     'a0-launcher-clone:clone-test',
     { mode: 'host_directory', hostRoot: root, volumePrefix: 'a0-launcher' },
-    { containerName: 'a0-inst-main-clone-test' }
+    {
+      containerName: 'a0-inst-main-clone-test',
+      allocateHostPort: async () => 32123
+    }
   );
 
   assert.equal(options.Labels['a0.launcher.role'], 'clone');
@@ -377,8 +438,55 @@ test('clone create options replace source workspace mounts with a fresh workspac
   assert.equal(options.HostConfig.Mounts[0].Target, WORKSPACE_MOUNT_TARGET);
   assert.equal(options.HostConfig.Mounts[0].Source, path.join(root, 'a0-inst-main-clone-test', 'usr'));
   assert.deepEqual(options.HostConfig.Binds, ['/old/other:/a0/other:rw']);
-  assert.equal(options.HostConfig.PortBindings['80/tcp'][0].HostPort, '0');
+  assert.equal(options.HostConfig.PortBindings['80/tcp'][0].HostPort, '32123');
+  assert.equal(options.Labels['a0.launcher.port.map'], '32123:80');
+  assert.equal(options.Labels['a0.launcher.port.ui'], '32123');
   assert.equal(options.Labels['a0.launcher.cloneWorkspaceFull'], 'true');
+});
+
+test('migration replacement preserves a running source container settled port', async () => {
+  const root = await tempRoot();
+  const inspect = {
+    Name: '/a0-inst-main',
+    Config: {
+      Image: 'agent0ai/agent-zero:latest',
+      Labels: {
+        'a0.launcher.managed': 'true',
+        'a0.launcher.role': 'instance',
+        'a0.launcher.instanceName': 'Main'
+      },
+      ExposedPorts: { '80/tcp': {} }
+    },
+    HostConfig: {
+      PortBindings: { '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '' }] }
+    },
+    NetworkSettings: {
+      Ports: {
+        '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '32769' }]
+      }
+    }
+  };
+
+  const options = await buildCloneCreateOptions(
+    inspect,
+    'container-id',
+    'a0-launcher-clone:clone-test',
+    { mode: 'host_directory', hostRoot: root, volumePrefix: 'a0-launcher' },
+    {
+      role: 'instance',
+      instanceName: 'Main',
+      containerName: 'a0-inst-main-persistent',
+      migrationSource: true,
+      preserveSettledPorts: true,
+      allocateHostPort: async () => {
+        throw new Error('settled source port should not need allocation');
+      }
+    }
+  );
+
+  assert.equal(options.HostConfig.PortBindings['80/tcp'][0].HostPort, '32769');
+  assert.equal(options.Labels['a0.launcher.port.map'], '32769:80');
+  assert.equal(options.Labels['a0.launcher.port.ui'], '32769');
 });
 
 test('clone workspace selection defaults to the full Agent Zero backup scope', () => {

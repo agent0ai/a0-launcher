@@ -2,6 +2,7 @@ const { EventEmitter } = require('node:events');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const http = require('node:http');
+const net = require('node:net');
 const path = require('node:path');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
@@ -2016,6 +2017,202 @@ function parsePortMappings(value) {
   return mappings;
 }
 
+function normalizePortBindingKey(key) {
+  const match = String(key || '').trim().match(/^(\d+)\/(tcp|udp)$/i);
+  if (!match) return null;
+  const containerPort = Number(match[1]);
+  if (!Number.isInteger(containerPort) || containerPort <= 0 || containerPort > 65535) return null;
+  return {
+    key: `${containerPort}/${match[2].toLowerCase()}`,
+    containerPort
+  };
+}
+
+function normalizeHostPort(value, fallback = 0) {
+  if (value === '' || value === null || value === undefined) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > 65535) return fallback;
+  return n;
+}
+
+function normalizeHostIp(value) {
+  const text = String(value || '').trim();
+  if (text === '::1' || text === '[::1]') return '::1';
+  return '127.0.0.1';
+}
+
+function portMappingsFromNetworkSettings(inspect) {
+  const ports = inspect?.NetworkSettings?.Ports;
+  if (!ports || typeof ports !== 'object') return [];
+
+  const mappings = [];
+  for (const [rawKey, bindings] of Object.entries(ports)) {
+    const parsed = normalizePortBindingKey(rawKey);
+    if (!parsed) continue;
+    for (const binding of Array.isArray(bindings) ? bindings : []) {
+      const hostPort = normalizeHostPort(binding?.HostPort, 0);
+      if (hostPort <= 0) continue;
+      mappings.push({
+        hostPort,
+        containerPort: parsed.containerPort,
+        key: parsed.key,
+        hostIp: normalizeHostIp(binding?.HostIp)
+      });
+    }
+  }
+  return mappings;
+}
+
+function portMappingsFromHostConfigPortBindings(portBindings) {
+  const source = isPlainObject(portBindings) ? portBindings : {};
+  const mappings = [];
+
+  for (const [rawKey, bindings] of Object.entries(source)) {
+    const parsed = normalizePortBindingKey(rawKey);
+    if (!parsed) continue;
+    const list = Array.isArray(bindings) && bindings.length ? bindings : [{ HostIp: '127.0.0.1', HostPort: '0' }];
+    for (const binding of list) {
+      mappings.push({
+        hostPort: normalizeHostPort(binding?.HostPort, 0),
+        containerPort: parsed.containerPort,
+        key: parsed.key,
+        hostIp: normalizeHostIp(binding?.HostIp)
+      });
+    }
+  }
+
+  return mappings;
+}
+
+function replacementPortMappingsFromInspect(inspect) {
+  const settled = portMappingsFromNetworkSettings(inspect);
+  if (settled.length) return settled;
+  return portMappingsFromHostConfigPortBindings(inspect?.HostConfig?.PortBindings);
+}
+
+function firstHostPortForBinding(portBindings, key) {
+  const bindings = isPlainObject(portBindings) ? portBindings[key] : null;
+  for (const binding of Array.isArray(bindings) ? bindings : []) {
+    const hostPort = normalizeHostPort(binding?.HostPort, 0);
+    if (hostPort > 0) return hostPort;
+  }
+  return 0;
+}
+
+async function allocateOpenHostPort(reservedHostPorts = new Set()) {
+  const reserved = reservedHostPorts instanceof Set ? reservedHostPorts : new Set();
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const port = await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      const done = (fn, value) => {
+        server.removeAllListeners();
+        fn(value);
+      };
+      server.once('error', (error) => done(reject, error));
+      server.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => {
+        const address = server.address();
+        const selected = Number(address && typeof address === 'object' ? address.port : 0);
+        server.close((error) => {
+          if (error) done(reject, error);
+          else done(resolve, selected);
+        });
+      });
+      if (typeof server.unref === 'function') server.unref();
+    });
+    if (Number.isInteger(port) && port > 0 && port <= 65535 && !reserved.has(port)) return port;
+  }
+
+  const err = new Error('Unable to find an open host port');
+  err.code = 'NO_OPEN_PORT';
+  throw err;
+}
+
+async function settlePortMappings(mappings, options = {}) {
+  const source = Array.isArray(mappings) ? mappings : [];
+  const allocate = typeof options?.allocateHostPort === 'function' ? options.allocateHostPort : allocateOpenHostPort;
+  const reserved = new Set(Array.isArray(options?.reservedHostPorts) ? options.reservedHostPorts : []);
+
+  for (const mapping of source) {
+    const hostPort = normalizeHostPort(mapping?.hostPort, 0);
+    if (hostPort > 0) reserved.add(hostPort);
+  }
+
+  const settled = [];
+  for (const mapping of source) {
+    const containerPort = Number(mapping?.containerPort);
+    if (!Number.isInteger(containerPort) || containerPort <= 0 || containerPort > 65535) continue;
+    const keyInfo = normalizePortBindingKey(mapping?.key || `${containerPort}/tcp`);
+    if (!keyInfo) continue;
+    let hostPort = normalizeHostPort(mapping?.hostPort, 0);
+    if (hostPort <= 0) {
+      // eslint-disable-next-line no-await-in-loop
+      hostPort = await allocate(reserved);
+      reserved.add(hostPort);
+    }
+    settled.push({
+      ...mapping,
+      hostPort,
+      containerPort,
+      key: keyInfo.key,
+      hostIp: normalizeHostIp(mapping?.hostIp)
+    });
+  }
+
+  return settled;
+}
+
+async function settlePortBindings(portBindings, options = {}) {
+  const source = isPlainObject(portBindings) ? portBindings : {};
+  const allocate = typeof options?.allocateHostPort === 'function' ? options.allocateHostPort : allocateOpenHostPort;
+  const reserved = new Set(Array.isArray(options?.reservedHostPorts) ? options.reservedHostPorts : []);
+
+  for (const bindings of Object.values(source)) {
+    for (const binding of Array.isArray(bindings) ? bindings : []) {
+      const hostPort = normalizeHostPort(binding?.HostPort, 0);
+      if (hostPort > 0) reserved.add(hostPort);
+    }
+  }
+
+  const out = {};
+  for (const [rawKey, bindings] of Object.entries(source)) {
+    const parsed = normalizePortBindingKey(rawKey);
+    if (!parsed) continue;
+    const list = Array.isArray(bindings) && bindings.length ? bindings : [{ HostIp: '127.0.0.1', HostPort: '0' }];
+    out[parsed.key] = [];
+    for (const binding of list) {
+      let hostPort = normalizeHostPort(binding?.HostPort, 0);
+      if (hostPort <= 0) {
+        // eslint-disable-next-line no-await-in-loop
+        hostPort = await allocate(reserved);
+        reserved.add(hostPort);
+      }
+      out[parsed.key].push({
+        HostIp: normalizeHostIp(binding?.HostIp),
+        HostPort: String(hostPort)
+      });
+    }
+  }
+  return out;
+}
+
+function portBindingsFromMappings(mappings) {
+  const portBindings = {};
+  for (const mapping of Array.isArray(mappings) ? mappings : []) {
+    const containerPort = Number(mapping?.containerPort);
+    if (!Number.isInteger(containerPort) || containerPort <= 0 || containerPort > 65535) continue;
+    const parsed = normalizePortBindingKey(mapping?.key || `${containerPort}/tcp`);
+    if (!parsed) continue;
+    if (!Array.isArray(portBindings[parsed.key])) portBindings[parsed.key] = [];
+    portBindings[parsed.key].push({
+      HostIp: normalizeHostIp(mapping?.hostIp),
+      HostPort: String(normalizeHostPort(mapping?.hostPort, 0))
+    });
+  }
+  return portBindings;
+}
+
 function parseEnvText(value) {
   const raw = typeof value === 'string' ? value : '';
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -2243,9 +2440,13 @@ function cloneExposedPorts(configExposedPorts, portBindings) {
 
 function portMapLabelFromBindings(portBindings) {
   const parts = [];
-  for (const key of Object.keys(isPlainObject(portBindings) ? portBindings : {})) {
+  const source = isPlainObject(portBindings) ? portBindings : {};
+  for (const [key, bindings] of Object.entries(source)) {
     const containerPort = String(key || '').split('/')[0];
-    if (containerPort) parts.push(`0:${containerPort}`);
+    if (!containerPort) continue;
+    for (const binding of Array.isArray(bindings) ? bindings : []) {
+      parts.push(`${normalizeHostPort(binding?.HostPort, 0)}:${containerPort}`);
+    }
   }
   return parts.join(',');
 }
@@ -2963,7 +3164,13 @@ async function buildCloneCreateOptions(inspect, containerId, cloneImageRef, stor
   const versionTag = sourceLabels['a0.launcher.versionTag'] || splitImageAndTag(sourceImage, '').tag || '';
   const workspaceSelection = normalizeCloneWorkspaceSelection(options?.workspaceCategories);
 
-  const portBindings = clonePortBindings(host.PortBindings);
+  const requestedPortBindings = options?.preserveSettledPorts === true
+    ? (() => {
+        const { portBindings } = buildPortExposure(replacementPortMappingsFromInspect(inspect));
+        return portBindings;
+      })()
+    : clonePortBindings(host.PortBindings);
+  const portBindings = await settlePortBindings(requestedPortBindings, options);
   const exposedPorts = cloneExposedPorts(config.ExposedPorts, portBindings);
   const portMapLabel = portMapLabelFromBindings(portBindings);
 
@@ -2982,8 +3189,12 @@ async function buildCloneCreateOptions(inspect, containerId, cloneImageRef, stor
   if (versionTag) labels['a0.launcher.versionTag'] = versionTag;
   if (sourceImage) labels['a0.launcher.imageRef'] = sourceImage;
   if (portMapLabel) labels['a0.launcher.port.map'] = portMapLabel;
-  labels['a0.launcher.port.ui'] = Object.prototype.hasOwnProperty.call(portBindings, '80/tcp') ? '0' : '';
-  labels['a0.launcher.port.ssh'] = Object.prototype.hasOwnProperty.call(portBindings, '22/tcp') ? '0' : '';
+  labels['a0.launcher.port.ui'] = Object.prototype.hasOwnProperty.call(portBindings, '80/tcp')
+    ? String(firstHostPortForBinding(portBindings, '80/tcp') || '')
+    : '';
+  labels['a0.launcher.port.ssh'] = Object.prototype.hasOwnProperty.call(portBindings, '22/tcp')
+    ? String(firstHostPortForBinding(portBindings, '22/tcp') || '')
+    : '';
 
   const hostConfig = {};
   if (Object.keys(portBindings).length) hostConfig.PortBindings = portBindings;
@@ -3311,22 +3522,19 @@ async function createAndStartActiveContainer(docker, imageRepo, tag, portPrefere
   const hostPortUi = toPort(prefs?.ui, 8880);
   const hostPortSsh = toPort(prefs?.ssh, 55022);
 
-  const mappings = Array.isArray(activationOptions?.portMappings) && activationOptions.portMappings.length
+  const requestedMappings = Array.isArray(activationOptions?.portMappings) && activationOptions.portMappings.length
     ? activationOptions.portMappings
     : [
         { hostPort: hostPortUi, containerPort: 80, key: '80/tcp' },
         { hostPort: hostPortSsh, containerPort: 22, key: '22/tcp' }
       ];
+  const mappings = await settlePortMappings(requestedMappings);
 
-  const exposedPorts = {};
-  const portBindings = {};
-  for (const mapping of mappings) {
-    const key = mapping.key || `${mapping.containerPort}/tcp`;
-    exposedPorts[key] = {};
-    portBindings[key] = [{ HostIp: '127.0.0.1', HostPort: String(mapping.hostPort) }];
-  }
+  const { exposedPorts, portBindings } = buildPortExposure(mappings);
 
   const instanceName = sanitizeInstanceName(activationOptions?.instanceName, sanitizeInstanceName(`agent-zero-${tag}`));
+  const uiMapping = preferredUiMapping(mappings);
+  const sshMapping = mappings.find((m) => Number(m.containerPort) === 22) || null;
   const portMapLabel = mappings.map((m) => `${m.hostPort}:${m.containerPort}`).join(',');
 
   const createOptions = {
@@ -3339,8 +3547,8 @@ async function createAndStartActiveContainer(docker, imageRepo, tag, portPrefere
       'a0.launcher.versionTag': tag,
       'a0.launcher.instanceName': instanceName,
       'a0.launcher.port.map': portMapLabel,
-      'a0.launcher.port.ui': String(mappings.find((m) => Number(m.containerPort) === 80)?.hostPort ?? hostPortUi),
-      'a0.launcher.port.ssh': String(mappings.find((m) => Number(m.containerPort) === 22)?.hostPort ?? '')
+      'a0.launcher.port.ui': String(uiMapping?.hostPort ?? ''),
+      'a0.launcher.port.ssh': String(sshMapping?.hostPort ?? '')
     },
     HostConfig: {
       PortBindings: portBindings
@@ -3373,11 +3581,9 @@ async function createAndStartActiveContainer(docker, imageRepo, tag, portPrefere
 
 function buildPortExposure(mappings) {
   const exposedPorts = {};
-  const portBindings = {};
-  for (const mapping of mappings || []) {
-    const key = mapping.key || `${mapping.containerPort}/tcp`;
+  const portBindings = portBindingsFromMappings(mappings);
+  for (const key of Object.keys(portBindings)) {
     exposedPorts[key] = {};
-    portBindings[key] = [{ HostIp: '127.0.0.1', HostPort: String(mapping.hostPort) }];
   }
   return { exposedPorts, portBindings };
 }
@@ -3411,9 +3617,10 @@ function shouldKeepCreatedManagedInstanceOnError(error, createdNew) {
 
 async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, activationOptions = null, storagePreferences = null) {
   const imageRef = imageRefForTag(imageRepo, tag);
-  const mappings = Array.isArray(activationOptions?.portMappings) && activationOptions.portMappings.length
+  const requestedMappings = Array.isArray(activationOptions?.portMappings) && activationOptions.portMappings.length
     ? activationOptions.portMappings
     : parsePortMappings('0:80');
+  const mappings = await settlePortMappings(requestedMappings);
   const { exposedPorts, portBindings } = buildPortExposure(mappings);
   const uiMapping = preferredUiMapping(mappings);
   const sshMapping = mappings.find((mapping) => Number(mapping.containerPort) === 22) || null;
@@ -3466,7 +3673,8 @@ async function createAndStartManagedInstanceContainer(docker, imageRepo, tag, ac
 }
 
 async function createAndStartDeveloperContainer(docker, options, storagePreferences = null) {
-  const mappings = Array.isArray(options?.portMappings) ? options.portMappings : parsePortMappings('0:80');
+  const requestedMappings = Array.isArray(options?.portMappings) ? options.portMappings : parsePortMappings('0:80');
+  const mappings = await settlePortMappings(requestedMappings);
   const { exposedPorts, portBindings } = buildPortExposure(mappings);
   const uiMapping = preferredUiMapping(mappings);
   const sshMapping = mappings.find((mapping) => Number(mapping.containerPort) === 22) || null;
@@ -3942,6 +4150,7 @@ async function migrateLocalInstanceStorage(containerId, options = {}) {
           instanceName: friendlyName,
           containerName: migratedInstanceContainerName(friendlyName),
           migrationSource: true,
+          preserveSettledPorts: true,
           storage: storageOverride,
           docker
         }
@@ -4372,6 +4581,15 @@ async function updateToLatest(dataLossAck) {
       const containers = await docker.listContainers(imageRepo);
       const activeName = retention.getActiveContainerName(imageRepo);
       const active = (containers || []).find((c) => c && c.containerName === activeName) || null;
+      let activePortMappings = null;
+      if (active && active.containerId) {
+        try {
+          const activeInspect = await docker.inspectContainer(active.containerId);
+          activePortMappings = replacementPortMappingsFromInspect(activeInspect);
+        } catch {
+          activePortMappings = null;
+        }
+      }
 
       if (active && active.containerId) {
         // Stop and retain current active.
@@ -4399,7 +4617,10 @@ async function updateToLatest(dataLossAck) {
         imageRepo,
         latest,
         portPreferences,
-        null,
+        {
+          instanceName: active?.instanceName || undefined,
+          portMappings: Array.isArray(activePortMappings) && activePortMappings.length ? activePortMappings : undefined
+        },
         await stateStore.readStoragePreferences()
       );
 
@@ -4983,6 +5204,9 @@ module.exports = {
     workspaceStorageFromInspect,
     workspaceHostPathFromInspect,
     waitForUiReachable,
+    parsePortMappings,
+    settlePortMappings,
+    replacementPortMappingsFromInspect,
     shouldKeepCreatedManagedInstanceOnError,
     buildCloneCreateOptions,
     normalizeCloneWorkspaceSelection,
