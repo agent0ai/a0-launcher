@@ -73,7 +73,8 @@ This scope owns:
 - Sidebar navigation publishes `dm:nav`; click-originated events include
   `userInitiated` so the renderer coordinator can refresh data-heavy tabs.
   Tab content activation remains owned by the renderer coordinator, not
-  individual tab content components.
+  individual tab content components. Programmatic tab handoffs should dispatch
+  `dm:navigate` and let the sidebar apply the tab plus publish `dm:nav`.
 - Empty, loading, error, success, and disabled states must be explicit enough
   that the user is never left wondering whether Docker or the launcher is still
   working.
@@ -144,6 +145,9 @@ This scope owns:
   Installs view.
 - Running an installed tag from Installs creates another managed local instance
   and must not stop existing instances or require a data-loss acknowledgement.
+  After the run operation reports completed with the UI-ready marker, the
+  renderer should switch to the Instances tab so the new managed Instance is
+  visible.
   Removing an installed tag must go through Docker Manager image removal and
   must be non-forced so Docker refuses images still used by an Instance.
   Destructive switch, update, and retained-instance activation flows must keep

@@ -124,6 +124,8 @@ This scope owns:
   continue sanitizing that field before it reaches the renderer.
 - Long-running Docker operations should return an accepted operation id and
   report progress through Docker Manager events instead of blocking the renderer.
+  The sanitized progress bridge should preserve explicit product state flags
+  such as `uiReady` when the renderer depends on them for handoff behavior.
 - Install image removal is a named Docker Manager IPC intent. The renderer may
   pass a release tag, but shell code must validate the IPC body and Docker
   Manager must perform a non-forced image removal so Docker can refuse images

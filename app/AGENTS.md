@@ -57,6 +57,9 @@ This scope owns:
   actions. They must not open the global operation modal or make the page inert;
   show queue/running state on the affected card and surface failures with toast
   feedback.
+- Running an installed image from Installs must keep the operation modal until
+  the Docker Manager reports the new Instance UI ready, then hand off to the
+  Instances tab so the created Instance is visible.
 - A0 CLI launch, rename, and log inspection controls belong to each local
   instance card. Clone belongs to local containers and may appear on a saved
   remote card only when that card points at a loopback URL backed by a

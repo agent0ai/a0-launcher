@@ -48,6 +48,10 @@ This scope owns:
   provenance, and expose runtime branch/commit as separate structured state.
 - Start, switch, and run flows should give the Agent Zero UI enough time to
   finish a slow first boot before rolling back a newly-created container.
+- New managed Instance run progress should mark `uiReady: true` only after the
+  UI readiness probe succeeds. If a created Instance is kept after a readiness
+  timeout, leave the completed progress marked not ready so renderer handoffs do
+  not fire early.
 - Direct `Open UI` resolution may use a shorter bounded wait than start/run
   flows so a fresh running container can finish warming up before showing an
   error.

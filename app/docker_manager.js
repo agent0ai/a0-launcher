@@ -391,7 +391,9 @@ async function refresh() {
 }
 
 const NAV_REFRESH_TABS = new Set(["installs", "sessions", "advanced"]);
+const INSTANCE_TAB = "sessions";
 let navRefreshTimer = 0;
+const handledRunCompletionOps = new Set();
 
 function scheduleNavRefresh(tab) {
   if (!NAV_REFRESH_TABS.has(tab)) return;
@@ -400,6 +402,19 @@ function scheduleNavRefresh(tab) {
     navRefreshTimer = 0;
     refresh();
   }, 0);
+}
+
+function navigateToInstancesAfterRun(progress = null) {
+  const type = typeof progress?.type === "string" ? progress.type : "";
+  const status = typeof progress?.status === "string" ? progress.status : "";
+  const opId = typeof progress?.opId === "string" ? progress.opId.trim() : "";
+  if (type !== "activate" || status !== "completed" || progress?.uiReady !== true || !opId) return;
+  if (handledRunCompletionOps.has(opId)) return;
+  handledRunCompletionOps.add(opId);
+  window.dispatchEvent(new CustomEvent("dm:navigate", {
+    detail: { tab: INSTANCE_TAB, userInitiated: false, source: "run-completed" }
+  }));
+  scheduleNavRefresh(INSTANCE_TAB);
 }
 
 async function openInstanceUi(target = {}) {
@@ -1377,6 +1392,7 @@ function initSubscriptions() {
         if (progress?.type === "migrate_workspace" && status === "completed") {
           showWorkspacePersistedDialog(progress);
         }
+        navigateToInstancesAfterRun(progress);
         schedulePostOperationRefresh(progress);
       }
     });

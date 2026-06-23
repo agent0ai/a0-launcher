@@ -3073,6 +3073,7 @@ function sanitizeDockerManagerProgress(progress) {
   if (typeof progress.detail === 'string') out.detail = progress.detail;
   if (typeof progress.phase === 'string' || progress.phase === null) out.phase = progress.phase;
   if (typeof progress.indeterminate === 'boolean') out.indeterminate = progress.indeterminate;
+  if (typeof progress.uiReady === 'boolean') out.uiReady = progress.uiReady;
   if (Array.isArray(progress.steps)) {
     out.steps = progress.steps
       .filter((step) => isPlainObject(step) && typeof step.label === 'string')

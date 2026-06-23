@@ -4629,14 +4629,15 @@ async function activateTag(tag, dataLossAck, options = {}) {
       }
 
       finishOperation('completed', null);
-      updateOperationProgress({ progress: 100, message: 'Completed' });
+      updateOperationProgress({ progress: 100, message: 'Completed', uiReady: true });
     } catch (error) {
       logDockerManagerError('activateTag', error, { opId, tag: t });
       if (shouldKeepCreatedManagedInstanceOnError(error, createdNew)) {
         finishOperation('completed', null);
         updateOperationProgress({
           progress: 100,
-          message: 'Instance created. Agent Zero is still starting.'
+          message: 'Instance created. Agent Zero is still starting.',
+          uiReady: false
         });
         return;
       }
