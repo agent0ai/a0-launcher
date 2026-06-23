@@ -110,18 +110,29 @@ function hasLocalInstance(state = {}) {
   );
 }
 
+function installIsComplete(progress = null) {
+  return asText(progress?.type) === "install" && asText(progress?.status) === "completed";
+}
+
+function shouldOfferFirstInstanceSetup(progress = null) {
+  if (asText(progress?.type) !== "install") return false;
+  if (installIsComplete(progress)) return true;
+  return shouldShowSetupShowcase(progress);
+}
+
 function shouldShowFirstInstanceSetup(state = {}) {
   const progress = state?.progress || null;
   const opId = asText(progress?.opId);
   const targetTag = asText(progress?.targetTag);
   if (!opId || !targetTag) return false;
   if (acknowledgedOps.has(opId)) return false;
-  if (!shouldShowSetupShowcase(progress)) return false;
+  if (!shouldOfferFirstInstanceSetup(progress)) return false;
   return !hasLocalInstance(state);
 }
 
 function setStep(panel, step) {
   const nextStep = step === STEP_CLI ? STEP_CLI : step === STEP_FIRST_INSTANCE ? STEP_FIRST_INSTANCE : STEP_MODELS;
+  const installComplete = panel.dataset.installComplete === "true";
   panel.dataset.step = nextStep;
 
   const modelsStep = panel.querySelector(".dm-first-instance-step-models");
@@ -141,7 +152,7 @@ function setStep(panel, step) {
   const description = panel.querySelector(".dm-first-instance-description");
   if (description) {
     description.textContent = nextStep === STEP_CLI
-      ? "Add the optional desktop bridge now, or skip it and keep downloading Agent Zero."
+      ? "Add the optional desktop bridge now, or skip it and continue."
       : nextStep === STEP_FIRST_INSTANCE
         ? "Use the defaults you just chose for the first Instance, or save them for later."
         : "Choose the providers and models Agent Zero should use for new Instances.";
@@ -154,7 +165,7 @@ function setStep(panel, step) {
   }
 
   const primary = panel.querySelector(".dm-first-instance-primary");
-  if (primary) primary.textContent = nextStep === STEP_CLI ? "Show slideshow" : "Continue";
+  if (primary) primary.textContent = nextStep === STEP_CLI ? (installComplete ? "Finish" : "Show slideshow") : "Continue";
 }
 
 function createRunChoice(state) {
@@ -209,7 +220,13 @@ function createRunChoice(state) {
   checkbox.id = "firstSetupRunInstance";
   checkbox.type = "checkbox";
   label.appendChild(checkbox);
-  label.appendChild(createEl("span", "", "Start my first Instance when the download finishes"));
+  label.appendChild(createEl(
+    "span",
+    "",
+    installIsComplete(progress)
+      ? "Start my first Instance after I finish these choices"
+      : "Start my first Instance when the download finishes"
+  ));
   runBlock.appendChild(label);
 
   return runBlock;
@@ -259,16 +276,37 @@ function createCliInstallStep(state, actions) {
   return block;
 }
 
-function finishSetup(progress, onDone) {
+function finishSetup(progress, actions, onDone) {
   const opId = asText(progress?.opId);
   if (opId) acknowledgedOps.add(opId);
-  onDone?.();
+  const finished = actions?.finishFirstInstanceSetup?.({ opId, targetTag: asText(progress?.targetTag) });
+  const complete = (ok) => {
+    if (ok === false) return false;
+    onDone?.();
+    return true;
+  };
+  if (finished && typeof finished.then === "function") return finished.then(complete);
+  return complete(finished);
+}
+
+function syncFirstInstanceSetupState(panel, state = {}) {
+  if (!panel) return;
+  const progress = state?.progress || null;
+  panel.dataset.installComplete = installIsComplete(progress) ? "true" : "false";
+  const checkLabel = panel.querySelector(".dm-first-instance-check")?.querySelector("span");
+  if (checkLabel) {
+    checkLabel.textContent = installIsComplete(progress)
+      ? "Start my first Instance after I finish these choices"
+      : "Start my first Instance when the download finishes";
+  }
+  setStep(panel, panel.dataset.step || STEP_MODELS);
 }
 
 function createFirstInstanceSetup(state, actions, onDone) {
   const progress = state?.progress || null;
   const instanceDefaults = normalizeInstanceDefaults(state?.instanceDefaults);
   const section = createEl("section", FIRST_INSTANCE_SETUP_CLASS);
+  section.dataset.installComplete = installIsComplete(progress) ? "true" : "false";
   section.setAttribute("aria-label", "Choose Instance defaults");
 
   const head = createEl("div", "dm-first-instance-head");
@@ -321,7 +359,7 @@ function createFirstInstanceSetup(state, actions, onDone) {
       const ok = await actions?.skipFirstInstanceSetup?.({ opId: asText(progress?.opId) });
       if (ok === false) return;
     }
-    finishSetup(progress, onDone);
+    await finishSetup(progress, actions, onDone);
   });
   actionRow.appendChild(skip);
 
@@ -329,7 +367,7 @@ function createFirstInstanceSetup(state, actions, onDone) {
   primary.type = "button";
   primary.addEventListener("click", async () => {
     if (section.dataset.step === STEP_CLI) {
-      finishSetup(progress, onDone);
+      await finishSetup(progress, actions, onDone);
       return;
     }
 
@@ -370,6 +408,8 @@ function mountFirstInstanceSetup(parent, state = {}, actions = {}, onDone = null
   if (!panel) {
     panel = createFirstInstanceSetup(state, actions, onDone);
     parent.appendChild(panel);
+  } else {
+    syncFirstInstanceSetupState(panel, state);
   }
   return panel;
 }

@@ -385,6 +385,66 @@ test('first image pull asks for models, first Instance details, then optional A0
   assert.ok(document.querySelector('.dm-operation-dialog').classList.contains('has-setup-showcase'));
 });
 
+test('completed first image pull keeps setup open until the user finishes choices', async () => {
+  const document = installDom();
+  const state = {
+    containers: [],
+    cli: { installed: true, command: 'a0' },
+    progress: {
+      opId: 'op-fast-install',
+      type: 'install',
+      status: 'completed',
+      targetTag: 'latest',
+      message: 'Completed',
+      progress: 100,
+      downloadProgress: 100,
+      extractProgress: 100,
+      finishedAt: '2026-06-23T10:00:00.000Z'
+    }
+  };
+
+  let confirmed = null;
+  let finished = null;
+  assert.equal(shouldShowOperationDialog(state), true);
+
+  renderOperationDialog(state, {
+    confirmFirstInstanceSetup: (payload) => {
+      confirmed = payload;
+      return true;
+    },
+    finishFirstInstanceSetup: (payload) => {
+      finished = payload;
+      return true;
+    }
+  });
+
+  assert.ok(document.getElementById('operationProgressDialog'));
+  assert.equal(document.querySelector('.dm-operation-title')?.textContent, 'Finish Agent Zero Setup');
+  assert.ok(document.querySelector('.dm-first-instance-setup'));
+  assert.equal(document.querySelector('.dm-setup-showcase'), null);
+
+  buttonByText(document, 'Continue').dispatchEvent(new MiniEvent('click'));
+
+  const runChoice = document.getElementById('firstSetupRunInstance');
+  assert.ok(runChoice);
+  assert.equal(runChoice.parentNode.children[1]?.textContent, 'Start my first Instance after I finish these choices');
+  runChoice.checked = true;
+
+  buttonByText(document, 'Continue').dispatchEvent(new MiniEvent('click'));
+  await Promise.resolve();
+
+  assert.equal(confirmed?.opId, 'op-fast-install');
+  assert.equal(confirmed?.runFirstInstance, true);
+  assert.equal(document.querySelector('.dm-first-instance-title')?.textContent, 'Install A0 CLI');
+  assert.ok(buttonByText(document, 'Finish'));
+
+  buttonByText(document, 'Finish').dispatchEvent(new MiniEvent('click'));
+  await Promise.resolve();
+
+  assert.equal(finished?.opId, 'op-fast-install');
+  assert.equal(document.getElementById('operationProgressDialog'), null);
+});
+
 test('first image pull setup can be skipped without configuring defaults', async () => {
   const document = installDom();
   const state = {

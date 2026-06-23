@@ -37,6 +37,7 @@ function operationKey(progress = null) {
 function operationHeadline(progress = null) {
   const status = asText(progress?.status);
   const type = asText(progress?.type) || "operation";
+  if (type === "install" && status === "completed") return "Finish Agent Zero Setup";
   const labels = {
     install: { running: "Installing Agent Zero", failed: "Install failed", canceled: "Install canceled" },
     update: { running: "Updating Agent Zero", failed: "Update failed", canceled: "Update canceled" },
@@ -63,6 +64,9 @@ function operationDetail(progress = null) {
   const status = asText(progress?.status);
   if (status === "failed") return asText(progress?.error) || asText(progress?.detail) || asText(progress?.message) || "Operation failed.";
   if (status === "canceled") return asText(progress?.error) || asText(progress?.detail) || asText(progress?.message) || "Operation canceled.";
+  if (asText(progress?.type) === "install" && status === "completed") {
+    return "Agent Zero is downloaded. Finish the first Instance choices before it starts.";
+  }
   return asText(progress?.detail) || asText(progress?.message) || "Working...";
 }
 
@@ -112,6 +116,7 @@ function shouldShowOperationDialog(state = {}) {
   const progress = state?.progress || null;
   const status = asText(progress?.status);
   if (!progress || progress.type === "runtime_setup") return false;
+  if (shouldShowFirstInstanceSetup(state)) return true;
   if (status === "running") return true;
   if ((status === "failed" || status === "canceled") && dismissedOperationKey !== operationKey(progress)) return true;
   return false;
@@ -272,7 +277,7 @@ function updateOperationDialog(backdrop, model, state, actions) {
   if (showFirstSetup) {
     unmountSetupShowcase(body);
     mountFirstInstanceSetup(body, state, actions, () => {
-      updateOperationDialog(backdrop, model, state, actions);
+      renderOperationDialog(state, actions);
     });
   } else {
     unmountFirstInstanceSetup(body);

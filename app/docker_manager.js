@@ -586,6 +586,7 @@ function normalizePendingFirstInstanceRun(value) {
     targetTag,
     instanceName: typeof input.instanceName === "string" ? input.instanceName.trim() : "",
     storageMode: normalizeWorkspaceStorageMode(input.storageMode),
+    readyToRun: input.readyToRun === true,
     createdAtMs: createdAt
   };
   return pending;
@@ -619,6 +620,7 @@ function savePendingFirstInstanceRun(pending) {
       targetTag: pending.targetTag,
       instanceName: pending.instanceName || "",
       storageMode: pending.storageMode || "",
+      readyToRun: pending.readyToRun === true,
       createdAtMs: pending.createdAtMs || Date.now()
     };
     window.localStorage.setItem(FIRST_INSTANCE_RUN_KEY, JSON.stringify(stored));
@@ -698,6 +700,7 @@ async function confirmFirstInstanceSetup(payload = {}) {
       instanceName: typeof input.instanceName === "string" ? input.instanceName.trim() : "",
       storageMode: normalizeWorkspaceStorageMode(input.storageMode),
       instanceDefaults: defaults,
+      readyToRun: false,
       createdAtMs: Date.now()
     };
     savePendingFirstInstanceRun(pendingFirstInstanceRun);
@@ -725,6 +728,7 @@ async function startPendingFirstInstance(progress = null, startOptions = {}) {
   const opId = typeof progress?.opId === "string" ? progress.opId.trim() : "";
   const pending = pendingFirstInstanceRun;
   if (!pending) return;
+  if (pending.readyToRun !== true) return;
   if (opId && pending.opId !== opId) return;
   if (!opId && startOptions?.allowInstalledState !== true) return;
 
@@ -771,6 +775,19 @@ function clearPendingFirstInstanceRun(progress = null) {
     pendingFirstInstanceRun = null;
     savePendingFirstInstanceRun(null);
   }
+}
+
+function finishFirstInstanceSetup(payload = {}) {
+  const opId = typeof payload?.opId === "string" ? payload.opId.trim() : "";
+  if (opId && pendingFirstInstanceRun?.opId === opId) {
+    pendingFirstInstanceRun = {
+      ...pendingFirstInstanceRun,
+      readyToRun: true
+    };
+    savePendingFirstInstanceRun(pendingFirstInstanceRun);
+    maybeStartPendingFirstInstanceFromState(snapshot());
+  }
+  return true;
 }
 
 function maybeStartPendingFirstInstanceFromState(state = {}) {
@@ -1172,6 +1189,7 @@ window.dockerManagerActions = {
   cancelOperation,
   confirmFirstInstanceSetup,
   skipFirstInstanceSetup,
+  finishFirstInstanceSetup,
   addRemoteInstance,
   deleteRemoteInstance,
   renameRemoteInstance,

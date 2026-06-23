@@ -105,6 +105,9 @@ This scope owns:
   terms before the setup slideshow. Every first-pull setup phase needs a
   visible Skip button; skipping the CLI step must preserve any already-saved
   first-Instance run choice.
+  If the image download finishes before the user completes those first-run
+  choices, keep the same modal open and do not start the requested first
+  Instance until the setup panel is finished.
   Persist provider/model defaults to Settings, but keep the "start my first
   Instance" checkbox and storage choice as a one-shot install-scoped intent,
   not a reusable preference. That intent may survive renderer reloads or a
