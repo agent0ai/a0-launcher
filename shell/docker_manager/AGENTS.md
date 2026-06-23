@@ -147,6 +147,12 @@ This scope owns:
   requested container id, return an operation id, refresh state afterward, and
   keep storage-volume deletion separate from container deletion. Rename is a
   fast launcher metadata update and may return synchronously.
+- Local instance card start/stop/delete actions run through an in-memory
+  per-container background queue and do not occupy the global Docker Manager
+  operation slot. They return `{ opId, queued: true, background: true }`, publish
+  `backgroundOperations` in state, and keep heavier flows such as install,
+  clone, migration, activation, update, rollback, and developer runs on the
+  single global progress operation.
 - Per-container log inspection belongs in this product layer as a bounded
   read-only snapshot. It may not expose generic Docker commands to the renderer.
 - Cloning an instance should snapshot the source container, create a new

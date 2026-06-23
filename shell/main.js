@@ -2670,6 +2670,7 @@ function sanitizeDockerManagerState(state) {
   const containersIn = Array.isArray(state?.containers) ? state.containers : [];
   const retainedIn = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
   const remoteIn = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+  const backgroundIn = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
   const policyIn = isPlainObject(state?.retentionPolicy) ? state.retentionPolicy : {};
   const portsIn = isPlainObject(state?.portPreferences) ? state.portPreferences : {};
   const storagePrefsIn = isPlainObject(state?.storagePreferences) ? state.storagePreferences : {};
@@ -2860,11 +2861,32 @@ function sanitizeDockerManagerState(state) {
     remoteInstances.push(out);
   }
 
+  const backgroundOperations = [];
+  const allowedBackgroundTypes = new Set(['start', 'stop', 'delete_instance']);
+  const allowedBackgroundStatuses = new Set(['queued', 'running', 'failed', 'completed']);
+  for (const op of backgroundIn) {
+    if (!isPlainObject(op)) continue;
+    const opId = typeof op.opId === 'string' ? op.opId : '';
+    const type = typeof op.type === 'string' && allowedBackgroundTypes.has(op.type) ? op.type : '';
+    const status = typeof op.status === 'string' && allowedBackgroundStatuses.has(op.status) ? op.status : '';
+    const containerId = typeof op.containerId === 'string' ? op.containerId : '';
+    if (!opId || !type || !status || !containerId) continue;
+    const out = { opId, type, status, containerId };
+    if (typeof op.message === 'string') out.message = op.message;
+    if (typeof op.error === 'string' || op.error === null) out.error = op.error || null;
+    if (typeof op.errorCode === 'string' || op.errorCode === null) out.errorCode = op.errorCode || null;
+    if (typeof op.queuedAt === 'string') out.queuedAt = op.queuedAt;
+    if (typeof op.startedAt === 'string' || op.startedAt === null) out.startedAt = op.startedAt || null;
+    if (typeof op.finishedAt === 'string' || op.finishedAt === null) out.finishedAt = op.finishedAt || null;
+    backgroundOperations.push(out);
+  }
+
   const outState = {
     versions,
     containers,
     retainedInstances,
     remoteInstances,
+    backgroundOperations,
     retentionPolicy,
     cli: getA0CliStatus(),
     instanceDefaults
@@ -3133,7 +3155,7 @@ ipcMain.handle('docker-manager:stopLocalInstance', async (_event, body) => {
     if (!accepted || typeof accepted.opId !== 'string') {
       return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Stop did not return an opId' });
     }
-    return { opId: accepted.opId };
+    return { opId: accepted.opId, queued: accepted.queued === true, background: accepted.background === true };
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -3147,7 +3169,7 @@ ipcMain.handle('docker-manager:startLocalInstance', async (_event, body) => {
     if (!accepted || typeof accepted.opId !== 'string') {
       return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Start did not return an opId' });
     }
-    return { opId: accepted.opId };
+    return { opId: accepted.opId, queued: accepted.queued === true, background: accepted.background === true };
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -3314,7 +3336,7 @@ ipcMain.handle('docker-manager:deleteLocalInstance', async (_event, body) => {
     if (!accepted || typeof accepted.opId !== 'string') {
       return dockerManager.toErrorResponse({ code: 'INTERNAL_ERROR', message: 'Delete did not return an opId' });
     }
-    return { opId: accepted.opId };
+    return { opId: accepted.opId, queued: accepted.queued === true, background: accepted.background === true };
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

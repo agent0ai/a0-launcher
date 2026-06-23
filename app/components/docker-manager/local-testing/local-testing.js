@@ -93,6 +93,25 @@ function workspaceStorageFolderAvailable(c) {
   return !!(storage?.persistent && typeof storage.hostPath === "string" && storage.hostPath.trim());
 }
 
+function backgroundOperationForContainer(state, containerId) {
+  const id = String(containerId || "").trim();
+  if (!id) return null;
+  const operations = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
+  return operations.find((operation) => {
+    if (!operation || operation.containerId !== id) return false;
+    return operation.status === "queued" || operation.status === "running";
+  }) || null;
+}
+
+function backgroundOperationLabel(operation) {
+  if (!operation) return "";
+  const queued = operation.status === "queued";
+  if (operation.type === "start") return queued ? "Queued start" : "Starting";
+  if (operation.type === "stop") return queued ? "Queued stop" : "Stopping";
+  if (operation.type === "delete_instance") return queued ? "Queued delete" : "Deleting";
+  return queued ? "Queued" : "Working";
+}
+
 const CLONE_WORKSPACE_OPTIONS = Object.freeze([
   {
     id: "auth",
@@ -672,6 +691,8 @@ function bindActions() {
 function renderDockerInstance(list, c, state) {
   const operationRunning = state?.progress?.status === "running";
   const containerId = c?.containerId || "";
+  const backgroundOperation = backgroundOperationForContainer(state, containerId);
+  const containerOperationRunning = !!backgroundOperation;
   const displayName = c?.instanceName || c?.containerName || c?.containerId?.slice(0, 12) || "instance";
   const visualBadge = instanceVisualBadge(c);
   const cliHost = localUiUrl(c?.uiUrl);
@@ -714,7 +735,10 @@ function renderDockerInstance(list, c, state) {
   const statusEl = document.createElement("span");
   statusEl.className = "status";
   const st = (c?.state || "unknown").toLowerCase();
-  if (st === "running") {
+  if (backgroundOperation) {
+    statusEl.classList.add("status-update");
+    statusEl.textContent = backgroundOperationLabel(backgroundOperation);
+  } else if (st === "running") {
     statusEl.classList.add("status-running");
     statusEl.textContent = "Running";
   } else if (st === "exited" || st === "stopped") {
@@ -737,6 +761,8 @@ function renderDockerInstance(list, c, state) {
     openBtn.className = "button confirm";
     openBtn.type = "button";
     openBtn.textContent = "Open UI";
+    openBtn.disabled = containerOperationRunning;
+    openBtn.title = containerOperationRunning ? "An action is already queued for this instance" : "Open this instance";
     openBtn.addEventListener("click", () => {
       window.dockerManagerActions?.openInstanceUi?.({
         kind: "local",
@@ -750,9 +776,9 @@ function renderDockerInstance(list, c, state) {
     startBtn.className = "button confirm";
     startBtn.type = "button";
     startBtn.textContent = "Start";
-    startBtn.disabled = operationRunning;
+    startBtn.disabled = containerOperationRunning;
     startBtn.addEventListener("click", () => {
-      window.dockerManagerActions?.startActive?.();
+      window.dockerManagerActions?.startLocalInstance?.(containerId);
     });
     actions.appendChild(startBtn);
   } else if (isManagedLocalInstance) {
@@ -760,7 +786,7 @@ function renderDockerInstance(list, c, state) {
     startBtn.className = "button confirm";
     startBtn.type = "button";
     startBtn.textContent = "Start";
-    startBtn.disabled = operationRunning;
+    startBtn.disabled = containerOperationRunning;
     startBtn.addEventListener("click", () => {
       window.dockerManagerActions?.startLocalInstance?.(containerId);
     });
@@ -775,7 +801,7 @@ function renderDockerInstance(list, c, state) {
         onRename: (name) => window.dockerManagerActions?.renameLocalInstance?.(containerId, name)
       });
     }, {
-      disabled: !containerId || operationRunning,
+      disabled: !containerId || containerOperationRunning,
       title: "Rename this instance"
     }),
     menuButton("article", "See logs", () => {
@@ -794,20 +820,20 @@ function renderDockerInstance(list, c, state) {
       if (!window.confirm(`Create persistent /a0/usr storage for ${displayName}?\n\nThe source container will be paused and resumed during the snapshot. Any running AI work stops and must be resumed manually.\n\nThe existing container will be kept until the persistent replacement starts successfully.`)) return;
       await window.dockerManagerActions?.migrateLocalInstanceStorage?.(containerId);
     }, {
-      disabled: !containerId || operationRunning,
+      disabled: !containerId || operationRunning || containerOperationRunning,
       title: "Create persistent /a0/usr storage"
     }) : null,
     menuButton("content_copy", "Clone", () => {
       openCloneInstanceDialog(c);
     }, {
-      disabled: !containerId || operationRunning,
+      disabled: !containerId || operationRunning || containerOperationRunning,
       title: "Clone this instance on open ports"
     }),
     menuButton(cliInstalled ? "terminal" : "download", cliInstalled ? "Open A0 CLI" : "Install A0 CLI", () => {
       if (cliInstalled) window.dockerManagerActions?.openCliTerminal?.(cliHost);
       else window.dockerManagerActions?.installCli?.();
     }, {
-      disabled: cliInstalled ? (!isRunning || !cliHost || operationRunning) : operationRunning,
+      disabled: cliInstalled ? (!isRunning || !cliHost || operationRunning || containerOperationRunning) : operationRunning,
       title: cliInstalled
         ? !isRunning
           ? "Start this instance before opening A0 CLI"
@@ -819,8 +845,8 @@ function renderDockerInstance(list, c, state) {
     menuButton("stop_circle", "Stop", () => {
       window.dockerManagerActions?.stopLocalInstance?.(containerId);
     }, {
-      disabled: !isRunning || !containerId || operationRunning,
-      title: isRunning ? "Stop this instance" : "Instance is not running"
+      disabled: !isRunning || !containerId || containerOperationRunning,
+      title: containerOperationRunning ? "An action is already queued for this instance" : isRunning ? "Stop this instance" : "Instance is not running"
     }),
     menuButton("delete", "Delete", async () => {
       const verb = isRunning ? "Stop and delete" : "Delete";
@@ -831,8 +857,8 @@ function renderDockerInstance(list, c, state) {
       await window.dockerManagerActions?.deleteLocalInstance?.(containerId);
     }, {
       danger: true,
-      disabled: !containerId || operationRunning,
-      title: "Delete this container"
+      disabled: !containerId || containerOperationRunning,
+      title: containerOperationRunning ? "An action is already queued for this instance" : "Delete this container"
     })
   ]);
   actions.appendChild(menu);

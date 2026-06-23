@@ -91,6 +91,7 @@ window.toastFrontendWarning = (message, title = "Agent Zero", displayTime = 5, g
   showToast("warning", message, title, displayTime, group);
 
 const shownWorkspacePersistedOps = new Set();
+const shownBackgroundOperationFailures = new Set();
 let workspacePersistedDialogKeyHandler = null;
 
 function cleanDialogText(value, fallback = "") {
@@ -210,6 +211,7 @@ function snapshot() {
     versions: Array.isArray(store.versions) ? store.versions : [],
     containers: Array.isArray(store.containers) ? store.containers : [],
     remoteInstances: Array.isArray(store.remoteInstances) ? store.remoteInstances : [],
+    backgroundOperations: Array.isArray(store.backgroundOperations) ? store.backgroundOperations : [],
     volumes: Array.isArray(store.volumes) ? store.volumes : [],
     retainedInstances: Array.isArray(store.retainedInstances) ? store.retainedInstances : [],
     storage: store.storage || null,
@@ -224,10 +226,31 @@ function snapshot() {
   };
 }
 
+function backgroundOperationFailureLabel(operation = {}) {
+  if (operation.type === "start") return "Start failed";
+  if (operation.type === "stop") return "Stop failed";
+  if (operation.type === "delete_instance") return "Delete failed";
+  return "Instance action failed";
+}
+
+function notifyBackgroundOperationFailures(state = {}) {
+  const operations = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
+  for (const operation of operations) {
+    const opId = typeof operation?.opId === "string" ? operation.opId : "";
+    if (!opId || operation.status !== "failed" || shownBackgroundOperationFailures.has(opId)) continue;
+    shownBackgroundOperationFailures.add(opId);
+    const message = typeof operation.error === "string" && operation.error.trim()
+      ? operation.error
+      : backgroundOperationFailureLabel(operation);
+    window.toastFrontendError?.(message, backgroundOperationFailureLabel(operation), 8, `dm-bg-op-${opId}`);
+  }
+}
+
 function emitState() {
   const next = snapshot();
   window.__dmLastState = next;
   window.dispatchEvent(new CustomEvent("dm:state", { detail: next }));
+  notifyBackgroundOperationFailures(next);
   renderRuntimeGate(next, window.dockerManagerActions || {});
   renderOperationDialog(next, window.dockerManagerActions || {});
 }
@@ -334,6 +357,7 @@ async function refresh() {
       store.versions = Array.isArray(state?.versions) ? state.versions : [];
       store.retainedInstances = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
       store.remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+      store.backgroundOperations = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
       store.storage = state?.storage || null;
       store.runtime = state?.runtime || null;
       store.runtimeDiagnostics = state?.runtimeDiagnostics || store.runtimeDiagnostics || null;
@@ -352,6 +376,7 @@ async function refresh() {
     store.images = Array.isArray(inventory?.images) ? inventory.images : [];
     store.containers = Array.isArray(inventory?.containers) ? inventory.containers : [];
     if (Array.isArray(inventory?.remoteInstances)) store.remoteInstances = inventory.remoteInstances;
+    if (Array.isArray(inventory?.backgroundOperations)) store.backgroundOperations = inventory.backgroundOperations;
     store.volumes = Array.isArray(inventory?.volumes) ? inventory.volumes : [];
   } catch (e) {
     store.error = e?.message || "Failed to load Docker inventory.";
@@ -850,6 +875,11 @@ async function runDockerOperation(label, action, successMessage) {
       setBanner("error", res.message);
       return res;
     }
+    if (res?.background === true) {
+      const queuedMessage = `${label} queued.`;
+      setBanner("info", res?.queued ? queuedMessage : successMessage);
+      return res;
+    }
     if (successMessage) setBanner("info", successMessage);
     await refresh();
     return res;
@@ -1258,6 +1288,7 @@ function initSubscriptions() {
         if (Array.isArray(state?.containers)) store.containers = state.containers;
         store.retainedInstances = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
         store.remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+        store.backgroundOperations = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
         store.storage = state?.storage || null;
         store.runtime = state?.runtime || null;
         store.runtimeDiagnostics = state?.runtimeDiagnostics || store.runtimeDiagnostics || null;

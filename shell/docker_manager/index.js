@@ -1290,6 +1290,105 @@ let _cachedState = null;
 let _currentOperation = null;
 const _abortControllers = new Map();
 const _warmLayerSizes = { running: false, lastImageRepo: '', lastStartedAtMs: 0 };
+const _backgroundOperations = new Map();
+const _containerOperationChains = new Map();
+
+function backgroundOperationsSnapshot() {
+  return Array.from(_backgroundOperations.values()).map((op) => ({ ...op }));
+}
+
+function stateWithBackgroundOperations(state = null) {
+  const base = state && typeof state === 'object' ? state : {};
+  return { ...base, backgroundOperations: backgroundOperationsSnapshot() };
+}
+
+function emitBackgroundOperationsState() {
+  if (!_cachedState) return;
+  _cachedState = stateWithBackgroundOperations(_cachedState);
+  events.emit('state', _cachedState);
+}
+
+function updateBackgroundOperation(opId, patch = {}) {
+  const current = _backgroundOperations.get(opId);
+  if (!current) return null;
+  const next = { ...current, ...(patch || {}) };
+  _backgroundOperations.set(opId, next);
+  emitBackgroundOperationsState();
+  return next;
+}
+
+function finishBackgroundOperation(opId, status, error = null) {
+  const errorMessage = error
+    ? mapDockerInterfaceErrorToUiMessage(error) || error?.message || 'Operation failed'
+    : '';
+  updateBackgroundOperation(opId, {
+    status,
+    finishedAt: nowIso(),
+    message: status === 'failed' ? errorMessage : '',
+    error: errorMessage || null,
+    errorCode: error?.code || null
+  });
+}
+
+function pruneBackgroundOperation(opId) {
+  if (!_backgroundOperations.delete(opId)) return;
+  emitBackgroundOperationsState();
+}
+
+function enqueueContainerOperation({ type, containerId, message, run }) {
+  const id = assertContainerId(containerId);
+  if (typeof run !== 'function') {
+    const err = new Error('Invalid operation');
+    err.code = 'INVALID_OPERATION';
+    throw err;
+  }
+
+  const opId = `bg_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+  _backgroundOperations.set(opId, {
+    opId,
+    type,
+    status: 'queued',
+    containerId: id,
+    queuedAt: nowIso(),
+    startedAt: null,
+    finishedAt: null,
+    message: message || '',
+    error: null,
+    errorCode: null
+  });
+  emitBackgroundOperationsState();
+
+  const previous = _containerOperationChains.get(id) || Promise.resolve();
+  const task = previous
+    .catch(() => {})
+    .then(async () => {
+      updateBackgroundOperation(opId, {
+        status: 'running',
+        startedAt: nowIso(),
+        message: message || ''
+      });
+      try {
+        await run(id);
+        finishBackgroundOperation(opId, 'completed');
+      } catch (error) {
+        finishBackgroundOperation(opId, 'failed', error);
+      } finally {
+        refreshDockerManager({ forceRefresh: false }).catch(() => {});
+        setTimeout(() => {
+          pruneBackgroundOperation(opId);
+        }, 2000);
+      }
+    });
+
+  const trackedTask = task.finally(() => {
+    if (_containerOperationChains.get(id) === trackedTask) {
+      _containerOperationChains.delete(id);
+    }
+  });
+  _containerOperationChains.set(id, trackedTask);
+
+  return { opId, queued: true, background: true };
+}
 
 function scheduleLayerSizesWarmup(docker, imageRepo, tags) {
   const repo = (imageRepo || '').trim();
@@ -1795,9 +1894,9 @@ async function buildDerivedState(options = {}) {
 async function refreshDockerManager(options = {}) {
   const forceRefresh = !!options.forceRefresh;
   const state = await buildDerivedState({ forceRefresh });
-  _cachedState = state;
-  events.emit('state', state);
-  return state;
+  _cachedState = stateWithBackgroundOperations(state);
+  events.emit('state', _cachedState);
+  return _cachedState;
 }
 
 async function getDockerManagerState() {
@@ -3050,15 +3149,14 @@ async function stopLocalInstance(containerId) {
   const imageRepo = getBackendImageRepo();
   const id = assertContainerId(containerId);
 
-  requireNoRunningOperation();
-  const opId = beginOperation('stop', null);
-
-  (async () => {
-    try {
-      updateOperationProgress({ message: 'Stopping', progress: null });
+  return enqueueContainerOperation({
+    type: 'stop',
+    containerId: id,
+    message: 'Stopping',
+    run: async (targetId) => {
       const docker = await getManagedDocker(imageRepo);
       const containers = await docker.listContainers(imageRepo);
-      const target = (containers || []).find((c) => c && c.containerId === id) || null;
+      const target = (containers || []).find((c) => c && c.containerId === targetId) || null;
 
       if (!target || !target.containerId) {
         const err = new Error('Instance not found');
@@ -3070,33 +3168,22 @@ async function stopLocalInstance(containerId) {
       if (state === 'running') {
         await docker.stopContainer(target.containerId, { t: 10 });
       }
-
-      finishOperation('completed', null);
-      updateOperationProgress({ progress: 100, message: 'Stopped' });
-    } catch (error) {
-      const message = mapDockerInterfaceErrorToUiMessage(error) || 'Stop failed';
-      finishOperation('failed', message);
-    } finally {
-      await refreshDockerManager({ forceRefresh: false }).catch(() => {});
     }
-  })().catch(() => {});
-
-  return { opId };
+  });
 }
 
 async function startLocalInstance(containerId) {
   const imageRepo = getBackendImageRepo();
   const id = assertContainerId(containerId);
 
-  requireNoRunningOperation();
-  const opId = beginOperation('start', null);
-
-  (async () => {
-    try {
-      updateOperationProgress({ message: 'Starting', progress: null });
+  return enqueueContainerOperation({
+    type: 'start',
+    containerId: id,
+    message: 'Starting',
+    run: async (targetId) => {
       const docker = await getManagedDocker(imageRepo);
       const containers = await docker.listContainers(imageRepo);
-      const target = (containers || []).find((c) => c && c.containerId === id) || null;
+      const target = (containers || []).find((c) => c && c.containerId === targetId) || null;
 
       if (!target || !target.containerId) {
         const err = new Error('Instance not found');
@@ -3108,18 +3195,8 @@ async function startLocalInstance(containerId) {
       if (state !== 'running') {
         await docker.startContainer(target.containerId);
       }
-
-      finishOperation('completed', null);
-      updateOperationProgress({ progress: 100, message: 'Started' });
-    } catch (error) {
-      const message = mapDockerInterfaceErrorToUiMessage(error) || 'Start failed';
-      finishOperation('failed', message);
-    } finally {
-      await refreshDockerManager({ forceRefresh: false }).catch(() => {});
     }
-  })().catch(() => {});
-
-  return { opId };
+  });
 }
 
 async function cloneLocalInstance(containerId, options = {}) {
@@ -3511,15 +3588,14 @@ async function deleteLocalInstance(containerId) {
   const imageRepo = getBackendImageRepo();
   const id = assertContainerId(containerId);
 
-  requireNoRunningOperation();
-  const opId = beginOperation('delete_instance', null);
-
-  (async () => {
-    try {
-      updateOperationProgress({ message: 'Deleting', progress: null });
+  return enqueueContainerOperation({
+    type: 'delete_instance',
+    containerId: id,
+    message: 'Deleting',
+    run: async (targetId) => {
       const docker = await getManagedDocker(imageRepo);
       const containers = await docker.listContainers(imageRepo);
-      const target = (containers || []).find((c) => c && c.containerId === id) || null;
+      const target = (containers || []).find((c) => c && c.containerId === targetId) || null;
 
       if (!target || !target.containerId) {
         const err = new Error('Instance not found');
@@ -3536,17 +3612,8 @@ async function deleteLocalInstance(containerId) {
         await docker.removeLocalImage(cloneImageRef).catch(() => {});
       }
       await stateStore.deleteLocalInstanceName(target.containerId).catch(() => {});
-      finishOperation('completed', null);
-      updateOperationProgress({ progress: 100, message: 'Deleted' });
-    } catch (error) {
-      const message = mapDockerInterfaceErrorToUiMessage(error) || 'Delete failed';
-      finishOperation('failed', message);
-    } finally {
-      await refreshDockerManager({ forceRefresh: false }).catch(() => {});
     }
-  })().catch(() => {});
-
-  return { opId };
+  });
 }
 
 async function updateToLatest(dataLossAck) {
@@ -4072,7 +4139,8 @@ async function getDockerInventory() {
     images,
     containers,
     volumes,
-    remoteInstances
+    remoteInstances,
+    backgroundOperations: backgroundOperationsSnapshot()
   };
 }
 

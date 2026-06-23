@@ -97,6 +97,10 @@ This scope owns:
 - Post-runtime image, activation, update, rollback, start, stop, and delete
   progress should use the centered operation modal rather than a top-page
   status strip.
+- Local instance card `Start`, `Stop`, and `Delete` are the exception: they are
+  accepted as background queued per-container actions so a slow or hanging
+  container mutation does not block the rest of the launcher. Show only the
+  affected card as queued/running and report failures with toast feedback.
 - The Agent Zero setup slideshow belongs only to the image pull/extract wait in
   the install operation modal. Do not show it during Docker runtime setup or
   short preflight checks.

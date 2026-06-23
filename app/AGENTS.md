@@ -53,6 +53,10 @@ This scope owns:
 - Long-running non-runtime Docker operations should use the same centered modal
   affordance rather than a top-of-page status strip. Keep the header quiet once
   the modal flow exists.
+- Local instance card `Start`, `Stop`, and `Delete` are background queued
+  actions. They must not open the global operation modal or make the page inert;
+  show queue/running state on the affected card and surface failures with toast
+  feedback.
 - A0 CLI launch, rename, and log inspection controls belong to each local
   instance card. Clone belongs to local containers and may appear on a saved
   remote card only when that card points at a loopback URL backed by a
