@@ -82,10 +82,12 @@ This scope owns:
   version text. Shell app/content metadata may remain in renderer state for
   diagnostics and update decisions, but it should not reintroduce version or
   `Content:` clutter into the header.
-- Keep external navigation intentional. Product destinations such as API
-  Dashboard should go through the shell action where one exists; direct
-  `window.open` should stay limited to safe public links such as Docker install
-  help.
+- Keep external navigation intentional. The lean resource footer may request
+  approved Docs, API Dashboard, and Support resource IDs through
+  `window.dockerManagerActions.openResourceLink`; the shell maps those IDs to
+  fixed public URLs. Keep this footer as bottom launcher chrome that is visible
+  without a page scroll. Direct `window.open` should stay limited to safe public
+  links such as Docker install help.
 - Use `Instances`, not `Sessions`, in visible copy.
 - Use `Storage volumes` when referring to Docker volumes.
 - Keep developer-only Docker controls in the Advanced tab. They may compose and

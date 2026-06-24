@@ -45,6 +45,11 @@ const LOCAL_REPO_ENV_VAR = 'A0_LAUNCHER_LOCAL_REPO';
 const USE_LOCAL_CONTENT_ENV_VAR = 'A0_LAUNCHER_USE_LOCAL_CONTENT';
 const A0_CLI_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/agent0ai/a0-connector/main/install.sh';
 const A0_CLI_INSTALL_SCRIPT_URL_WINDOWS = 'https://raw.githubusercontent.com/agent0ai/a0-connector/main/install.ps1';
+const PUBLIC_RESOURCE_LINKS = Object.freeze({
+  docs: 'https://www.agent-zero.ai/p/docs/',
+  apiDashboard: 'https://www.agent-zero.ai/p/community/api-dashboard/',
+  support: 'https://discord.gg/8bz37YKSwT'
+});
 
 function isTruthyEnv(value) {
   const v = (value || '').trim().toLowerCase();
@@ -1429,6 +1434,23 @@ function isAllowedLocalUrl(value) {
 
 function isAllowedHttpUrl(value) {
   return isAllowedRemoteInstanceUrl(value);
+}
+
+function getPublicResourceUrl(id) {
+  const key = typeof id === 'string' ? id.trim() : '';
+  const url = PUBLIC_RESOURCE_LINKS[key] || '';
+  return normalizeHttpUrl(url);
+}
+
+async function openPublicResourceLink(id) {
+  const url = getPublicResourceUrl(id);
+  if (!url) {
+    const error = new Error('Unknown Agent Zero resource link.');
+    error.code = 'INVALID_RESOURCE_LINK';
+    throw error;
+  }
+  await shell.openExternal(url);
+  return { opened: true };
 }
 
 function openAgentZeroUiWindow(url, title = 'Agent Zero') {
@@ -3741,8 +3763,17 @@ ipcMain.handle('docker-manager:openRemoteInstance', async (_event, body) => {
 
 ipcMain.handle('docker-manager:openHomepage', async () => {
   try {
-    await shell.openExternal('https://www.agent-zero.ai/p/community/api-dashboard/');
-    return { opened: true };
+    return await openPublicResourceLink('apiDashboard');
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:openResourceLink', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const id = typeof body.id === 'string' ? body.id : '';
+    return await openPublicResourceLink(id);
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

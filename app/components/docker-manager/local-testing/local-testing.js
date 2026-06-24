@@ -205,11 +205,76 @@ function closeDialog(dialog) {
   if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
 }
 
+function clamp(value, min, max) {
+  if (max < min) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+function computeCardMenuPlacement({
+  triggerRect,
+  popoverWidth,
+  popoverHeight,
+  viewportWidth,
+  viewportHeight,
+  footerHeight = 0,
+  edgeGap = 12,
+  menuGap = 6
+}) {
+  const safeTrigger = triggerRect || { top: 0, right: 0, bottom: 0 };
+  const triggerTop = Number(safeTrigger.top) || 0;
+  const triggerRight = Number(safeTrigger.right) || 0;
+  const triggerBottom = Number(safeTrigger.bottom) || 0;
+  const safeViewportWidth = Math.max(0, Number(viewportWidth) || 0);
+  const safeViewportHeight = Math.max(0, Number(viewportHeight) || 0);
+  const safeFooterHeight = Math.max(0, Number(footerHeight) || 0);
+  const safePopoverWidth = Math.max(0, Number(popoverWidth) || 0);
+  const safePopoverHeight = Math.max(0, Number(popoverHeight) || 0);
+  const safeEdgeGap = Math.max(0, Number(edgeGap) || 0);
+  const safeMenuGap = Math.max(0, Number(menuGap) || 0);
+
+  const usableTop = safeEdgeGap;
+  const usableBottom = Math.max(usableTop, safeViewportHeight - safeFooterHeight - safeEdgeGap);
+  const usableHeight = Math.max(0, usableBottom - usableTop);
+  const height = Math.min(safePopoverHeight, usableHeight);
+  const spaceBelow = Math.max(0, usableBottom - triggerBottom - safeMenuGap);
+  const spaceAbove = Math.max(0, triggerTop - usableTop - safeMenuGap);
+  const openDown = safePopoverHeight <= spaceBelow
+    ? true
+    : safePopoverHeight <= spaceAbove
+      ? false
+      : spaceBelow >= spaceAbove;
+
+  const preferredTop = openDown
+    ? triggerBottom + safeMenuGap
+    : triggerTop - safeMenuGap - height;
+  const top = clamp(preferredTop, usableTop, usableBottom - height);
+  const maxLeft = Math.max(safeEdgeGap, safeViewportWidth - safeEdgeGap - safePopoverWidth);
+  const left = clamp(triggerRight - safePopoverWidth, safeEdgeGap, maxLeft);
+
+  return {
+    openDown,
+    top: Math.floor(top),
+    left: Math.floor(left),
+    maxHeight: Math.floor(height)
+  };
+}
+
+function fixedResourceFooterHeight() {
+  const footer = document.querySelector?.(".dm-resource-footer");
+  const rect = footer?.getBoundingClientRect?.();
+  return rect?.height ? Math.ceil(rect.height) : 0;
+}
+
 function resetCardMenuPosition(menu) {
   if (!menu) return;
   menu.classList.remove("open-up", "open-down");
+  menu.closest?.(".dm-card")?.classList.remove("menu-open");
   const popover = menu.querySelector(".dm-card-menu-popover");
-  if (popover) popover.style.maxHeight = "";
+  if (popover) {
+    popover.style.left = "";
+    popover.style.top = "";
+    popover.style.maxHeight = "";
+  }
 }
 
 function closeCardMenus(except = null) {
@@ -228,17 +293,30 @@ function positionCardMenu(menu) {
 
   const edgeGap = 12;
   const menuGap = 6;
-  const triggerRect = trigger.getBoundingClientRect();
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  const spaceAbove = Math.max(0, triggerRect.top - edgeGap - menuGap);
-  const spaceBelow = Math.max(0, viewportHeight - triggerRect.bottom - edgeGap - menuGap);
-  const naturalHeight = popover.scrollHeight || popover.getBoundingClientRect().height || 0;
-  const openDown = spaceBelow > spaceAbove || spaceAbove < Math.min(naturalHeight, 160);
-  const availableHeight = openDown ? spaceBelow : spaceAbove;
+  popover.style.left = "";
+  popover.style.top = "";
+  popover.style.maxHeight = "";
 
-  menu.classList.toggle("open-down", openDown);
-  menu.classList.toggle("open-up", !openDown);
-  popover.style.maxHeight = availableHeight ? `${Math.floor(availableHeight)}px` : "";
+  const triggerRect = trigger.getBoundingClientRect();
+  const popoverRect = popover.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const placement = computeCardMenuPlacement({
+    triggerRect,
+    popoverWidth: popoverRect.width || popover.scrollWidth || 0,
+    popoverHeight: popover.scrollHeight || popoverRect.height || 0,
+    viewportWidth,
+    viewportHeight,
+    footerHeight: fixedResourceFooterHeight(),
+    edgeGap,
+    menuGap
+  });
+
+  menu.classList.toggle("open-down", placement.openDown);
+  menu.classList.toggle("open-up", !placement.openDown);
+  popover.style.left = `${placement.left}px`;
+  popover.style.top = `${placement.top}px`;
+  popover.style.maxHeight = placement.maxHeight ? `${placement.maxHeight}px` : "";
 }
 
 function positionOpenCardMenus() {
@@ -301,8 +379,12 @@ function createCardMenu(items) {
     closeCardMenus(menu);
     menu.classList.toggle("open", open);
     trigger.setAttribute("aria-expanded", String(open));
-    if (open) positionCardMenu(menu);
-    else resetCardMenuPosition(menu);
+    if (open) {
+      menu.closest?.(".dm-card")?.classList.add("menu-open");
+      positionCardMenu(menu);
+    } else {
+      resetCardMenuPosition(menu);
+    }
   });
 
   const popover = document.createElement("div");
@@ -1162,7 +1244,7 @@ function render(state) {
   }
 }
 
-export { instanceVisualBadge };
+export { computeCardMenuPlacement, instanceVisualBadge };
 
 window.addEventListener("dm:state", (e) => render(e.detail || {}));
 bindActions();

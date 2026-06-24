@@ -180,7 +180,8 @@ This scope owns:
   `Open storage folder`, `Clone`, `Open A0 CLI`, `Stop`, and `Delete` belong in
   the card overflow menu so they always apply to the specific instance shown.
   The card overflow menu should choose its up/down direction from available
-  viewport space and use bounded internal scrolling when the window is short.
+  viewport space, reserve fixed bottom launcher chrome such as the resource
+  footer, and use bounded internal scrolling when the window is short.
   `Open A0 CLI` should let the shell show the native working-folder picker
   before terminal launch; canceling that picker should not display an error.
   If the shell reports that the host `a0` command is unavailable, the same menu

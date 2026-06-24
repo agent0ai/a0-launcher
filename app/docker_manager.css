@@ -33,6 +33,7 @@ body {
   --dm-page-gutter-y: clamp(1rem, 1.6vw, 2rem);
   --dm-layout-gap: clamp(1rem, 1.6vw, 2rem);
   --dm-sidebar-width: clamp(12rem, 12vw, 16rem);
+  --dm-resource-footer-height: 3rem;
 }
 
 .hidden {
@@ -43,7 +44,8 @@ body {
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: var(--dm-page-gutter-y) var(--dm-page-gutter-x) clamp(2rem, 3vw, 3.5rem);
+  padding: var(--dm-page-gutter-y) var(--dm-page-gutter-x)
+    calc(clamp(2rem, 3vw, 3.5rem) + var(--dm-resource-footer-height));
   display: flex;
   flex-direction: column;
   gap: var(--dm-layout-gap);
@@ -135,6 +137,69 @@ body {
   gap: 1rem;
   min-width: 0;
   width: 100%;
+}
+
+.dm-resource-footer {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3900;
+  display: grid;
+  grid-template-columns: var(--dm-sidebar-width) minmax(0, 1fr);
+  column-gap: var(--dm-layout-gap);
+  min-height: var(--dm-resource-footer-height);
+  padding: 0.72rem var(--dm-page-gutter-x) 0.78rem;
+  background: linear-gradient(
+    to top,
+    var(--color-background) 72%,
+    color-mix(in srgb, var(--color-background) 86%, transparent)
+  );
+  pointer-events: none;
+}
+
+.dm-resource-links {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.dm-resource-link {
+  position: relative;
+  border: 0;
+  border-radius: var(--dm-radius-max);
+  background: transparent;
+  color: color-mix(in srgb, var(--color-text-muted) 92%, var(--color-text) 8%);
+  cursor: pointer;
+  font-family: "Rubik", Arial, Helvetica, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 0.22rem 0.42rem;
+}
+
+.dm-resource-link + .dm-resource-link {
+  margin-left: 0.45rem;
+  padding-left: 0.85rem;
+}
+
+.dm-resource-link + .dm-resource-link::before {
+  content: "-";
+  position: absolute;
+  left: 0.1rem;
+  top: 50%;
+  color: color-mix(in srgb, var(--color-text-muted) 58%, transparent);
+  transform: translateY(-50%);
+}
+
+.dm-resource-link:hover,
+.dm-resource-link:focus-visible {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-highlight) 10%, transparent);
+  outline: none;
 }
 
 .dm-tab-content {
@@ -396,6 +461,10 @@ body {
   background: color-mix(in srgb, var(--dm-surface-strong) 84%, var(--color-highlight) 16%);
 }
 
+.dm-card.menu-open {
+  transform: none;
+}
+
 .dm-card-highlight {
   border-color: color-mix(in srgb, var(--color-highlight) 55%, var(--dm-line-soft));
   box-shadow: 0 0.55rem 1.25rem color-mix(in srgb, var(--color-highlight) 20%, transparent);
@@ -573,12 +642,13 @@ body {
 }
 
 .dm-card-menu-popover {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 0.35rem);
-  z-index: 120;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 4000;
   display: none;
   min-width: 11.5rem;
+  max-width: min(18rem, calc(100vw - 1.5rem));
   padding: 0.28rem;
   border: 1px solid var(--dm-line-soft);
   border-radius: var(--dm-radius-max);
@@ -590,13 +660,11 @@ body {
 }
 
 .dm-card-menu.open-down .dm-card-menu-popover {
-  top: calc(100% + 0.35rem);
-  bottom: auto;
+  transform-origin: top right;
 }
 
 .dm-card-menu.open-up .dm-card-menu-popover {
-  top: auto;
-  bottom: calc(100% + 0.35rem);
+  transform-origin: bottom right;
 }
 
 .dm-card-menu.open .dm-card-menu-popover {
@@ -2539,6 +2607,15 @@ body.dm-instance-home-active .dm-page {
 @media (max-width: 840px) {
   .dm-layout {
     grid-template-columns: 1fr;
+  }
+
+  .dm-resource-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-resource-links {
+    grid-column: 1;
+    justify-content: center;
   }
 
   .dm-sidebar {

@@ -13,7 +13,7 @@ globalThis.window = {
   dockerManagerActions: {}
 };
 
-const { instanceVisualBadge } = await import('./local-testing.js');
+const { computeCardMenuPlacement, instanceVisualBadge } = await import('./local-testing.js');
 
 test('channel instance chips include the matched concrete release', () => {
   assert.equal(
@@ -43,4 +43,33 @@ test('instance chips still prefer runtime branch without a channel release match
     }),
     'ready'
   );
+});
+
+test('card menu placement reserves fixed footer space in short windows', () => {
+  const placement = computeCardMenuPlacement({
+    triggerRect: { top: 500, right: 590, bottom: 532 },
+    popoverWidth: 184,
+    popoverHeight: 340,
+    viewportWidth: 1024,
+    viewportHeight: 650,
+    footerHeight: 48
+  });
+
+  assert.equal(placement.openDown, false);
+  assert.ok(placement.top >= 12);
+  assert.ok(placement.top + placement.maxHeight <= 650 - 48 - 12);
+});
+
+test('card menu placement clamps horizontal overflow', () => {
+  const placement = computeCardMenuPlacement({
+    triggerRect: { top: 120, right: 86, bottom: 152 },
+    popoverWidth: 220,
+    popoverHeight: 180,
+    viewportWidth: 260,
+    viewportHeight: 520,
+    footerHeight: 0
+  });
+
+  assert.equal(placement.left, 12);
+  assert.ok(placement.left + 220 <= 260 - 12);
 });

@@ -483,6 +483,29 @@ async function openHomepage() {
   }
 }
 
+function resourceLinkLabel(id) {
+  if (id === "docs") return "Docs";
+  if (id === "apiDashboard") return "API Dashboard";
+  if (id === "support") return "Support";
+  return "resource";
+}
+
+async function openResourceLink(id = "") {
+  const linkId = typeof id === "string" ? id.trim() : "";
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.openResourceLink !== "function") {
+    if (linkId === "apiDashboard") return openHomepage();
+    setBanner("error", `Unable to open ${resourceLinkLabel(linkId)}`);
+    return;
+  }
+  try {
+    const res = await api.openResourceLink(linkId);
+    if (isErrorResponse(res)) setBanner("error", res.message);
+  } catch (e) {
+    setBanner("error", e?.message || `Unable to open ${resourceLinkLabel(linkId)}`);
+  }
+}
+
 async function removeVolume(volumeName) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.removeVolume !== "function") return;
@@ -1313,6 +1336,7 @@ window.dockerManagerActions = {
   refresh,
   openUi,
   openHomepage,
+  openResourceLink,
   removeVolume,
   pruneVolumes,
   openDockerDownload,
@@ -1451,11 +1475,22 @@ function initNavigationRefresh() {
   });
 }
 
+function initResourceFooter() {
+  document.querySelectorAll("[data-resource-link]").forEach((button) => {
+    if (button.dataset.boundResourceLink) return;
+    button.dataset.boundResourceLink = "1";
+    button.addEventListener("click", () => {
+      window.dockerManagerActions?.openResourceLink?.(button.dataset.resourceLink || "");
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   await loadMeta();
   emitState();
   initSubscriptions();
   initNavigationRefresh();
+  initResourceFooter();
   initInstanceTabBoundsObserver();
   if (typeof window.dockerManagerAPI?.getInstanceTabs === "function") {
     try {

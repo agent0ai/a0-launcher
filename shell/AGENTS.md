@@ -57,7 +57,9 @@ This scope owns:
   shell-owned intent that opens a fixed installer wrapper for the official
   `a0-connector` install script; do not expose generic command execution.
 - External links should open through Electron `shell.openExternal` only after
-  validation.
+  validation. Approved public launcher resources such as Docs, API Dashboard,
+  and Support should be exposed to the renderer as fixed resource IDs, not
+  arbitrary URL strings.
 - Instance UI tabs are shell-owned `WebContentsView`s. Renderer code may request
   open/select/select launcher home/close/reload/detach and report viewport
   bounds, but URL resolution, URL validation, web contents lifecycle, and
