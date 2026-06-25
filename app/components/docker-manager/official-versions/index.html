@@ -1,8 +1,14 @@
 <body>
   <section class="section sv-card">
-    <div class="sv-card-head">
-      <h2 class="section-title sv-section-heading">Installs</h2>
-      <div id="officialSubtitle" class="sv-subtitle"></div>
+    <div class="sv-card-head sv-card-head-row dm-official-head">
+      <div class="dm-official-heading">
+        <h2 class="section-title sv-section-heading">Installs</h2>
+        <div id="officialSubtitle" class="sv-subtitle"></div>
+      </div>
+      <div id="officialInstallFilter" class="dm-segmented-control" role="group" aria-label="Filter Installs">
+        <button class="dm-segmented-button is-active" type="button" data-install-filter="all" aria-pressed="true">All</button>
+        <button class="dm-segmented-button" type="button" data-install-filter="installed" aria-pressed="false">Installed</button>
+      </div>
     </div>
     <div class="sv-list-scroll dm-official-list-scroll">
       <div id="officialList" class="dm-cards-grid"></div>

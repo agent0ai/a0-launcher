@@ -150,6 +150,11 @@ This scope owns:
   present in state. Numbered release cards should be grouped by major version,
   with only the highest major version group expanded by default. The
   unmaintained `testing` tag is intentionally hidden from the Installs view.
+  The Installs view may offer an `All` / `Installed` filter; `Installed` should
+  keep entries that already have a local image, differ from the published
+  digest, are active, or are currently installing.
+  Shared Instance and Install card visuals should keep title glows unclipped
+  and avoid inset divider lines inside the colored artwork area.
 - Running an installed tag from Installs creates another managed local instance
   and must not stop existing instances or require a data-loss acknowledgement.
   After the run operation reports completed with the UI-ready marker, the

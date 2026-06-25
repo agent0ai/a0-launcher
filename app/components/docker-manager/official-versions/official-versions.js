@@ -57,6 +57,25 @@ function isHiddenEntry(entry) {
   return isTestingEntry(entry);
 }
 
+function isInstalledEntry(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  return !!entry.isActive ||
+    entry.availability === "installed" ||
+    entry.availability === "update_available" ||
+    entry.availability === "installing" ||
+    !!entry.differsFromPublished;
+}
+
+function normalizeInstallFilter(value) {
+  return value === "installed" ? "installed" : "all";
+}
+
+function filterInstallEntries(entries, filter = "all") {
+  const source = Array.isArray(entries) ? entries : [];
+  if (normalizeInstallFilter(filter) !== "installed") return source;
+  return source.filter((entry) => isInstalledEntry(entry));
+}
+
 function releaseMatchBadgeLabel(tag) {
   return String(tag || "").trim().replace(/^v(?=\d)/i, "");
 }
@@ -472,6 +491,35 @@ function openActivateDialog(entry, state) {
 }
 
 const versionGroupOpenState = new Map();
+let currentInstallFilter = "all";
+
+function setInstallFilter(value) {
+  const next = normalizeInstallFilter(value);
+  if (currentInstallFilter === next) return;
+  currentInstallFilter = next;
+  render(window.__dmLastState || {});
+}
+
+function syncInstallFilterControls() {
+  const filter = byId("officialInstallFilter");
+  if (!filter) return;
+  filter.querySelectorAll("[data-install-filter]").forEach((button) => {
+    const selected = normalizeInstallFilter(button.dataset.installFilter) === currentInstallFilter;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+function bindInstallFilterControls() {
+  const filter = byId("officialInstallFilter");
+  if (!filter || filter.dataset.bound === "true") return;
+  filter.dataset.bound = "true";
+  filter.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-install-filter]");
+    if (!button || !filter.contains(button)) return;
+    setInstallFilter(button.dataset.installFilter);
+  });
+}
 
 function renderEntryCard(entry, state, entries) {
   const card = document.createElement("div");
@@ -602,15 +650,20 @@ function render(state) {
   const list = byId("officialList");
   if (!list) return;
 
-  const catalog = buildInstallCatalogModel(normalizeVersionEntries(state).filter((entry) => !isHiddenEntry(entry)));
+  bindInstallFilterControls();
+  syncInstallFilterControls();
+
+  const allEntries = orderedEntries(normalizeVersionEntries(state).filter((entry) => !isHiddenEntry(entry)));
+  const filteredEntries = filterInstallEntries(allEntries, currentInstallFilter);
+  const catalog = buildInstallCatalogModel(filteredEntries);
   const entries = catalog.entries;
-  const installedCount = entries.filter((entry) => entry.availability && entry.availability !== "available").length;
-  const availableCount = entries.filter((entry) => entry.availability === "available").length;
-  const awaitingFirstInventory = isAwaitingFirstInventory(state, entries);
+  const installedCount = allEntries.filter((entry) => isInstalledEntry(entry)).length;
+  const availableCount = allEntries.filter((entry) => entry.availability === "available").length;
+  const awaitingFirstInventory = isAwaitingFirstInventory(state, allEntries);
   if (subtitle) {
     subtitle.textContent = awaitingFirstInventory
       ? "Checking installs..."
-      : entries.length
+      : allEntries.length
       ? `${installedCount} installed · ${availableCount} available`
       : "0 installs detected";
   }
@@ -622,7 +675,9 @@ function render(state) {
   }
 
   if (!entries.length) {
-    list.innerHTML = '<div class="dm-empty">No versions found. Refresh to try again.</div>';
+    list.innerHTML = currentInstallFilter === "installed"
+      ? '<div class="dm-empty">No installed versions found.</div>'
+      : '<div class="dm-empty">No versions found. Refresh to try again.</div>';
     return;
   }
 
@@ -639,7 +694,17 @@ function render(state) {
   }
 }
 
-export { actionForEntry, buildInstallCatalogModel, canRemoveEntry, defaultInstanceName, displayDateForEntry, metaPartsForEntry, releaseMatchBadgeLabel };
+export {
+  actionForEntry,
+  buildInstallCatalogModel,
+  canRemoveEntry,
+  defaultInstanceName,
+  displayDateForEntry,
+  filterInstallEntries,
+  isInstalledEntry,
+  metaPartsForEntry,
+  releaseMatchBadgeLabel
+};
 
 window.addEventListener("dm:state", (e) => render(e.detail || {}));
 if (window.__dmLastState) render(window.__dmLastState);

@@ -402,6 +402,17 @@ body {
   align-items: center;
 }
 
+.dm-official-head {
+  align-items: center;
+}
+
+.dm-official-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
 .sv-section-heading {
   margin: 0;
   padding: 0;
@@ -414,6 +425,38 @@ body {
 .sv-subtitle {
   color: var(--color-text-muted);
   font-size: 0.8rem;
+}
+
+.dm-segmented-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--dm-surface-strong) 78%, transparent);
+}
+
+.dm-segmented-button {
+  min-height: 1.7rem;
+  border: 0;
+  border-radius: calc(var(--dm-radius-max) - 1px);
+  padding: 0.22rem 0.65rem;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: "Rubik", Arial, Helvetica, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dm-segmented-button:hover {
+  color: var(--color-text);
+}
+
+.dm-segmented-button.is-active {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-highlight) 22%, transparent);
 }
 
 .sv-list {
@@ -542,18 +585,9 @@ body {
 
 .dm-card-version-visual {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   background: color-mix(in srgb, var(--dm-version-bg) 76%, var(--color-panel));
-  border-bottom-color: var(--dm-version-border);
-}
-
-.dm-card-version-visual::after {
-  content: "";
-  position: absolute;
-  inset: auto 1rem 0.85rem 1rem;
-  height: 1px;
-  background: var(--dm-version-border);
-  opacity: 0.75;
+  border-bottom-color: transparent;
 }
 
 .dm-card-version-text {
@@ -566,7 +600,7 @@ body {
   line-height: 0.95;
   text-align: center;
   overflow-wrap: anywhere;
-  text-shadow: 0 0.6rem 1.6rem color-mix(in srgb, var(--dm-version-fg) 22%, transparent);
+  filter: drop-shadow(0 0.45rem 1.35rem color-mix(in srgb, var(--dm-version-fg) 26%, transparent));
 }
 
 .dm-card-version-visual.is-long .dm-card-version-text {
@@ -580,7 +614,7 @@ body {
 .dm-card-instance-visual {
   --dm-instance-visual-bg: color-mix(in srgb, var(--dm-version-bg) 68%, var(--color-panel));
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   align-items: center;
   padding: 1.1rem 1rem 2.25rem;
   background: linear-gradient(
@@ -608,7 +642,7 @@ body {
   font-weight: 700;
   line-height: 0.98;
   text-align: center;
-  text-shadow: 0 0.6rem 1.6rem color-mix(in srgb, var(--dm-version-fg) 20%, transparent);
+  filter: drop-shadow(0 0.45rem 1.35rem color-mix(in srgb, var(--dm-version-fg) 24%, transparent));
 }
 
 .dm-card-instance-visual.is-long .dm-card-instance-name {

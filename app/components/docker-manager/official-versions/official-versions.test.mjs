@@ -17,6 +17,8 @@ const {
   canRemoveEntry,
   defaultInstanceName,
   displayDateForEntry,
+  filterInstallEntries,
+  isInstalledEntry,
   metaPartsForEntry,
   releaseMatchBadgeLabel
 } = await import('./official-versions.js');
@@ -49,6 +51,28 @@ test('installed and differing install cards can expose remove control', () => {
   assert.equal(canRemoveEntry({ availability: 'available' }), false);
   assert.equal(canRemoveEntry({ availability: 'installing' }), false);
   assert.equal(canRemoveEntry({ availability: 'available', differsFromPublished: true }), true);
+});
+
+test('installed filter keeps local or in-progress installs only', () => {
+  const entries = [
+    { tag: 'latest', availability: 'installed' },
+    { tag: 'ready', availability: 'update_available' },
+    { tag: 'v2.0', availability: 'available' },
+    { tag: 'v1.20', availability: 'available', differsFromPublished: true },
+    { tag: 'v1.19', availability: 'installing' },
+    { tag: 'v0.9', availability: 'available', isActive: true }
+  ];
+
+  assert.equal(isInstalledEntry(entries[0]), true);
+  assert.equal(isInstalledEntry(entries[2]), false);
+  assert.deepEqual(filterInstallEntries(entries, 'installed').map((entry) => entry.tag), [
+    'latest',
+    'ready',
+    'v1.20',
+    'v1.19',
+    'v0.9'
+  ]);
+  assert.deepEqual(filterInstallEntries(entries, 'all').map((entry) => entry.tag), entries.map((entry) => entry.tag));
 });
 
 test('default run names increment when same-tag instances exist', () => {
