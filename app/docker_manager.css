@@ -215,6 +215,801 @@ body {
   opacity: 1;
 }
 
+.dm-topology {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.dm-topology-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dm-topology-header .section-title {
+  margin: 0 0 0.2rem;
+}
+
+.dm-topology-status {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  min-height: 1.2rem;
+}
+
+.dm-topology-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.dm-topology-connection-details {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 0.9rem;
+}
+
+.dm-topology-hint {
+  display: grid;
+  gap: 0.35rem;
+  border-top: 1px solid var(--dm-line-soft);
+  padding-top: 0.55rem;
+}
+
+.dm-topology-detail-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.dm-topology-detail-row > span {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.dm-topology-copy-value {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-panel) 78%, transparent);
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  padding: 0.28rem 0.42rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-topology-copy-value:hover,
+.dm-topology-copy-value:focus-visible {
+  border-color: color-mix(in srgb, var(--color-highlight) 46%, var(--color-border));
+  outline: none;
+}
+
+.dm-topology-actions .button,
+.dm-topology-inspector-actions .button,
+.dm-topology-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+}
+
+.dm-topology-actions .button .material-symbols-outlined,
+.dm-topology-inspector-actions .button .material-symbols-outlined,
+.dm-topology-choice .material-symbols-outlined {
+  font-size: 1.05rem;
+}
+
+.dm-topology-inspector-actions .button {
+  max-width: 100%;
+}
+
+.dm-topology-inspector-actions .button span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-topology-actions .button.icon-only {
+  aspect-ratio: 1;
+  min-width: 2.25rem;
+  padding-inline: 0.55rem;
+}
+
+.dm-topology-actions .button.active {
+  background: color-mix(in srgb, var(--color-highlight) 28%, var(--color-panel));
+  color: var(--color-text);
+}
+
+.dm-topology-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 21rem);
+  gap: 1rem;
+  align-items: stretch;
+  min-height: clamp(28rem, 64vh, 46rem);
+}
+
+.dm-topology-graph-shell {
+  position: relative;
+  min-height: clamp(28rem, 64vh, 46rem);
+  overflow: hidden;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background:
+    linear-gradient(color-mix(in srgb, var(--color-border) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-border) 16%, transparent) 1px, transparent 1px),
+    color-mix(in srgb, var(--color-background) 88%, var(--color-panel));
+  background-size: 32px 32px;
+}
+
+.dm-topology-graph {
+  position: absolute;
+  inset: 0;
+}
+
+.dm-topology-bubbles {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dm-topology-bubble {
+  position: absolute;
+  max-width: min(14rem, 38%);
+  padding: 0.48rem 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--color-highlight) 42%, var(--dm-line-soft));
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-panel) 92%, var(--color-background));
+  box-shadow: 0 0.7rem 1.7rem rgba(0, 0, 0, 0.32);
+  color: var(--color-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-align: center;
+  transform: translate(-50%, -100%);
+  animation: dm-topology-bubble-in 0.16s ease-out;
+}
+
+.dm-topology-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -0.35rem;
+  width: 0.62rem;
+  height: 0.62rem;
+  border-right: 1px solid color-mix(in srgb, var(--color-highlight) 42%, var(--dm-line-soft));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-highlight) 42%, var(--dm-line-soft));
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.dm-topology-bubble-link {
+  border-color: color-mix(in srgb, #34d399 58%, var(--dm-line-soft));
+}
+
+.dm-topology-bubble-user {
+  border-color: color-mix(in srgb, var(--color-accent) 58%, var(--dm-line-soft));
+}
+
+.dm-topology-bubble-info {
+  border-color: color-mix(in srgb, var(--color-highlight) 48%, var(--dm-line-soft));
+}
+
+.dm-topology-bubble-error {
+  border-color: color-mix(in srgb, #fb7185 62%, var(--dm-line-soft));
+}
+
+.dm-topology-activity {
+  position: absolute;
+  z-index: 3;
+  width: min(20.5rem, calc(100% - 1.5rem));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-highlight) 36%, var(--dm-line-soft));
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-panel) 94%, var(--color-background));
+  box-shadow: 0 1rem 2.4rem rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+}
+
+.dm-topology-activity.is-expanded {
+  box-shadow: 0 1.4rem 3.2rem rgba(0, 0, 0, 0.5);
+}
+
+.dm-topology-activity::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -0.38rem;
+  width: 0.68rem;
+  height: 0.68rem;
+  border-right: 1px solid color-mix(in srgb, var(--color-highlight) 36%, var(--dm-line-soft));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-highlight) 36%, var(--dm-line-soft));
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.dm-topology-activity.is-below::after {
+  top: -0.38rem;
+  bottom: auto;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--color-highlight) 36%, var(--dm-line-soft));
+  border-top: 1px solid color-mix(in srgb, var(--color-highlight) 36%, var(--dm-line-soft));
+}
+
+.dm-topology-activity-header {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  border-bottom: 1px solid var(--dm-line-soft);
+  padding: 0.62rem 0.68rem;
+}
+
+.dm-topology-activity-header > .material-symbols-outlined {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-highlight) 18%, transparent);
+  color: color-mix(in srgb, var(--color-highlight) 88%, var(--color-text));
+  font-size: 1.08rem;
+}
+
+.dm-topology-activity-header strong,
+.dm-topology-activity-header span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-topology-activity-header strong {
+  color: var(--color-text);
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.dm-topology-activity-header span {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.dm-topology-activity-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.dm-topology-activity-header-actions .button {
+  min-height: 1.8rem;
+  border-radius: var(--dm-radius-max);
+  padding: 0.28rem 0.42rem;
+}
+
+.dm-topology-activity-header-actions .button.icon-only {
+  width: 1.8rem;
+  min-width: 1.8rem;
+  padding-inline: 0;
+}
+
+.dm-topology-activity-header-actions .button .material-symbols-outlined {
+  font-size: 0.96rem;
+}
+
+.dm-topology-activity-header-actions .button span:last-child {
+  max-width: 4.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-topology-activity-list {
+  display: grid;
+  gap: 0.1rem;
+  max-height: 17.5rem;
+  overflow: hidden;
+  padding: 0.42rem;
+}
+
+.dm-topology-activity.is-expanded .dm-topology-activity-list {
+  max-height: min(27rem, calc(100vh - 13rem));
+  overflow: auto;
+}
+
+.dm-topology-activity-event {
+  display: grid;
+  grid-template-columns: 1.55rem minmax(0, 1fr);
+  gap: 0.48rem;
+  align-items: start;
+  width: 100%;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, var(--color-text-muted) 34%, transparent);
+  border-radius: var(--dm-radius-max);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: "Rubik", Arial, Helvetica, sans-serif;
+  padding: 0.42rem 0.5rem 0.42rem 0.42rem;
+  text-align: left;
+}
+
+.dm-topology-activity-event:hover,
+.dm-topology-activity-event:focus-visible,
+.dm-topology-activity-event.is-selected {
+  background: color-mix(in srgb, var(--color-highlight) 10%, transparent);
+  outline: none;
+}
+
+.dm-topology-activity-event.is-loading {
+  cursor: default;
+}
+
+.dm-topology-activity-event > .material-symbols-outlined {
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.dm-topology-activity-event strong,
+.dm-topology-activity-event span,
+.dm-topology-activity-event em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-topology-activity-event-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: baseline;
+}
+
+.dm-topology-activity-event strong {
+  color: var(--color-text);
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.dm-topology-activity-event em {
+  color: color-mix(in srgb, var(--color-text-muted) 86%, var(--color-text));
+  font-size: 0.66rem;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.dm-topology-activity-event .dm-topology-activity-detail {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.dm-topology-activity-event.is-selected .dm-topology-activity-detail,
+.dm-topology-activity.is-expanded .dm-topology-activity-event .dm-topology-activity-detail {
+  white-space: normal;
+}
+
+.dm-topology-activity-full {
+  margin-top: 0.32rem;
+  border-top: 1px solid var(--dm-line-soft);
+  color: color-mix(in srgb, var(--color-text) 82%, var(--color-text-muted));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+  padding-top: 0.32rem;
+  white-space: normal;
+}
+
+.dm-topology-activity-more {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  padding: 0.38rem 0.5rem 0.2rem 2.05rem;
+}
+
+.dm-topology-activity-event.is-a2a,
+.dm-topology-activity-event.is-response {
+  border-left-color: color-mix(in srgb, #60a5fa 72%, var(--dm-line-soft));
+}
+
+.dm-topology-activity-event.is-a2a > .material-symbols-outlined,
+.dm-topology-activity-event.is-response > .material-symbols-outlined {
+  color: #93c5fd;
+}
+
+.dm-topology-activity-event.is-tool,
+.dm-topology-activity-event.is-code,
+.dm-topology-activity-event.is-shell {
+  border-left-color: color-mix(in srgb, #fbbf24 70%, var(--dm-line-soft));
+}
+
+.dm-topology-activity-event.is-tool > .material-symbols-outlined,
+.dm-topology-activity-event.is-code > .material-symbols-outlined,
+.dm-topology-activity-event.is-shell > .material-symbols-outlined {
+  color: #fcd34d;
+}
+
+.dm-topology-activity-event.is-done,
+.dm-topology-activity-event.is-message {
+  border-left-color: color-mix(in srgb, #34d399 70%, var(--dm-line-soft));
+}
+
+.dm-topology-activity-event.is-done > .material-symbols-outlined,
+.dm-topology-activity-event.is-message > .material-symbols-outlined {
+  color: #86efac;
+}
+
+.dm-topology-activity-event.is-error {
+  border-left-color: color-mix(in srgb, #fb7185 72%, var(--dm-line-soft));
+}
+
+.dm-topology-activity-event.is-error > .material-symbols-outlined {
+  color: #fda4af;
+}
+
+.dm-topology-activity-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  padding: 0.5rem;
+}
+
+.dm-topology-activity-empty .material-symbols-outlined {
+  flex: 0 0 auto;
+  font-size: 1rem;
+}
+
+.dm-topology-probe-details {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0 0 0.9rem;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-panel) 76%, transparent);
+  padding: 0.62rem;
+}
+
+.dm-topology-probe-details.is-ok {
+  border-color: color-mix(in srgb, #34d399 48%, var(--dm-line-soft));
+}
+
+.dm-topology-probe-details.is-error {
+  border-color: color-mix(in srgb, #fb7185 58%, var(--dm-line-soft));
+}
+
+.dm-topology-probe-summary,
+.dm-topology-probe-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.dm-topology-probe-summary {
+  justify-content: flex-start;
+  color: var(--color-text);
+  font-size: 0.82rem;
+}
+
+.dm-topology-probe-summary .material-symbols-outlined {
+  font-size: 1.02rem;
+}
+
+.dm-topology-probe-row {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+}
+
+.dm-topology-probe-row > span,
+.dm-topology-probe-row > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-topology-probe-row > strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.dm-topology-message-panel {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 0.9rem;
+  border-top: 1px solid var(--dm-line-soft);
+  padding-top: 0.72rem;
+}
+
+.dm-topology-message-panel .dm-field {
+  margin: 0;
+}
+
+.dm-topology-message-input {
+  min-height: 4.9rem;
+  resize: vertical;
+}
+
+.dm-topology-message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.dm-topology-message-actions .button {
+  max-width: 100%;
+}
+
+.dm-topology-message-actions .button span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-topology-message-result {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-panel) 74%, transparent);
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  padding: 0.45rem 0.52rem;
+}
+
+.dm-topology-message-result .material-symbols-outlined {
+  flex: 0 0 auto;
+  font-size: 1rem;
+}
+
+.dm-icon-spin {
+  animation: dm-icon-spin 0.9s linear infinite;
+}
+
+.dm-topology-message-result > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dm-topology-message-result.is-ok {
+  border-color: color-mix(in srgb, #34d399 48%, var(--dm-line-soft));
+  color: var(--color-text);
+}
+
+.dm-topology-message-result.is-running {
+  border-color: color-mix(in srgb, #60a5fa 45%, var(--dm-line-soft));
+  color: var(--color-text);
+}
+
+.dm-topology-message-result.is-error {
+  border-color: color-mix(in srgb, #fb7185 58%, var(--dm-line-soft));
+  color: var(--color-text);
+}
+
+@keyframes dm-topology-bubble-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -88%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+}
+
+@keyframes dm-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dm-topology-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  gap: 0.45rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  text-align: center;
+}
+
+.dm-topology-empty .material-symbols-outlined {
+  color: color-mix(in srgb, var(--color-highlight) 80%, var(--color-text));
+  font-size: 2rem;
+  justify-self: center;
+}
+
+.dm-topology-inspector {
+  min-height: clamp(20rem, 44vh, 40rem);
+  border-left: 1px solid var(--dm-line-soft);
+  padding-left: 1rem;
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.dm-topology-inspector-header {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+  margin-bottom: 0.9rem;
+}
+
+.dm-topology-inspector-header .material-symbols-outlined {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-highlight) 16%, transparent);
+  color: color-mix(in srgb, var(--color-highlight) 86%, var(--color-text));
+}
+
+.dm-topology-inspector-header h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.dm-topology-inspector-header p {
+  margin: 0.15rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dm-topology-inspector-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.45rem;
+  min-height: 16rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.dm-topology-inspector-empty .material-symbols-outlined {
+  color: color-mix(in srgb, var(--color-text-muted) 72%, var(--color-highlight));
+  font-size: 1.8rem;
+}
+
+.dm-topology-role-field {
+  margin-bottom: 0.9rem;
+}
+
+.dm-topology-control-groups {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.dm-topology-control-group {
+  display: grid;
+  gap: 0.5rem;
+  border-top: 1px solid var(--dm-line-soft);
+  padding-top: 0.65rem;
+}
+
+.dm-topology-control-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.dm-topology-control-title .material-symbols-outlined {
+  font-size: 0.95rem;
+}
+
+.dm-topology-inspector-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.dm-topology-inspector-actions .button {
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.dm-topology-inspector-actions .button.danger {
+  grid-column: 1 / -1;
+}
+
+.dm-topology-choice-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.dm-topology-choice {
+  min-height: 3rem;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-max);
+  background: color-mix(in srgb, var(--color-panel) 86%, transparent);
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: "Rubik", Arial, Helvetica, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.75rem 0.85rem;
+}
+
+.dm-topology-choice:hover:not(:disabled),
+.dm-topology-choice:focus-visible {
+  border-color: color-mix(in srgb, var(--color-highlight) 48%, var(--color-border));
+  background: color-mix(in srgb, var(--color-highlight) 12%, var(--color-panel));
+  outline: none;
+}
+
+.dm-topology-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.dm-topology-node-dialog {
+  max-width: 25rem;
+}
+
+.dm-topology.is-linking .dm-topology-graph-shell {
+  border-color: color-mix(in srgb, var(--color-highlight) 54%, var(--color-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-highlight) 18%, transparent);
+}
+
+@media (max-width: 980px) {
+  .dm-topology-header {
+    flex-direction: column;
+  }
+
+  .dm-topology-body {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-topology-inspector {
+    min-height: 12rem;
+    border-left: 0;
+    border-top: 1px solid var(--dm-line-soft);
+    padding-left: 0;
+    padding-top: 0.9rem;
+  }
+}
+
 .sv-page {
   width: 100%;
   max-width: none;

@@ -211,6 +211,7 @@ function snapshot() {
     versions: Array.isArray(store.versions) ? store.versions : [],
     containers: Array.isArray(store.containers) ? store.containers : [],
     remoteInstances: Array.isArray(store.remoteInstances) ? store.remoteInstances : [],
+    topology: store.topology || { version: 1, nodes: [], edges: [] },
     backgroundOperations: Array.isArray(store.backgroundOperations) ? store.backgroundOperations : [],
     volumes: Array.isArray(store.volumes) ? store.volumes : [],
     retainedInstances: Array.isArray(store.retainedInstances) ? store.retainedInstances : [],
@@ -357,6 +358,7 @@ async function refresh() {
       store.versions = Array.isArray(state?.versions) ? state.versions : [];
       store.retainedInstances = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
       store.remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+      store.topology = state?.topology || null;
       store.backgroundOperations = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
       store.storage = state?.storage || null;
       store.runtime = state?.runtime || null;
@@ -390,7 +392,7 @@ async function refresh() {
   }
 }
 
-const NAV_REFRESH_TABS = new Set(["installs", "sessions", "advanced"]);
+const NAV_REFRESH_TABS = new Set(["installs", "sessions", "advanced", "topology"]);
 const INSTANCE_TAB = "sessions";
 let navRefreshTimer = 0;
 const handledRunCompletionOps = new Set();
@@ -1299,6 +1301,137 @@ async function openRemoteInstance(id) {
   return openInstanceUi({ kind: "remote", instanceId: id || "" });
 }
 
+function applyTopologyResult(result, successMessage = "") {
+  if (isErrorResponse(result)) {
+    setBanner("error", result.message);
+    return false;
+  }
+  if (result && typeof result === "object") store.topology = result;
+  if (successMessage) setBanner("info", successMessage);
+  emitState();
+  return true;
+}
+
+async function saveTopologyLayout(layout = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.saveTopologyLayout !== "function") return false;
+  try {
+    const res = await api.saveTopologyLayout(layout && typeof layout === "object" ? layout : {});
+    return applyTopologyResult(res);
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to save topology layout");
+    return false;
+  }
+}
+
+async function createTopologyEdge(edge = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.createTopologyEdge !== "function") return false;
+  try {
+    const res = await api.createTopologyEdge(edge && typeof edge === "object" ? edge : {});
+    return applyTopologyResult(res, "Topology link created.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to create topology link");
+    return false;
+  }
+}
+
+async function deleteTopologyEdge(edgeId = "") {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.deleteTopologyEdge !== "function") return false;
+  try {
+    const res = await api.deleteTopologyEdge(edgeId || "");
+    return applyTopologyResult(res, "Topology link removed.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to remove topology link");
+    return false;
+  }
+}
+
+async function connectTopologyEdge(edgeId = "") {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.connectTopologyEdge !== "function") return false;
+  try {
+    const res = await api.connectTopologyEdge(edgeId || "");
+    return applyTopologyResult(res, "Local Instances connected.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to connect Instances");
+    return false;
+  }
+}
+
+async function probeTopologyEdge(edgeId = "") {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.probeTopologyEdge !== "function") return null;
+  try {
+    const res = await api.probeTopologyEdge(edgeId || "");
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return null;
+    }
+    return res && typeof res === "object" ? res : null;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to test A2A link");
+    return null;
+  }
+}
+
+async function prepareTopologyA2aEdge(edgeId = "") {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.prepareTopologyA2aEdge !== "function") return null;
+  try {
+    const res = await api.prepareTopologyA2aEdge(edgeId || "");
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return null;
+    }
+    return res && typeof res === "object" ? res : null;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to prepare A2A link");
+    return null;
+  }
+}
+
+async function sendTopologyMessage(payload = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.sendTopologyMessage !== "function") return null;
+  try {
+    const res = await api.sendTopologyMessage(payload && typeof payload === "object" ? payload : {});
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return null;
+    }
+    return res && typeof res === "object" ? res : null;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to send topology message");
+    return null;
+  }
+}
+
+async function disconnectTopologyEdge(edgeId = "") {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.disconnectTopologyEdge !== "function") return false;
+  try {
+    const res = await api.disconnectTopologyEdge(edgeId || "");
+    return applyTopologyResult(res, "Local link disconnected.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to disconnect Instances");
+    return false;
+  }
+}
+
+async function setTopologyNodeRole(nodeId = "", role = "peer") {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.setTopologyNodeRole !== "function") return false;
+  try {
+    const res = await api.setTopologyNodeRole(nodeId || "", role || "peer");
+    return applyTopologyResult(res, "Topology role saved.");
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to save topology role");
+    return false;
+  }
+}
+
 let instanceTabBoundsTimer = 0;
 
 function readInstanceTabViewportBounds() {
@@ -1373,6 +1506,15 @@ window.dockerManagerActions = {
   renameRemoteInstance,
   setRemoteInstanceColor,
   openRemoteInstance,
+  saveTopologyLayout,
+  createTopologyEdge,
+  deleteTopologyEdge,
+  connectTopologyEdge,
+  probeTopologyEdge,
+  prepareTopologyA2aEdge,
+  sendTopologyMessage,
+  disconnectTopologyEdge,
+  setTopologyNodeRole,
   openInstanceUi,
   selectInstanceHome,
   selectInstanceTab,
@@ -1424,6 +1566,7 @@ function initSubscriptions() {
         if (Array.isArray(state?.containers)) store.containers = state.containers;
         store.retainedInstances = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
         store.remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+        store.topology = state?.topology || null;
         store.backgroundOperations = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
         store.storage = state?.storage || null;
         store.runtime = state?.runtime || null;

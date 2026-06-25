@@ -103,6 +103,31 @@ This scope owns:
 - Remote instances must normalize and validate URLs before persistence. Their
   optional saved `color` field uses the same bounded palette IDs as local
   Instance color overrides.
+- Instance topology metadata is stored under `state.topology` in `state_store.js`
+  as bounded nodes, edges, roles, positions, and connection metadata. It is
+  launcher metadata, not Agent Zero runtime configuration. The only Docker-backed
+  v1 connection path is a local-to-local edge attached to the launcher-owned
+  `a0-launcher-topology` bridge network with ownership labels; remote edges stay
+  metadata-only.
+- Topology A2A testing and setup are bounded diagnostics on a connected local
+  edge. They must verify the launcher-owned network and attachments. Setup may
+  enable Agent Zero's A2A server through the host-reachable settings API, then
+  build tokenized internal A2A URLs for container-to-container use. Full A2A
+  tokens are transient shell data; renderer-facing setup results should expose
+  only redacted URLs and status. `Test A2A` must prepare the edge and probe the
+  tokenized `/.well-known/agent.json` endpoint from inside the opposite
+  container; a plain Agent Zero web-root probe is not an A2A test.
+- Topology message sending is transient runtime communication, not persisted
+  topology metadata. Launcher-to-Instance sends should use Agent Zero's Web UI
+  message API with CSRF handling from the shell. Instance-to-Instance sends are
+  allowed only across a connected local topology edge, after verifying the
+  launcher-owned network and container attachments, and should use the Docker
+  adapter's bounded FastA2A JSON-RPC send/poll helper from inside the source
+  container to the target's tokenized internal A2A URL. Current Agent Zero
+  FastA2A servers can keep `message/send` open while the target worker is busy;
+  if that request times out but target logs prove a task was accepted, recover
+  the task id and poll `tasks/get` before reporting failure. Surface unfinished
+  accepted tasks as pending/running rather than hard failures.
 - Retained local containers are rollback targets and should keep enough metadata
   for the renderer to display them without re-inspecting every container
   needlessly.

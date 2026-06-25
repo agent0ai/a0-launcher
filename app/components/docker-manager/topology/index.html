@@ -1,0 +1,39 @@
+<body>
+  <section id="dmTopology" class="dm-topology">
+    <header class="dm-topology-header">
+      <div>
+        <h1 class="section-title">Topology</h1>
+        <div id="dmTopologyStatus" class="dm-topology-status"></div>
+      </div>
+      <div class="dm-topology-actions">
+        <button id="dmTopologyNewNode" class="button" type="button" title="New node" aria-label="New node">
+          <span class="material-symbols-outlined" aria-hidden="true">add_circle</span>
+          <span>New node</span>
+        </button>
+        <button id="dmTopologyLink" class="button" type="button" title="Link nodes" aria-label="Link nodes">
+          <span class="material-symbols-outlined" aria-hidden="true">add_link</span>
+          <span>Link</span>
+        </button>
+        <button id="dmTopologyFit" class="button icon-only" type="button" title="Fit graph" aria-label="Fit graph">
+          <span class="material-symbols-outlined" aria-hidden="true">fit_screen</span>
+        </button>
+        <button id="dmTopologyRefresh" class="button icon-only" type="button" title="Refresh" aria-label="Refresh">
+          <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+        </button>
+      </div>
+    </header>
+    <div class="dm-topology-body">
+      <div class="dm-topology-graph-shell">
+        <div id="dmTopologyGraph" class="dm-topology-graph" role="img" aria-label="Instance topology graph"></div>
+        <div id="dmTopologyBubbles" class="dm-topology-bubbles hidden" aria-hidden="true"></div>
+        <div id="dmTopologyActivity" class="dm-topology-activity hidden" aria-live="polite"></div>
+        <div id="dmTopologyEmpty" class="dm-topology-empty hidden">
+          <span class="material-symbols-outlined" aria-hidden="true">hub</span>
+          <strong>No Instances yet</strong>
+        </div>
+      </div>
+      <aside id="dmTopologyInspector" class="dm-topology-inspector" aria-live="polite"></aside>
+    </div>
+  </section>
+  <script type="module" src="components/docker-manager/topology/topology.js"></script>
+</body>

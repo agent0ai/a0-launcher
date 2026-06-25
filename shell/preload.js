@@ -168,6 +168,59 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   renameLocalInstance: (containerId, name) => ipcRenderer.invoke('docker-manager:renameLocalInstance', { containerId, name }),
   setRemoteInstanceColor: (id, color) => ipcRenderer.invoke('docker-manager:setRemoteInstanceColor', { id, color }),
   setLocalInstanceColor: (containerId, color) => ipcRenderer.invoke('docker-manager:setLocalInstanceColor', { containerId, color }),
+  saveTopologyLayout: (layout) => {
+    const l = layout && typeof layout === 'object' ? layout : {};
+    const nodes = Array.isArray(l.nodes) ? l.nodes.map((node) => {
+      const n = node && typeof node === 'object' ? node : {};
+      const position = n.position && typeof n.position === 'object' ? n.position : {};
+      return {
+        id: typeof n.id === 'string' ? n.id : '',
+        role: typeof n.role === 'string' ? n.role : '',
+        position: {
+          x: position.x,
+          y: position.y
+        }
+      };
+    }) : [];
+    return ipcRenderer.invoke('docker-manager:saveTopologyLayout', { nodes });
+  },
+  createTopologyEdge: (edge) => {
+    const e = edge && typeof edge === 'object' ? edge : {};
+    return ipcRenderer.invoke('docker-manager:createTopologyEdge', {
+      source: typeof e.source === 'string' ? e.source : '',
+      target: typeof e.target === 'string' ? e.target : '',
+      label: typeof e.label === 'string' ? e.label : ''
+    });
+  },
+  deleteTopologyEdge: (edgeId) => ipcRenderer.invoke('docker-manager:deleteTopologyEdge', {
+    edgeId: typeof edgeId === 'string' ? edgeId : ''
+  }),
+  connectTopologyEdge: (edgeId) => ipcRenderer.invoke('docker-manager:connectTopologyEdge', {
+    edgeId: typeof edgeId === 'string' ? edgeId : ''
+  }),
+  probeTopologyEdge: (edgeId) => ipcRenderer.invoke('docker-manager:probeTopologyEdge', {
+    edgeId: typeof edgeId === 'string' ? edgeId : ''
+  }),
+  prepareTopologyA2aEdge: (edgeId) => ipcRenderer.invoke('docker-manager:prepareTopologyA2aEdge', {
+    edgeId: typeof edgeId === 'string' ? edgeId : ''
+  }),
+  sendTopologyMessage: (payload) => {
+    const p = payload && typeof payload === 'object' ? payload : {};
+    return ipcRenderer.invoke('docker-manager:sendTopologyMessage', {
+      edgeId: typeof p.edgeId === 'string' ? p.edgeId : '',
+      sourceNodeId: typeof p.sourceNodeId === 'string' ? p.sourceNodeId : '',
+      targetNodeId: typeof p.targetNodeId === 'string' ? p.targetNodeId : '',
+      message: typeof p.message === 'string' ? p.message : '',
+      contextId: typeof p.contextId === 'string' ? p.contextId : ''
+    });
+  },
+  disconnectTopologyEdge: (edgeId) => ipcRenderer.invoke('docker-manager:disconnectTopologyEdge', {
+    edgeId: typeof edgeId === 'string' ? edgeId : ''
+  }),
+  setTopologyNodeRole: (nodeId, role) => ipcRenderer.invoke('docker-manager:setTopologyNodeRole', {
+    nodeId: typeof nodeId === 'string' ? nodeId : '',
+    role: typeof role === 'string' ? role : ''
+  }),
   deleteLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:deleteLocalInstance', { containerId }),
   deleteRetainedInstance: (containerId) =>
     ipcRenderer.invoke('docker-manager:deleteRetainedInstance', { containerId }),

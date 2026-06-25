@@ -148,6 +148,11 @@ This scope owns:
   intents. They may expose storage mode/root/volume fields, but Docker mount
   creation, migration, and archive copy behavior must stay in
   `shell/docker_manager` and `shell/docker_adapter`.
+- Instance topology actions are named Docker Manager intents. The renderer may
+  save graph layout, create/delete logical links, set node roles, request local
+  connect/disconnect, prepare a connected local edge for Agent Zero A2A, and
+  send bounded topology messages, but `shell/main.js` must validate those IPC
+  bodies and Docker/A2A mechanics must stay below the renderer.
 - Opening an Instance storage folder is a named Docker Manager intent. The
   renderer passes a container id; the shell resolves and opens only validated
   host-directory workspace paths.

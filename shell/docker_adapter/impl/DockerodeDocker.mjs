@@ -82,6 +82,8 @@ function makeDockerInterfaceError(code, message, details = {}, cause = null) {
 }
 
 function normalizeDockerError(error, context = {}) {
+  if (error?.name === 'DockerInterfaceError') return error;
+
   const code = error?.code || '';
   const statusCode = error?.statusCode;
   const message = typeof error?.message === 'string' ? error.message : '';
@@ -166,6 +168,823 @@ function stringList(value, limit = 12, maxLength = 180) {
     if (out.length >= limit) break;
   }
   return out;
+}
+
+function cleanDockerResourceName(value, label) {
+  const text = String(value || '').trim();
+  if (!text) throw makeDockerInterfaceError('INVALID_INPUT', `${label} is required`);
+  if (text.length > 255 || /[\0\r\n]/.test(text)) {
+    throw makeDockerInterfaceError('INVALID_INPUT', `${label} is invalid`);
+  }
+  return text;
+}
+
+function normalizeProbeHttpUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) throw makeDockerInterfaceError('INVALID_INPUT', 'url is required');
+  if (text.length > 2048 || /[\0\r\n]/.test(text)) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'url is invalid');
+  }
+
+  let url;
+  try {
+    url = new URL(text);
+  } catch (error) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'url is invalid', {}, error);
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'url must be HTTP or HTTPS');
+  }
+  if (url.username || url.password) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'url must not include credentials');
+  }
+  return url.href;
+}
+
+function normalizeHttpRequestPath(value, label = 'path') {
+  const text = String(value || '').trim();
+  if (!text || !text.startsWith('/') || text.length > 512 || /[\0\r\n]/.test(text)) {
+    throw makeDockerInterfaceError('INVALID_INPUT', `${label} is invalid`);
+  }
+  return text;
+}
+
+function normalizeHttpOrigin(value) {
+  const text = String(value || 'http://localhost').trim();
+  if (text.length > 512 || /[\0\r\n]/.test(text)) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'origin is invalid');
+  }
+  let url;
+  try {
+    url = new URL(text);
+  } catch (error) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'origin is invalid', {}, error);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'origin must be HTTP or HTTPS');
+  }
+  return url.origin;
+}
+
+function clampHttpProbeTimeoutMs(value) {
+  const fallback = 3500;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(500, Math.min(15000, Math.floor(number)));
+}
+
+function clampA2aMessageTimeoutMs(value) {
+  const fallback = 30000;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(500, Math.min(60000, Math.floor(number)));
+}
+
+function redactTokenizedA2aUrl(value) {
+  return String(value || '').replace(/\/a2a\/t-[^/?#\s]+/gu, '/a2a/t-...');
+}
+
+function normalizeJsonPayloadBase64(payload) {
+  let text = '';
+  try {
+    text = JSON.stringify(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {});
+  } catch (error) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'payload must be JSON serializable', {}, error);
+  }
+  if (Buffer.byteLength(text, 'utf8') > 64 * 1024) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'payload is too large');
+  }
+  return Buffer.from(text, 'utf8').toString('base64');
+}
+
+function normalizeTextPayloadBase64(value, label = 'message') {
+  const text = String(value || '').trim();
+  if (!text) throw makeDockerInterfaceError('INVALID_INPUT', `${label} is required`);
+  if (Buffer.byteLength(text, 'utf8') > 64 * 1024) {
+    throw makeDockerInterfaceError('INVALID_INPUT', `${label} is too large`);
+  }
+  return Buffer.from(text, 'utf8').toString('base64');
+}
+
+function parseHttpProbeOutput(text) {
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (!parsed || typeof parsed !== 'object') continue;
+      return {
+        reachable: parsed.reachable === true,
+        statusCode: Number.isFinite(Number(parsed.statusCode)) ? Number(parsed.statusCode) : null,
+        elapsedMs: Number.isFinite(Number(parsed.elapsedMs)) ? Math.max(0, Math.floor(Number(parsed.elapsedMs))) : null,
+        error: textOrNull(parsed.error, 300) || ''
+      };
+    } catch {
+      // Keep scanning for the bounded JSON payload.
+    }
+  }
+  return null;
+}
+
+function parseJsonPostOutput(text) {
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (!parsed || typeof parsed !== 'object') continue;
+      return {
+        ok: parsed.ok === true,
+        statusCode: Number.isFinite(Number(parsed.statusCode)) ? Number(parsed.statusCode) : null,
+        elapsedMs: Number.isFinite(Number(parsed.elapsedMs)) ? Math.max(0, Math.floor(Number(parsed.elapsedMs))) : null,
+        responseText: textOrNull(parsed.responseText, 8192) || '',
+        responseJson: parsed.responseJson && typeof parsed.responseJson === 'object' && !Array.isArray(parsed.responseJson)
+          ? parsed.responseJson
+          : null,
+        error: textOrNull(parsed.error, 500) || ''
+      };
+    } catch {
+      // Keep scanning for the bounded JSON payload.
+    }
+  }
+  return null;
+}
+
+function parseA2aMessageOutput(text) {
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (!parsed || typeof parsed !== 'object') continue;
+      return {
+        ok: parsed.ok === true,
+        statusCode: Number.isFinite(Number(parsed.statusCode)) ? Number(parsed.statusCode) : null,
+        elapsedMs: Number.isFinite(Number(parsed.elapsedMs)) ? Math.max(0, Math.floor(Number(parsed.elapsedMs))) : null,
+        taskId: textOrNull(parsed.taskId, 180) || '',
+        contextId: textOrNull(parsed.contextId, 180) || '',
+        state: textOrNull(parsed.state, 80) || '',
+        assistantText: textOrNull(parsed.assistantText, 8192) || '',
+        responseText: textOrNull(parsed.responseText, 8192) || '',
+        responseJson: parsed.responseJson && typeof parsed.responseJson === 'object' && !Array.isArray(parsed.responseJson)
+          ? parsed.responseJson
+          : null,
+        error: textOrNull(parsed.error, 500) || '',
+        pending: parsed.pending === true
+      };
+    } catch {
+      // Keep scanning for the bounded JSON payload.
+    }
+  }
+  return null;
+}
+
+function normalizeA2aTaskId(value) {
+  const id = String(value || '').trim();
+  if (!id || id.length > 180 || /[\0\r\n/]/.test(id)) {
+    throw makeDockerInterfaceError('INVALID_INPUT', 'taskId is required');
+  }
+  return id;
+}
+
+function demuxDockerExecBuffer(buffer) {
+  const source = Buffer.isBuffer(buffer) ? buffer : Buffer.alloc(0);
+  if (!source.length) return { stdoutText: '', stderrText: '' };
+
+  const stdout = [];
+  const stderr = [];
+  let offset = 0;
+  let framed = false;
+
+  while (offset + 8 <= source.length) {
+    const streamType = source[offset];
+    const size = source.readUInt32BE(offset + 4);
+    if ((streamType !== 1 && streamType !== 2) || size < 0 || offset + 8 + size > source.length) {
+      framed = false;
+      break;
+    }
+    framed = true;
+    const payload = source.subarray(offset + 8, offset + 8 + size);
+    if (streamType === 2) stderr.push(payload);
+    else stdout.push(payload);
+    offset += 8 + size;
+  }
+
+  if (framed && offset === source.length) {
+    return {
+      stdoutText: Buffer.concat(stdout).toString('utf8'),
+      stderrText: Buffer.concat(stderr).toString('utf8')
+    };
+  }
+
+  return {
+    stdoutText: source.toString('utf8'),
+    stderrText: ''
+  };
+}
+
+const HTTP_PROBE_SCRIPT = `
+url="$1"
+timeout="$2"
+if command -v python3 >/dev/null 2>&1; then
+  pybin=python3
+elif command -v python >/dev/null 2>&1; then
+  pybin=python
+else
+  printf '%s\\n' '{"reachable":false,"statusCode":null,"elapsedMs":0,"error":"python_not_found"}'
+  exit 3
+fi
+"$pybin" - "$url" "$timeout" <<'PY'
+import json
+import sys
+import time
+import urllib.error
+import urllib.request
+
+url = sys.argv[1]
+try:
+    timeout = max(0.5, min(15.0, float(sys.argv[2]) / 1000.0))
+except Exception:
+    timeout = 3.5
+
+start = time.time()
+request = urllib.request.Request(
+    url,
+    headers={"User-Agent": "A0-Launcher-Topology-Probe/1.0"},
+    method="HEAD",
+)
+
+def elapsed_ms():
+    return int(max(0, (time.time() - start) * 1000))
+
+try:
+    response = urllib.request.urlopen(request, timeout=timeout)
+    status = int(getattr(response, "status", response.getcode()))
+    response.close()
+    print(json.dumps({"reachable": True, "statusCode": status, "elapsedMs": elapsed_ms(), "error": ""}))
+except urllib.error.HTTPError as exc:
+    print(json.dumps({"reachable": True, "statusCode": int(exc.code), "elapsedMs": elapsed_ms(), "error": ""}))
+except Exception as exc:
+    print(json.dumps({
+        "reachable": False,
+        "statusCode": None,
+        "elapsedMs": elapsed_ms(),
+        "error": type(exc).__name__ + ": " + str(exc),
+    }))
+PY
+`;
+
+const HTTP_JSON_CSRF_POST_SCRIPT = `
+base_url="$1"
+post_path="$2"
+payload_b64="$3"
+csrf_path="$4"
+origin="$5"
+timeout="$6"
+if command -v python3 >/dev/null 2>&1; then
+  pybin=python3
+elif command -v python >/dev/null 2>&1; then
+  pybin=python
+else
+  printf '%s\\n' '{"ok":false,"statusCode":null,"elapsedMs":0,"responseText":"","responseJson":null,"error":"python_not_found"}'
+  exit 3
+fi
+"$pybin" - "$base_url" "$post_path" "$payload_b64" "$csrf_path" "$origin" "$timeout" <<'PY'
+import base64
+import http.cookiejar
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+base_url, post_path, payload_b64, csrf_path, origin, timeout_raw = sys.argv[1:7]
+try:
+    timeout = max(0.5, min(30.0, float(timeout_raw) / 1000.0))
+except Exception:
+    timeout = 8.0
+
+start = time.time()
+
+def elapsed_ms():
+    return int(max(0, (time.time() - start) * 1000))
+
+def emit(ok, status_code=None, response_text="", response_json=None, error=""):
+    print(json.dumps({
+        "ok": bool(ok),
+        "statusCode": status_code,
+        "elapsedMs": elapsed_ms(),
+        "responseText": response_text[:8192] if isinstance(response_text, str) else "",
+        "responseJson": response_json if isinstance(response_json, dict) else None,
+        "error": str(error)[:500] if error else "",
+    }))
+
+def full_url(path):
+    return urllib.parse.urljoin(base_url.rstrip("/") + "/", str(path).lstrip("/"))
+
+jar = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+try:
+    csrf_request = urllib.request.Request(
+        full_url(csrf_path),
+        headers={"Origin": origin, "Referer": origin.rstrip("/") + "/"},
+    )
+    csrf_response = opener.open(csrf_request, timeout=timeout)
+    csrf_text = csrf_response.read(65536).decode("utf-8", errors="replace")
+    csrf_data = json.loads(csrf_text)
+    token = csrf_data.get("token") if csrf_data.get("ok") else None
+    if not token:
+        emit(False, getattr(csrf_response, "status", None), csrf_text, csrf_data if isinstance(csrf_data, dict) else None, csrf_data.get("error") or "csrf_token_missing")
+        sys.exit(0)
+
+    payload_bytes = base64.b64decode(payload_b64.encode("ascii"), validate=True)
+    post_request = urllib.request.Request(
+        full_url(post_path),
+        data=payload_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": token,
+            "Origin": origin,
+            "Referer": origin.rstrip("/") + "/",
+        },
+        method="POST",
+    )
+    post_response = opener.open(post_request, timeout=timeout)
+    response_text = post_response.read(65536).decode("utf-8", errors="replace")
+    response_json = None
+    try:
+        parsed = json.loads(response_text)
+        if isinstance(parsed, dict):
+            response_json = parsed
+    except Exception:
+        pass
+    status = int(getattr(post_response, "status", post_response.getcode()))
+    emit(200 <= status < 300, status, response_text, response_json, "")
+except urllib.error.HTTPError as exc:
+    body = exc.read(65536).decode("utf-8", errors="replace")
+    parsed = None
+    try:
+        maybe = json.loads(body)
+        if isinstance(maybe, dict):
+            parsed = maybe
+    except Exception:
+        pass
+    emit(False, int(exc.code), body, parsed, body or str(exc))
+except Exception as exc:
+    emit(False, None, "", None, type(exc).__name__ + ": " + str(exc))
+PY
+`;
+
+const A2A_MESSAGE_SCRIPT = `
+agent_url="$1"
+message_b64="$2"
+timeout="$3"
+wait_ms="$4"
+poll_ms="$5"
+if command -v python3 >/dev/null 2>&1; then
+  pybin=python3
+elif command -v python >/dev/null 2>&1; then
+  pybin=python
+else
+  printf '%s\\n' '{"ok":false,"statusCode":null,"elapsedMs":0,"taskId":"","contextId":"","state":"","assistantText":"","responseText":"","responseJson":null,"error":"python_not_found"}'
+  exit 3
+fi
+"$pybin" - "$agent_url" "$message_b64" "$timeout" "$wait_ms" "$poll_ms" <<'PY'
+import base64
+import json
+import sys
+import time
+import uuid
+import urllib.error
+import urllib.parse
+import urllib.request
+
+agent_url, message_b64, timeout_raw, wait_raw, poll_raw = sys.argv[1:6]
+try:
+    timeout = max(0.5, min(60.0, float(timeout_raw) / 1000.0))
+except Exception:
+    timeout = 30.0
+try:
+    wait_ms = max(0, min(180000, int(float(wait_raw))))
+except Exception:
+    wait_ms = 60000
+try:
+    poll_ms = max(250, min(10000, int(float(poll_raw))))
+except Exception:
+    poll_ms = 2000
+
+start = time.time()
+
+def elapsed_ms():
+    return int(max(0, (time.time() - start) * 1000))
+
+def emit(ok, status_code=None, task_id="", context_id="", state="", assistant_text="", response_text="", response_json=None, error="", pending=False):
+    print(json.dumps({
+        "ok": bool(ok),
+        "statusCode": status_code,
+        "elapsedMs": elapsed_ms(),
+        "taskId": str(task_id or "")[:180],
+        "contextId": str(context_id or "")[:180],
+        "state": str(state or "")[:80],
+        "assistantText": str(assistant_text or "")[:8192],
+        "responseText": response_text[:8192] if isinstance(response_text, str) else "",
+        "responseJson": response_json if isinstance(response_json, dict) else None,
+        "error": str(error)[:500] if error else "",
+        "pending": bool(pending),
+    }))
+
+def endpoint():
+    return urllib.parse.urljoin(agent_url.rstrip("/") + "/", ".")
+
+def latest_text_from_message(message):
+    if isinstance(message, str):
+        return message.strip()
+    if not isinstance(message, dict):
+        return ""
+    parts = message.get("parts")
+    if isinstance(parts, list):
+        texts = []
+        for part in parts:
+            if isinstance(part, dict):
+                value = part.get("text") or part.get("content")
+                if isinstance(value, str) and value.strip():
+                    texts.append(value.strip())
+        if texts:
+            return "\\n".join(texts)
+    for key in ("text", "content", "message", "output"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+def extract_assistant_text(data):
+    if not isinstance(data, dict):
+        return ""
+    result = data.get("result", data)
+    if not isinstance(result, dict):
+        return ""
+    history = result.get("history")
+    if isinstance(history, list):
+        for message in reversed(history):
+            if isinstance(message, dict) and message.get("role") == "user":
+                continue
+            text = latest_text_from_message(message)
+            if text:
+                return text
+    status = result.get("status")
+    if isinstance(status, dict):
+        text = latest_text_from_message(status.get("message"))
+        if text:
+            return text
+    artifacts = result.get("artifacts")
+    if isinstance(artifacts, list):
+        for artifact in reversed(artifacts):
+            text = latest_text_from_message(artifact)
+            if text:
+                return text
+    return latest_text_from_message(result)
+
+def post_json(payload):
+    raw = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint(),
+        data=raw,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "A0-Launcher-A2A/1.0",
+        },
+        method="POST",
+    )
+    response = urllib.request.urlopen(request, timeout=timeout)
+    response_text = response.read(1024 * 1024).decode("utf-8", errors="replace")
+    status = int(getattr(response, "status", response.getcode()))
+    parsed = json.loads(response_text)
+    return status, response_text, parsed
+
+try:
+    message = base64.b64decode(message_b64.encode("ascii"), validate=True).decode("utf-8")
+    request_id = str(uuid.uuid4())
+    message_id = str(uuid.uuid4())
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": message}],
+                "kind": "message",
+                "messageId": message_id,
+            },
+            "configuration": {
+                "acceptedOutputModes": ["application/json", "text/plain"],
+                "blocking": False,
+            },
+        },
+    }
+    status, response_text, response_json = post_json(payload)
+    result = response_json.get("result") if isinstance(response_json, dict) else None
+    if not isinstance(result, dict):
+        emit(False, status, response_text=response_text, response_json=response_json, error="A2A response missing result")
+        sys.exit(0)
+    task_id = result.get("id") or ""
+    context_id = result.get("contextId") or result.get("context_id") or ""
+    state = (result.get("status") or {}).get("state") if isinstance(result.get("status"), dict) else ""
+    assistant_text = extract_assistant_text(response_json)
+    if state in ("completed", "failed", "canceled") or not task_id or wait_ms <= 0:
+        pending = bool(task_id) and state not in ("completed", "failed", "canceled")
+        emit(state == "completed" or (200 <= status < 300 and bool(task_id)), status, task_id, context_id, state or "submitted", assistant_text, response_text, response_json, "" if 200 <= status < 300 else f"HTTP {status}", pending)
+        sys.exit(0)
+
+    deadline = time.time() + (wait_ms / 1000.0)
+    last_status = status
+    last_text = response_text
+    last_json = response_json
+    while time.time() < deadline:
+        time.sleep(poll_ms / 1000.0)
+        task_payload = {
+            "jsonrpc": "2.0",
+            "id": None,
+            "method": "tasks/get",
+            "params": {"id": task_id},
+        }
+        try:
+            last_status, last_text, last_json = post_json(task_payload)
+        except Exception as exc:
+            continue
+        result = last_json.get("result") if isinstance(last_json, dict) else None
+        if not isinstance(result, dict):
+            continue
+        context_id = result.get("contextId") or result.get("context_id") or context_id
+        state = (result.get("status") or {}).get("state") if isinstance(result.get("status"), dict) else state
+        assistant_text = extract_assistant_text(last_json)
+        if state in ("completed", "failed", "canceled"):
+            emit(state == "completed", last_status, task_id, context_id, state, assistant_text, last_text, last_json, "" if state == "completed" else f"A2A task {state}")
+            sys.exit(0)
+    emit(True, last_status, task_id, context_id, state or "submitted", assistant_text, last_text, last_json, "", True)
+except urllib.error.HTTPError as exc:
+    body = exc.read(65536).decode("utf-8", errors="replace")
+    parsed = None
+    try:
+        maybe = json.loads(body)
+        if isinstance(maybe, dict):
+            parsed = maybe
+    except Exception:
+        pass
+    emit(False, int(exc.code), response_text=body, response_json=parsed, error=body or str(exc))
+except Exception as exc:
+    emit(False, None, error=type(exc).__name__ + ": " + str(exc))
+PY
+`;
+
+const A2A_TASK_POLL_SCRIPT = `
+agent_url="$1"
+task_id="$2"
+timeout="$3"
+wait_ms="$4"
+poll_ms="$5"
+if command -v python3 >/dev/null 2>&1; then
+  pybin=python3
+elif command -v python >/dev/null 2>&1; then
+  pybin=python
+else
+  printf '%s\\n' '{"ok":false,"statusCode":null,"elapsedMs":0,"taskId":"","contextId":"","state":"","assistantText":"","responseText":"","responseJson":null,"error":"python_not_found","pending":false}'
+  exit 3
+fi
+"$pybin" - "$agent_url" "$task_id" "$timeout" "$wait_ms" "$poll_ms" <<'PY'
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+agent_url, task_id, timeout_raw, wait_raw, poll_raw = sys.argv[1:6]
+try:
+    timeout = max(0.5, min(60.0, float(timeout_raw) / 1000.0))
+except Exception:
+    timeout = 30.0
+try:
+    wait_ms = max(0, min(300000, int(float(wait_raw))))
+except Exception:
+    wait_ms = 60000
+try:
+    poll_ms = max(250, min(10000, int(float(poll_raw))))
+except Exception:
+    poll_ms = 2000
+
+start = time.time()
+
+def elapsed_ms():
+    return int(max(0, (time.time() - start) * 1000))
+
+def emit(ok, status_code=None, context_id="", state="", assistant_text="", response_text="", response_json=None, error="", pending=False):
+    print(json.dumps({
+        "ok": bool(ok),
+        "statusCode": status_code,
+        "elapsedMs": elapsed_ms(),
+        "taskId": str(task_id or "")[:180],
+        "contextId": str(context_id or "")[:180],
+        "state": str(state or "")[:80],
+        "assistantText": str(assistant_text or "")[:8192],
+        "responseText": response_text[:8192] if isinstance(response_text, str) else "",
+        "responseJson": response_json if isinstance(response_json, dict) else None,
+        "error": str(error)[:500] if error else "",
+        "pending": bool(pending),
+    }))
+
+def endpoint():
+    return urllib.parse.urljoin(agent_url.rstrip("/") + "/", ".")
+
+def latest_text_from_message(message):
+    if isinstance(message, str):
+        return message.strip()
+    if not isinstance(message, dict):
+        return ""
+    parts = message.get("parts")
+    if isinstance(parts, list):
+        texts = []
+        for part in parts:
+            if isinstance(part, dict):
+                value = part.get("text") or part.get("content")
+                if isinstance(value, str) and value.strip():
+                    texts.append(value.strip())
+        if texts:
+            return "\\n".join(texts)
+    for key in ("text", "content", "message", "output"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+def extract_assistant_text(data):
+    if not isinstance(data, dict):
+        return ""
+    result = data.get("result", data)
+    if not isinstance(result, dict):
+        return ""
+    history = result.get("history")
+    if isinstance(history, list):
+        for message in reversed(history):
+            if isinstance(message, dict) and message.get("role") == "user":
+                continue
+            text = latest_text_from_message(message)
+            if text:
+                return text
+    status = result.get("status")
+    if isinstance(status, dict):
+        text = latest_text_from_message(status.get("message"))
+        if text:
+            return text
+    artifacts = result.get("artifacts")
+    if isinstance(artifacts, list):
+        for artifact in reversed(artifacts):
+            text = latest_text_from_message(artifact)
+            if text:
+                return text
+    return latest_text_from_message(result)
+
+def post_task_get():
+    raw = json.dumps({
+        "jsonrpc": "2.0",
+        "id": None,
+        "method": "tasks/get",
+        "params": {"id": task_id},
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint(),
+        data=raw,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "A0-Launcher-A2A/1.0",
+        },
+        method="POST",
+    )
+    response = urllib.request.urlopen(request, timeout=timeout)
+    response_text = response.read(1024 * 1024).decode("utf-8", errors="replace")
+    status = int(getattr(response, "status", response.getcode()))
+    parsed = json.loads(response_text)
+    return status, response_text, parsed
+
+deadline = time.time() + (wait_ms / 1000.0)
+last_status = None
+last_text = ""
+last_json = None
+context_id = ""
+state = "submitted"
+assistant_text = ""
+
+while True:
+    try:
+        last_status, last_text, last_json = post_task_get()
+    except urllib.error.HTTPError as exc:
+        body = exc.read(65536).decode("utf-8", errors="replace")
+        parsed = None
+        try:
+            maybe = json.loads(body)
+            if isinstance(maybe, dict):
+                parsed = maybe
+        except Exception:
+            pass
+        emit(False, int(exc.code), response_text=body, response_json=parsed, error=body or str(exc))
+        break
+    except Exception:
+        if time.time() >= deadline:
+            emit(True, last_status, context_id, state, assistant_text, last_text, last_json, "", True)
+            break
+        time.sleep(poll_ms / 1000.0)
+        continue
+
+    result = last_json.get("result") if isinstance(last_json, dict) else None
+    if isinstance(result, dict):
+        context_id = result.get("contextId") or result.get("context_id") or context_id
+        state = (result.get("status") or {}).get("state") if isinstance(result.get("status"), dict) else state
+        assistant_text = extract_assistant_text(last_json)
+        if state in ("completed", "failed", "canceled"):
+            emit(state == "completed", last_status, context_id, state, assistant_text, last_text, last_json, "" if state == "completed" else f"A2A task {state}")
+            break
+
+    if time.time() >= deadline:
+        emit(True, last_status, context_id, state or "submitted", assistant_text, last_text, last_json, "", True)
+        break
+    time.sleep(poll_ms / 1000.0)
+PY
+`;
+
+function normalizedLabelMap(value) {
+  const out = {};
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  for (const [keyRaw, valueRaw] of Object.entries(source)) {
+    const key = String(keyRaw || '').trim();
+    const val = String(valueRaw || '').trim();
+    if (!key || /[\0\r\n]/.test(key)) continue;
+    out[key] = val;
+  }
+  return out;
+}
+
+function normalizedNetworkAliases(value) {
+  const source = Array.isArray(value) ? value : [];
+  const out = [];
+  for (const item of source) {
+    const alias = String(item || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '')
+      .slice(0, 120);
+    if (alias && !out.includes(alias)) out.push(alias);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+function formatNetworkInspect(value) {
+  const labels = normalizedLabelMap(value?.Labels);
+  const containers = {};
+  const rawContainers = value?.Containers && typeof value.Containers === 'object' ? value.Containers : {};
+  for (const [id, entry] of Object.entries(rawContainers)) {
+    const containerId = String(id || '').trim();
+    if (!containerId) continue;
+    containers[containerId] = {
+      name: textOrNull(entry?.Name, 180) || '',
+      endpointId: textOrNull(entry?.EndpointID, 180) || '',
+      ipv4Address: textOrNull(entry?.IPv4Address, 80) || '',
+      ipv6Address: textOrNull(entry?.IPv6Address, 120) || '',
+      aliases: stringList(entry?.Aliases, 16, 120)
+    };
+  }
+  return {
+    id: textOrNull(value?.Id, 180) || '',
+    name: textOrNull(value?.Name, 255) || '',
+    driver: textOrNull(value?.Driver, 80) || '',
+    scope: textOrNull(value?.Scope, 80) || '',
+    labels,
+    containers
+  };
+}
+
+function findNetworkContainer(network, containerId) {
+  const id = String(containerId || '').trim();
+  const containers = network?.containers && typeof network.containers === 'object' ? network.containers : {};
+  for (const [containerKey, entry] of Object.entries(containers)) {
+    if (containerKey === id || containerKey.startsWith(id) || id.startsWith(containerKey)) {
+      return { containerId: containerKey, entry };
+    }
+  }
+  return null;
+}
+
+function requiredLabelsMatch(actual, expected) {
+  const a = normalizedLabelMap(actual);
+  const e = normalizedLabelMap(expected);
+  for (const [key, value] of Object.entries(e)) {
+    if (a[key] !== value) return false;
+  }
+  return true;
 }
 
 function driverStatusList(value) {
@@ -986,6 +1805,129 @@ export class DockerodeDocker extends DockerInterface {
     }
   }
 
+  async ensureNetwork(name, options = {}) {
+    const networkName = cleanDockerResourceName(name, 'networkName');
+    const labels = normalizedLabelMap(options?.labels);
+    const driver = String(options?.driver || 'bridge').trim() || 'bridge';
+
+    try {
+      const existing = await this.inspectNetwork(networkName).catch((error) => {
+        if (Number(error?.details?.statusCode) === 404 || error?.code === 'NOT_FOUND') return null;
+        throw error;
+      });
+      if (existing) {
+        if (!requiredLabelsMatch(existing.labels, labels)) {
+          throw makeDockerInterfaceError('NETWORK_CONFLICT', 'Docker network name is already in use', {
+            op: 'ensureNetwork',
+            networkName,
+            env: this.#envSummary()
+          });
+        }
+        return { ...existing, created: false };
+      }
+
+      const created = await Promise.resolve(this.docker.createNetwork({
+        Name: networkName,
+        Driver: driver,
+        Labels: labels
+      }));
+      const network = typeof created?.inspect === 'function'
+        ? formatNetworkInspect(await Promise.resolve(created.inspect()))
+        : await this.inspectNetwork(networkName);
+      return { ...network, created: true };
+    } catch (error) {
+      throw normalizeDockerError(error, { op: 'ensureNetwork', networkName, env: this.#envSummary() });
+    }
+  }
+
+  async inspectNetwork(nameOrId) {
+    const networkId = cleanDockerResourceName(nameOrId, 'networkName');
+    try {
+      const network = this.docker.getNetwork(networkId);
+      return formatNetworkInspect(await Promise.resolve(network.inspect()));
+    } catch (error) {
+      throw normalizeDockerError(error, { op: 'inspectNetwork', networkName: networkId, env: this.#envSummary() });
+    }
+  }
+
+  async connectContainerToNetwork(nameOrId, containerId, options = {}) {
+    const networkId = cleanDockerResourceName(nameOrId, 'networkName');
+    const id = cleanDockerResourceName(containerId, 'containerId');
+    const aliases = normalizedNetworkAliases(options?.aliases);
+
+    try {
+      const network = this.docker.getNetwork(networkId);
+      const before = formatNetworkInspect(await Promise.resolve(network.inspect()));
+      const existing = findNetworkContainer(before, id);
+      if (existing) {
+        const currentAliases = new Set(stringList(existing.entry?.aliases, 32, 120));
+        const missingAliases = aliases.filter((alias) => !currentAliases.has(alias));
+        if (missingAliases.length) {
+          throw makeDockerInterfaceError('NETWORK_ALIAS_CONFLICT', 'Container is already attached without the requested network aliases', {
+            op: 'connectContainerToNetwork',
+            networkName: networkId,
+            containerId: id,
+            aliases,
+            missingAliases,
+            env: this.#envSummary()
+          });
+        }
+        return { connected: false, alreadyConnected: true, network: before };
+      }
+
+      const payload = {
+        Container: id
+      };
+      if (aliases.length) payload.EndpointConfig = { Aliases: aliases };
+      await Promise.resolve(network.connect(payload));
+      const after = formatNetworkInspect(await Promise.resolve(network.inspect()));
+      return { connected: true, alreadyConnected: false, network: after };
+    } catch (error) {
+      throw normalizeDockerError(error, {
+        op: 'connectContainerToNetwork',
+        networkName: networkId,
+        containerId: id,
+        env: this.#envSummary()
+      });
+    }
+  }
+
+  async disconnectContainerFromNetwork(nameOrId, containerId, options = {}) {
+    const networkId = cleanDockerResourceName(nameOrId, 'networkName');
+    const id = cleanDockerResourceName(containerId, 'containerId');
+    const force = options?.force !== false;
+
+    try {
+      const network = this.docker.getNetwork(networkId);
+      let before = null;
+      try {
+        before = formatNetworkInspect(await Promise.resolve(network.inspect()));
+      } catch (error) {
+        if (Number(error?.statusCode) === 404 || error?.code === 'NOT_FOUND') {
+          return { disconnected: false, missingNetwork: true };
+        }
+        throw error;
+      }
+
+      if (!findNetworkContainer(before, id)) {
+        return { disconnected: false, missingNetwork: false };
+      }
+
+      await Promise.resolve(network.disconnect({ Container: id, Force: force }));
+      return { disconnected: true, missingNetwork: false };
+    } catch (error) {
+      if (Number(error?.statusCode) === 404 || error?.code === 'NOT_FOUND') {
+        return { disconnected: false, missingNetwork: true };
+      }
+      throw normalizeDockerError(error, {
+        op: 'disconnectContainerFromNetwork',
+        networkName: networkId,
+        containerId: id,
+        env: this.#envSummary()
+      });
+    }
+  }
+
   async createContainer(createOptions) {
     if (!createOptions || typeof createOptions !== 'object') {
       throw makeDockerInterfaceError('INVALID_INPUT', 'createOptions must be an object');
@@ -1029,6 +1971,263 @@ export class DockerodeDocker extends DockerInterface {
       return await Promise.resolve(c.inspect());
     } catch (error) {
       throw normalizeDockerError(error, { op: 'inspectContainer', containerId: id, env: this.#envSummary() });
+    }
+  }
+
+  async probeHttpFromContainer(containerId, url, options = {}) {
+    const id = cleanDockerResourceName(containerId, 'containerId');
+    const targetUrl = normalizeProbeHttpUrl(url);
+    const timeoutMs = clampHttpProbeTimeoutMs(options?.timeoutMs);
+
+    try {
+      const c = this.docker.getContainer(id);
+      const exec = await new Promise((resolve, reject) => {
+        c.exec({
+          Cmd: ['/bin/sh', '-lc', HTTP_PROBE_SCRIPT, 'a0-http-probe', targetUrl, String(timeoutMs)],
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: false
+        }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const stream = await new Promise((resolve, reject) => {
+        exec.start({ Detach: false, Tty: false }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const output = demuxDockerExecBuffer(await streamToBuffer(stream, 16384));
+      const stdoutText = output.stdoutText;
+      const stderrText = output.stderrText;
+
+      const inspect = typeof exec.inspect === 'function' ? await Promise.resolve(exec.inspect()) : {};
+      const exitCode = Number.isFinite(Number(inspect?.ExitCode)) ? Number(inspect.ExitCode) : null;
+      const parsed = parseHttpProbeOutput(stdoutText);
+      if (parsed) {
+        return {
+          ...parsed,
+          exitCode,
+          timedOut: false
+        };
+      }
+
+      return {
+        reachable: false,
+        statusCode: null,
+        elapsedMs: null,
+        error: textOrNull(stderrText, 300) || textOrNull(stdoutText, 300) || (exitCode === null ? 'Probe failed' : `Probe exited with code ${exitCode}`),
+        exitCode,
+        timedOut: false
+      };
+    } catch (error) {
+      throw normalizeDockerError(error, { op: 'probeHttpFromContainer', containerId: id, url: targetUrl, env: this.#envSummary() });
+    }
+  }
+
+  async postJsonWithCsrfFromContainer(containerId, baseUrl, postPath, payload, options = {}) {
+    const id = cleanDockerResourceName(containerId, 'containerId');
+    const targetBaseUrl = normalizeProbeHttpUrl(baseUrl);
+    const targetPath = normalizeHttpRequestPath(postPath, 'path');
+    const csrfPath = normalizeHttpRequestPath(options?.csrfPath || '/api/csrf_token', 'csrfPath');
+    const origin = normalizeHttpOrigin(options?.origin || 'http://localhost');
+    const timeoutMs = clampHttpProbeTimeoutMs(options?.timeoutMs || 8000);
+    const payloadBase64 = normalizeJsonPayloadBase64(payload);
+
+    try {
+      const c = this.docker.getContainer(id);
+      const exec = await new Promise((resolve, reject) => {
+        c.exec({
+          Cmd: [
+            '/bin/sh',
+            '-lc',
+            HTTP_JSON_CSRF_POST_SCRIPT,
+            'a0-json-post',
+            targetBaseUrl,
+            targetPath,
+            payloadBase64,
+            csrfPath,
+            origin,
+            String(timeoutMs)
+          ],
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: false
+        }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const stream = await new Promise((resolve, reject) => {
+        exec.start({ Detach: false, Tty: false }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const output = demuxDockerExecBuffer(await streamToBuffer(stream, 32768));
+      const stdoutText = output.stdoutText;
+      const stderrText = output.stderrText;
+      const inspect = typeof exec.inspect === 'function' ? await Promise.resolve(exec.inspect()) : {};
+      const exitCode = Number.isFinite(Number(inspect?.ExitCode)) ? Number(inspect.ExitCode) : null;
+      const parsed = parseJsonPostOutput(stdoutText);
+      if (parsed) {
+        return {
+          ...parsed,
+          exitCode
+        };
+      }
+
+      return {
+        ok: false,
+        statusCode: null,
+        elapsedMs: null,
+        responseText: '',
+        responseJson: null,
+        error: textOrNull(stderrText, 500) || textOrNull(stdoutText, 500) || (exitCode === null ? 'POST failed' : `POST exited with code ${exitCode}`),
+        exitCode
+      };
+    } catch (error) {
+      throw normalizeDockerError(error, {
+        op: 'postJsonWithCsrfFromContainer',
+        containerId: id,
+        baseUrl: targetBaseUrl,
+        path: targetPath,
+        env: this.#envSummary()
+      });
+    }
+  }
+
+  async sendA2aMessageFromContainer(containerId, agentUrl, message, options = {}) {
+    const id = cleanDockerResourceName(containerId, 'containerId');
+    const targetUrl = normalizeProbeHttpUrl(agentUrl);
+    const messageBase64 = normalizeTextPayloadBase64(message, 'message');
+    const timeoutMs = clampA2aMessageTimeoutMs(options?.timeoutMs || 30000);
+    const waitMs = Math.max(0, Math.min(180000, Math.floor(Number(options?.waitMs ?? 60000) || 60000)));
+    const pollIntervalMs = Math.max(250, Math.min(10000, Math.floor(Number(options?.pollIntervalMs ?? 2000) || 2000)));
+
+    try {
+      const c = this.docker.getContainer(id);
+      const exec = await new Promise((resolve, reject) => {
+        c.exec({
+          Cmd: [
+            '/bin/sh',
+            '-lc',
+            A2A_MESSAGE_SCRIPT,
+            'a0-a2a-message',
+            targetUrl,
+            messageBase64,
+            String(timeoutMs),
+            String(waitMs),
+            String(pollIntervalMs)
+          ],
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: false
+        }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const stream = await new Promise((resolve, reject) => {
+        exec.start({ Detach: false, Tty: false }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const output = demuxDockerExecBuffer(await streamToBuffer(stream, 1024 * 1024 + 8192));
+      const stdoutText = output.stdoutText;
+      const stderrText = output.stderrText;
+      const inspect = typeof exec.inspect === 'function' ? await Promise.resolve(exec.inspect()) : {};
+      const exitCode = Number.isFinite(Number(inspect?.ExitCode)) ? Number(inspect.ExitCode) : null;
+      const parsed = parseA2aMessageOutput(stdoutText);
+      if (parsed) {
+        return {
+          ...parsed,
+          exitCode
+        };
+      }
+
+      return {
+        ok: false,
+        statusCode: null,
+        elapsedMs: null,
+        taskId: '',
+        contextId: '',
+        state: '',
+        assistantText: '',
+        responseText: '',
+        responseJson: null,
+        error: textOrNull(stderrText, 500) || textOrNull(stdoutText, 500) || (exitCode === null ? 'A2A message failed' : `A2A message exited with code ${exitCode}`),
+        pending: false,
+        exitCode
+      };
+    } catch (error) {
+      throw normalizeDockerError(error, {
+        op: 'sendA2aMessageFromContainer',
+        containerId: id,
+        agentUrl: redactTokenizedA2aUrl(targetUrl),
+        env: this.#envSummary()
+      });
+    }
+  }
+
+  async pollA2aTaskFromContainer(containerId, agentUrl, taskId, options = {}) {
+    const id = cleanDockerResourceName(containerId, 'containerId');
+    const targetUrl = normalizeProbeHttpUrl(agentUrl);
+    const cleanTaskId = normalizeA2aTaskId(taskId);
+    const timeoutMs = clampA2aMessageTimeoutMs(options?.timeoutMs || 30000);
+    const waitMs = Math.max(0, Math.min(300000, Math.floor(Number(options?.waitMs ?? 60000) || 60000)));
+    const pollIntervalMs = Math.max(250, Math.min(10000, Math.floor(Number(options?.pollIntervalMs ?? 2000) || 2000)));
+
+    try {
+      const c = this.docker.getContainer(id);
+      const exec = await new Promise((resolve, reject) => {
+        c.exec({
+          Cmd: [
+            '/bin/sh',
+            '-lc',
+            A2A_TASK_POLL_SCRIPT,
+            'a0-a2a-task-poll',
+            targetUrl,
+            cleanTaskId,
+            String(timeoutMs),
+            String(waitMs),
+            String(pollIntervalMs)
+          ],
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: false
+        }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const stream = await new Promise((resolve, reject) => {
+        exec.start({ Detach: false, Tty: false }, (err, value) => (err ? reject(err) : resolve(value)));
+      });
+
+      const output = demuxDockerExecBuffer(await streamToBuffer(stream, 1024 * 1024 + 8192));
+      const stdoutText = output.stdoutText;
+      const stderrText = output.stderrText;
+      const inspect = typeof exec.inspect === 'function' ? await Promise.resolve(exec.inspect()) : {};
+      const exitCode = Number.isFinite(Number(inspect?.ExitCode)) ? Number(inspect.ExitCode) : null;
+      const parsed = parseA2aMessageOutput(stdoutText);
+      if (parsed) {
+        return {
+          ...parsed,
+          exitCode
+        };
+      }
+
+      return {
+        ok: false,
+        statusCode: null,
+        elapsedMs: null,
+        taskId: cleanTaskId,
+        contextId: '',
+        state: '',
+        assistantText: '',
+        responseText: '',
+        responseJson: null,
+        error: textOrNull(stderrText, 500) || textOrNull(stdoutText, 500) || (exitCode === null ? 'A2A task poll failed' : `A2A task poll exited with code ${exitCode}`),
+        pending: false,
+        exitCode
+      };
+    } catch (error) {
+      throw normalizeDockerError(error, {
+        op: 'pollA2aTaskFromContainer',
+        containerId: id,
+        agentUrl: redactTokenizedA2aUrl(targetUrl),
+        taskId: cleanTaskId,
+        env: this.#envSummary()
+      });
     }
   }
 

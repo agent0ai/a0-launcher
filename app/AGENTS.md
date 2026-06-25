@@ -33,6 +33,10 @@ This scope owns:
   each call the Docker APIs independently.
 - Components invoke behavior through `window.dockerManagerActions`, not through
   raw IPC names.
+- Instance topology state is part of the canonical renderer snapshot. The
+  renderer may arrange graph nodes and request logical links through named
+  actions, but Docker network creation and container attachment stay in the
+  shell-owned Docker Manager path.
 - Runtime setup state is part of the canonical renderer snapshot. If the
   runtime is not ready after initial state loads and no saved remote Instances
   exist, the renderer must show the startup runtime modal with a first-step

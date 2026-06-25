@@ -20,6 +20,9 @@
   <script defer src="a0ui/vendor/ace-min/ace.js"></script>
   <link rel="stylesheet" href="a0ui/vendor/ace/ace.min.css">
 
+  <!-- Cytoscape topology graph (local vendor bundle) -->
+  <script defer src="a0ui/vendor/cytoscape/cytoscape.min.js"></script>
+
   <!-- A0 UI Core framework init (loads Alpine + component system + modals) -->
   <script type="module" src="a0ui/js/initFw.js"></script>
 
@@ -41,6 +44,9 @@
         </div>
         <div class="dm-tab-content" data-tab="sessions">
           <x-component path="components/docker-manager/local-testing/index.html"></x-component>
+        </div>
+        <div class="dm-tab-content" data-tab="topology">
+          <x-component path="components/docker-manager/topology/index.html"></x-component>
         </div>
         <div class="dm-tab-content" data-tab="advanced">
           <x-component path="components/docker-manager/advanced/index.html"></x-component>

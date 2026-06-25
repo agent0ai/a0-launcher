@@ -24,6 +24,8 @@ This scope owns:
   progress, recovery actions, and non-dismissable gating.
 - `remote-instance-dialog.js`: shared remote Instance URL dialog used by the
   startup runtime gate and the Instances tab.
+- `clone-instance-dialog.js`: shared local Instance clone confirmation and
+  `/a0/usr` workspace category picker used by Instances and Topology.
 - `first-instance-setup/`: first image-pull defaults panel, optional first
   Instance run choice, and optional A0 CLI install step shown before the setup
   slideshow.
@@ -38,6 +40,9 @@ This scope owns:
 - `local-testing/`: local containers, per-instance action menus, rename, color
   selection, clone/log inspection controls, remote instance CRUD, and instance
   opening.
+- `topology/`: Cytoscape-backed Instance topology graph, node roles, saved
+  layout positions, logical links, and local Docker-network connect/disconnect
+  controls.
 - `advanced/`: tabbed developer-mode custom image runner with inline Docker
   Compose composer, diagnostics, and storage-volume maintenance.
 - `settings/`: port preferences and saved Instance provider/model defaults.
@@ -228,6 +233,25 @@ This scope owns:
   A saved remote card may show `Clone locally` only when its URL is loopback
   (`localhost`, `127.0.0.1`, or IPv6 loopback) and the port matches a discovered
   local Docker container; the action must clone that local container.
+- The Topology tab owns graph arrangement for local and saved remote Instances.
+  It may create metadata links between any two nodes, but `Connect locally`
+  must stay enabled only for links between two local Docker-backed Instances.
+  Remote links are launcher metadata and must not imply Docker reachability.
+  Topology node creation should keep asking which path to use: fresh Instance,
+  clone selected local Instance, or add remote Instance.
+  Active launcher-owned Instance UI tabs may surface as speech bubbles near the
+  matching topology node. Local connected links may expose `Test A2A` and
+  `Enable A2A`, which call named Docker Manager actions and render bounded
+  reachability or setup results. Redact any tokenized A2A URL shown to the user.
+  Topology message sending must also call named renderer actions backed by
+  Docker Manager IPC. The renderer may render drafts, delivery status, and
+  speech bubbles, but it must not call Agent Zero APIs or Docker directly.
+  Local topology nodes may show read-only hover activity previews by requesting
+  bounded local Instance log snapshots through named Docker Manager actions and
+  distilling those logs into user-facing runtime events. Those previews may be
+  interactively expanded for details, but must stay read-only and must not
+  expose raw Docker command surfaces. Remote topology nodes must not imply local
+  runtime-log visibility.
 - The local instance log viewer is a bottom popover panel driven by bounded
   Docker Manager log snapshots. It must stay read-only and must not expose a
   generic Docker command surface.
