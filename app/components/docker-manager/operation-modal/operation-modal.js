@@ -114,6 +114,12 @@ function operationActions(state = {}) {
   return { primary: null, secondary: null };
 }
 
+function headerCloseAction(state = {}) {
+  const status = asText(state?.progress?.status);
+  if (status === "failed" || status === "canceled") return { kind: "close" };
+  return null;
+}
+
 function shouldShowOperationDialog(state = {}) {
   const progress = state?.progress || null;
   const status = asText(progress?.status);
@@ -246,6 +252,20 @@ function createOperationDialogShell() {
   title.className = "dm-dialog-title dm-operation-title";
   header.appendChild(title);
 
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "button dm-dialog-close dm-operation-close";
+  close.setAttribute("aria-label", "Close");
+  close.textContent = "×";
+  close.hidden = true;
+  close.disabled = true;
+  close.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    runAction(close.dataset.operationAction || "", close._operationState || {}, close._operationActions || {});
+  });
+  header.appendChild(close);
+
   const body = document.createElement("div");
   body.className = "dm-dialog-body";
   body.appendChild(createProgressBlock());
@@ -267,9 +287,31 @@ function createOperationDialogShell() {
   return backdrop;
 }
 
+function syncHeaderCloseButton(backdrop, state, actions) {
+  const button = backdrop.querySelector(".dm-operation-close");
+  if (!button) return;
+  const action = headerCloseAction(state);
+  button._operationState = state;
+  button._operationActions = actions;
+
+  if (!action) {
+    button.hidden = true;
+    button.disabled = true;
+    delete button.dataset.operationAction;
+    delete button.dataset.operationActionKey;
+    return;
+  }
+
+  button.hidden = false;
+  button.disabled = !!action.disabled;
+  button.dataset.operationAction = action.kind;
+  button.dataset.operationActionKey = `${operationKey(state?.progress)}:${action.kind}`;
+}
+
 function updateOperationDialog(backdrop, model, state, actions) {
   const title = backdrop.querySelector(".dm-operation-title");
   if (title) title.textContent = model.headline;
+  syncHeaderCloseButton(backdrop, state, actions);
   const dialog = backdrop.querySelector(".dm-operation-dialog");
   const body = backdrop.querySelector(".dm-dialog-body");
   const showFirstSetup = shouldShowFirstInstanceSetup(state);

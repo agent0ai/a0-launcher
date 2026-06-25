@@ -244,6 +244,7 @@ test('running install shows centered operation modal with cancel action', () => 
   assert.ok(document.querySelector('.dm-operation-dialog').classList.contains('has-setup-showcase'));
   assert.equal(document.querySelector('.dm-operation-detail'), null);
   assert.equal(document.querySelector('.dm-operation-phase')?.textContent, 'Downloading');
+  assert.equal(document.querySelector('.dm-operation-close')?.hidden, true);
   const cancelButton = buttonByText(document, 'Cancel download');
 
   renderOperationDialog({
@@ -582,10 +583,35 @@ test('rate-limited install failure shows docker login and retry actions in modal
     retryInstall: (tag) => { retryTag = tag; }
   });
 
+  assert.ok(document.querySelector('.dm-operation-close'));
   buttonByText(document, 'Docker Login').dispatchEvent(new MiniEvent('click'));
   assert.equal(loginCount, 1);
   buttonByText(document, 'Retry').dispatchEvent(new MiniEvent('click'));
   assert.equal(retryTag, 'v1.20');
+});
+
+test('failed operation header close dismisses the modal', () => {
+  const document = installDom();
+  const state = {
+    progress: {
+      opId: 'op-fail-close',
+      type: 'install',
+      status: 'failed',
+      errorCode: 'DOCKER_PULL_RATE_LIMIT',
+      error: 'Docker Hub pull limit reached. Sign in to Docker or try again later.',
+      targetTag: 'v1.20',
+      finishedAt: '2026-06-16T12:05:00.000Z'
+    }
+  };
+
+  renderOperationDialog(state, {});
+  const closeButton = document.querySelector('.dm-operation-close');
+  assert.ok(closeButton);
+  assert.equal(closeButton.hidden, false);
+  assert.equal(closeButton.getAttribute('aria-label'), 'Close');
+
+  closeButton.dispatchEvent(new MiniEvent('click'));
+  assert.equal(document.getElementById('operationProgressDialog'), null);
 });
 
 test('generic failed operation can be dismissed and completed operations do not show the modal', () => {
