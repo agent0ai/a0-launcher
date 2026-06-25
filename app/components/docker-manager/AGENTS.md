@@ -181,6 +181,9 @@ This scope owns:
   `Open storage folder`, `Clone`, `Open A0 CLI`, dynamic `Start`/`Stop`, and
   `Delete` belong in the card overflow menu so they always apply to the
   specific instance shown.
+  The visual header area of a running local card or saved remote card may
+  mirror `Open UI`; the body/meta area should stay ordinary selectable text so
+  values such as URLs remain easy to copy.
   The card overflow menu should choose its up/down direction from available
   viewport space, reserve fixed bottom launcher chrome such as the resource
   footer, and use bounded internal scrolling when the window is short.

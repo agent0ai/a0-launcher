@@ -465,6 +465,15 @@ body {
   transform: none;
 }
 
+.dm-card-open-header {
+  cursor: pointer;
+}
+
+.dm-card-open-header:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
 .dm-card-highlight {
   border-color: color-mix(in srgb, var(--color-highlight) 55%, var(--dm-line-soft));
   box-shadow: 0 0.55rem 1.25rem color-mix(in srgb, var(--color-highlight) 20%, transparent);

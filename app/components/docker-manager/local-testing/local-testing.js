@@ -150,6 +150,21 @@ function instancePowerMenuConfig({ isRunning, canStart, containerId, containerOp
   };
 }
 
+function bindOpenableCardHeader(header, onOpen, options = {}) {
+  if (!header || typeof onOpen !== "function") return;
+  header.classList.add("dm-card-open-header");
+  header.tabIndex = 0;
+  header.setAttribute("role", "button");
+  header.setAttribute("aria-label", options.ariaLabel || options.title || "Open instance UI");
+  if (options.title) header.title = options.title;
+  header.addEventListener("click", () => onOpen());
+  header.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault?.();
+    onOpen();
+  });
+}
+
 const CLONE_WORKSPACE_OPTIONS = Object.freeze([
   {
     id: "auth",
@@ -1020,6 +1035,20 @@ function renderDockerInstance(list, c, state) {
     containerId,
     containerOperationRunning
   });
+  const openLocalInstanceUi = () => {
+    window.dockerManagerActions?.openInstanceUi?.({
+      kind: "local",
+      containerId: c?.containerId || "",
+      title: displayName
+    });
+  };
+
+  if (isRunning && !containerOperationRunning) {
+    bindOpenableCardHeader(visual, openLocalInstanceUi, {
+      title: "Open this instance",
+      ariaLabel: `Open ${displayName}`
+    });
+  }
 
   if (isRunning) {
     const openBtn = document.createElement("button");
@@ -1028,13 +1057,7 @@ function renderDockerInstance(list, c, state) {
     openBtn.textContent = "Open UI";
     openBtn.disabled = containerOperationRunning;
     openBtn.title = containerOperationRunning ? "An action is already queued for this instance" : "Open this instance";
-    openBtn.addEventListener("click", () => {
-      window.dockerManagerActions?.openInstanceUi?.({
-        kind: "local",
-        containerId: c?.containerId || "",
-        title: displayName
-      });
-    });
+    openBtn.addEventListener("click", openLocalInstanceUi);
     actions.appendChild(openBtn);
   } else if (canStartLocalInstance) {
     const startBtn = document.createElement("button");
@@ -1186,14 +1209,19 @@ function renderRemoteInstance(list, remote, state) {
 
   const actions = document.createElement("div");
   actions.className = "dm-card-actions";
+  const openRemoteInstanceUi = () => {
+    window.dockerManagerActions?.openInstanceUi?.({ kind: "remote", instanceId: remote?.id || "" });
+  };
+  bindOpenableCardHeader(visual, openRemoteInstanceUi, {
+    title: "Open this remote instance",
+    ariaLabel: `Open ${remote?.name || "remote instance"}`
+  });
 
   const openBtn = document.createElement("button");
   openBtn.className = "button confirm";
   openBtn.type = "button";
   openBtn.textContent = "Open UI";
-  openBtn.addEventListener("click", () => {
-    window.dockerManagerActions?.openInstanceUi?.({ kind: "remote", instanceId: remote?.id || "" });
-  });
+  openBtn.addEventListener("click", openRemoteInstanceUi);
   actions.appendChild(openBtn);
 
   const menuItems = [];
@@ -1280,7 +1308,13 @@ function render(state) {
   }
 }
 
-export { computeCardMenuPlacement, instancePowerMenuConfig, instanceVisualBadge, openCardMenu };
+export {
+  bindOpenableCardHeader,
+  computeCardMenuPlacement,
+  instancePowerMenuConfig,
+  instanceVisualBadge,
+  openCardMenu
+};
 
 window.addEventListener("dm:state", (e) => render(e.detail || {}));
 bindActions();

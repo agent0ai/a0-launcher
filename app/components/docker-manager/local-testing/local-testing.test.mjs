@@ -14,6 +14,7 @@ globalThis.window = {
 };
 
 const {
+  bindOpenableCardHeader,
   computeCardMenuPlacement,
   instancePowerMenuConfig,
   instanceVisualBadge,
@@ -97,6 +98,36 @@ test('instance power menu switches between stop and start', () => {
       title: 'Start this instance'
     }
   );
+});
+
+test('openable card header binds click and keyboard activation', () => {
+  const attrs = {};
+  const listeners = new Map();
+  let opened = 0;
+  let prevented = false;
+  const header = {
+    classList: fakeClassList(),
+    setAttribute: (name, value) => { attrs[name] = String(value); },
+    addEventListener: (type, handler) => { listeners.set(type, handler); }
+  };
+
+  bindOpenableCardHeader(header, () => { opened += 1; }, {
+    title: 'Open this instance',
+    ariaLabel: 'Open Main'
+  });
+
+  assert.equal(header.classList.contains('dm-card-open-header'), true);
+  assert.equal(header.tabIndex, 0);
+  assert.equal(header.title, 'Open this instance');
+  assert.equal(attrs.role, 'button');
+  assert.equal(attrs['aria-label'], 'Open Main');
+
+  listeners.get('click')?.({});
+  listeners.get('keydown')?.({ key: 'Enter', preventDefault: () => { prevented = true; } });
+  listeners.get('keydown')?.({ key: 'Escape', preventDefault: () => { throw new Error('Escape should not open'); } });
+
+  assert.equal(opened, 2);
+  assert.equal(prevented, true);
 });
 
 test('card menu placement reserves fixed footer space in short windows', () => {
