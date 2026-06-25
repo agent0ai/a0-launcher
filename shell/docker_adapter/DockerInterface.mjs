@@ -440,6 +440,51 @@ export class DockerInterface {
   }
 
   /**
+   * Ensure a Docker network exists and is owned by the expected labels.
+   * @param {string} _name
+   * @param {Object=} _options
+   * @param {string=} _options.driver
+   * @param {Object=} _options.labels
+   * @returns {Promise<Object>}
+   */
+  async ensureNetwork(_name, _options = {}) {
+    throw new Error('DockerInterface.ensureNetwork is abstract');
+  }
+
+  /**
+   * Inspect a Docker network by name or id.
+   * @param {string} _nameOrId
+   * @returns {Promise<Object>}
+   */
+  async inspectNetwork(_nameOrId) {
+    throw new Error('DockerInterface.inspectNetwork is abstract');
+  }
+
+  /**
+   * Connect a container to a network.
+   * @param {string} _nameOrId
+   * @param {string} _containerId
+   * @param {Object=} _options
+   * @param {string[]=} _options.aliases
+   * @returns {Promise<Object>}
+   */
+  async connectContainerToNetwork(_nameOrId, _containerId, _options = {}) {
+    throw new Error('DockerInterface.connectContainerToNetwork is abstract');
+  }
+
+  /**
+   * Disconnect a container from a network.
+   * @param {string} _nameOrId
+   * @param {string} _containerId
+   * @param {Object=} _options
+   * @param {boolean=} _options.force
+   * @returns {Promise<Object>}
+   */
+  async disconnectContainerFromNetwork(_nameOrId, _containerId, _options = {}) {
+    throw new Error('DockerInterface.disconnectContainerFromNetwork is abstract');
+  }
+
+  /**
    * Create a container from parameters (DI-012).
    * @param {Object} createOptions
    * @returns {Promise<{containerId: string}>}
@@ -517,6 +562,74 @@ export class DockerInterface {
    */
   async listContainerDirectory(_containerId, _directoryPath, _options = {}) {
     throw new Error('DockerInterface.listContainerDirectory is abstract');
+  }
+
+  /**
+   * Probe an HTTP(S) URL from inside a container with a bounded request.
+   * This is a narrow diagnostic primitive, not a generic command surface.
+   *
+   * @param {string} containerId
+   * @param {string} url
+   * @param {Object=} options
+   * @param {number=} options.timeoutMs
+   * @returns {Promise<{reachable: boolean, statusCode: number|null, elapsedMs: number|null, error: string, exitCode: number|null, timedOut: boolean}>}
+   */
+  async probeHttpFromContainer(_containerId, _url, _options = {}) {
+    throw new Error('DockerInterface.probeHttpFromContainer is abstract');
+  }
+
+  /**
+   * POST bounded JSON from inside a container after obtaining a CSRF token.
+   * Intended for product-owned HTTP workflows, not renderer-driven generic fetch.
+   *
+   * @param {string} containerId
+   * @param {string} baseUrl
+   * @param {string} path
+   * @param {Object} payload
+   * @param {Object=} options
+   * @param {string=} options.csrfPath
+   * @param {string=} options.origin
+   * @param {number=} options.timeoutMs
+   * @returns {Promise<{ok: boolean, statusCode: number|null, elapsedMs: number|null, responseText: string, responseJson: Object|null, error: string, exitCode: number|null}>}
+   */
+  async postJsonWithCsrfFromContainer(_containerId, _baseUrl, _path, _payload, _options = {}) {
+    throw new Error('DockerInterface.postJsonWithCsrfFromContainer is abstract');
+  }
+
+  /**
+   * Send a bounded A2A JSON-RPC message from inside a container and optionally
+   * wait for task completion. This is a narrow topology primitive, not a
+   * generic container exec surface.
+   *
+   * @param {string} containerId
+   * @param {string} agentUrl
+   * @param {string} message
+   * @param {Object=} options
+   * @param {number=} options.timeoutMs
+   * @param {number=} options.waitMs
+   * @param {number=} options.pollIntervalMs
+   * @returns {Promise<{ok: boolean, statusCode: number|null, elapsedMs: number|null, taskId: string, contextId: string, state: string, assistantText: string, responseText: string, responseJson: Object|null, error: string, pending: boolean, exitCode: number|null}>}
+   */
+  async sendA2aMessageFromContainer(_containerId, _agentUrl, _message, _options = {}) {
+    throw new Error('DockerInterface.sendA2aMessageFromContainer is abstract');
+  }
+
+  /**
+   * Poll an existing A2A JSON-RPC task from inside a container. This is used
+   * when the initial message/send HTTP request timed out after the target
+   * accepted work but before the launcher received the task response.
+   *
+   * @param {string} containerId
+   * @param {string} agentUrl
+   * @param {string} taskId
+   * @param {Object=} options
+   * @param {number=} options.timeoutMs
+   * @param {number=} options.waitMs
+   * @param {number=} options.pollIntervalMs
+   * @returns {Promise<{ok: boolean, statusCode: number|null, elapsedMs: number|null, taskId: string, contextId: string, state: string, assistantText: string, responseText: string, responseJson: Object|null, error: string, pending: boolean, exitCode: number|null}>}
+   */
+  async pollA2aTaskFromContainer(_containerId, _agentUrl, _taskId, _options = {}) {
+    throw new Error('DockerInterface.pollA2aTaskFromContainer is abstract');
   }
 
   /**

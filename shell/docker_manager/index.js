@@ -6,6 +6,7 @@ const net = require('node:net');
 const path = require('node:path');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
 const { promisify } = require('node:util');
 const zlib = require('node:zlib');
 const { app } = require('electron');
@@ -40,6 +41,11 @@ const WORKSPACE_MOUNT_TARGET = '/a0/usr';
 const STORAGE_MODE_HOST_DIRECTORY = 'host_directory';
 const STORAGE_MODE_NAMED_VOLUME = 'named_volume';
 const STORAGE_MODE_EPHEMERAL = 'ephemeral';
+const TOPOLOGY_NETWORK_NAME = 'a0-launcher-topology';
+const TOPOLOGY_NETWORK_LABELS = Object.freeze({
+  'a0.launcher.managed': 'true',
+  'a0.launcher.role': 'topology-network'
+});
 const ZIP_UINT16_MAX = 0xffff;
 const ZIP_UINT32_MAX = 0xffffffff;
 const CLONE_WORKSPACE_CATEGORY_IDS = Object.freeze([
@@ -996,6 +1002,7 @@ function emptyDerivedState(runtime = null) {
     versions: [],
     retainedInstances: [],
     remoteInstances: [],
+    topology: { version: 1, nodes: [], edges: [], networkName: TOPOLOGY_NETWORK_NAME },
     retentionPolicy: { keepCount: 1 },
     portPreferences: { ui: 8880, ssh: 55022 },
     storagePreferences: { ...stateStore.DEFAULT_STORAGE_PREFERENCES },
@@ -1130,12 +1137,13 @@ async function collectRuntimeDiagnostics(docker, env = null) {
 }
 
 async function buildUnavailableState(runtime) {
-  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances] = await Promise.all([
+  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, rawTopology] = await Promise.all([
     stateStore.readRetentionPolicy().catch(() => ({ keepCount: 1 })),
     stateStore.readPortPreferences().catch(() => ({ ui: 8880, ssh: 55022 })),
     stateStore.readStoragePreferences().catch(() => ({ ...stateStore.DEFAULT_STORAGE_PREFERENCES })),
     stateStore.readInstanceDefaults().catch(() => null),
-    stateStore.readRemoteInstances().catch(() => [])
+    stateStore.readRemoteInstances().catch(() => []),
+    stateStore.readTopology().catch(() => ({ version: 1, nodes: [], edges: [] }))
   ]);
   const empty = emptyDerivedState(runtime);
   return {
@@ -1144,7 +1152,8 @@ async function buildUnavailableState(runtime) {
     portPreferences,
     storagePreferences,
     instanceDefaults: instanceDefaults || empty.instanceDefaults,
-    remoteInstances
+    remoteInstances,
+    topology: deriveTopology(rawTopology, [], remoteInstances)
   };
 }
 
@@ -1332,6 +1341,188 @@ function applyLocalInstanceIdentity(containers, localInstanceNames, localInstanc
   });
 }
 
+function topologyNodeIdForLocal(containerId) {
+  const id = typeof containerId === 'string' ? containerId.trim() : '';
+  return id ? `local:${id}` : '';
+}
+
+function topologyNodeIdForRemote(remoteId) {
+  const id = typeof remoteId === 'string' ? remoteId.trim() : '';
+  return id ? `remote:${id}` : '';
+}
+
+function topologyNodeKind(nodeId) {
+  const id = typeof nodeId === 'string' ? nodeId : '';
+  if (id.startsWith('local:')) return 'local';
+  if (id.startsWith('remote:')) return 'remote';
+  return '';
+}
+
+function topologyContainerIdFromNodeId(nodeId) {
+  const id = stateStore.normalizeTopologyNodeId(nodeId);
+  return id.startsWith('local:') ? id.slice('local:'.length) : '';
+}
+
+function topologyAliasForContainer(containerId) {
+  const id = assertContainerId(containerId);
+  return `a0-${id.slice(0, 12).toLowerCase()}`;
+}
+
+function topologyEdgeNeedsLocalNetwork(edge) {
+  return edge?.mode === 'local_network' &&
+    topologyNodeKind(edge.source) === 'local' &&
+    topologyNodeKind(edge.target) === 'local';
+}
+
+function topologyNetworkOwnsLabels(network) {
+  const labels = isPlainObject(network?.labels) ? network.labels : {};
+  for (const [key, value] of Object.entries(TOPOLOGY_NETWORK_LABELS)) {
+    if (labels[key] !== value) return false;
+  }
+  return true;
+}
+
+function topologyNetworkAttachment(network, containerId) {
+  const id = typeof containerId === 'string' ? containerId.trim() : '';
+  const containers = isPlainObject(network?.containers) ? network.containers : {};
+  for (const [key, entry] of Object.entries(containers)) {
+    if (key === id || key.startsWith(id) || id.startsWith(key)) return entry || {};
+  }
+  return null;
+}
+
+function deriveTopology(rawTopology, containers = [], remoteInstances = [], options = {}) {
+  const saved = stateStore.normalizeTopology(rawTopology);
+  const savedNodes = new Map(saved.nodes.map((node) => [node.id, node]));
+  const nodes = [];
+  const known = new Set();
+
+  const pushNode = (node) => {
+    if (!node?.id || known.has(node.id)) return;
+    known.add(node.id);
+    nodes.push(node);
+  };
+
+  for (const container of Array.isArray(containers) ? containers : []) {
+    const containerId = typeof container?.containerId === 'string' ? container.containerId : '';
+    const id = stateStore.normalizeTopologyNodeId(topologyNodeIdForLocal(containerId));
+    if (!id) continue;
+    const savedNode = savedNodes.get(id) || {};
+    pushNode({
+      id,
+      kind: 'local',
+      containerId,
+      label: container.instanceName || container.containerName || 'Local Instance',
+      role: savedNode.role || 'peer',
+      position: savedNode.position || null,
+      available: true,
+      state: typeof container.state === 'string' ? container.state : null,
+      status: typeof container.status === 'string' ? container.status : null,
+      uiUrl: typeof container.uiUrl === 'string' ? container.uiUrl : '',
+      instanceColor: typeof container.instanceColor === 'string' ? container.instanceColor : '',
+      versionTag: typeof container.versionTag === 'string' ? container.versionTag : typeof container.tag === 'string' ? container.tag : ''
+    });
+  }
+
+  for (const remote of Array.isArray(remoteInstances) ? remoteInstances : []) {
+    const remoteId = typeof remote?.id === 'string' ? remote.id : '';
+    const id = stateStore.normalizeTopologyNodeId(topologyNodeIdForRemote(remoteId));
+    if (!id) continue;
+    const savedNode = savedNodes.get(id) || {};
+    pushNode({
+      id,
+      kind: 'remote',
+      instanceId: remoteId,
+      label: remote.name || 'Remote Instance',
+      role: savedNode.role || 'peer',
+      position: savedNode.position || null,
+      available: true,
+      url: typeof remote.url === 'string' ? remote.url : '',
+      instanceColor: typeof remote.color === 'string' ? remote.color : ''
+    });
+  }
+
+  for (const edge of saved.edges) {
+    for (const nodeId of [edge.source, edge.target]) {
+      if (known.has(nodeId)) continue;
+      const kind = topologyNodeKind(nodeId);
+      if (!kind) continue;
+      const savedNode = savedNodes.get(nodeId) || {};
+      pushNode({
+        id: nodeId,
+        kind,
+        label: kind === 'local' ? 'Missing local Instance' : 'Missing remote Instance',
+        role: savedNode.role || 'peer',
+        position: savedNode.position || null,
+        available: false,
+        missing: true
+      });
+    }
+  }
+
+  const network = options?.network || null;
+  const networkMissing = options?.networkMissing === true;
+  const networkConflict = network && !topologyNetworkOwnsLabels(network);
+  const edges = saved.edges.map((edge) => {
+    const sourceMissing = !known.has(edge.source) || nodes.find((node) => node.id === edge.source)?.missing === true;
+    const targetMissing = !known.has(edge.target) || nodes.find((node) => node.id === edge.target)?.missing === true;
+    let status = edge.mode === 'metadata' ? 'metadata' : 'ready';
+    let canConnect = topologyEdgeNeedsLocalNetwork(edge) && !sourceMissing && !targetMissing;
+    let canDisconnect = false;
+
+    if (sourceMissing || targetMissing) {
+      status = 'missing_endpoint';
+      canConnect = false;
+    } else if (edge.connection && topologyEdgeNeedsLocalNetwork(edge)) {
+      canConnect = false;
+      canDisconnect = true;
+      if (networkMissing) {
+        status = 'missing_network';
+      } else if (networkConflict) {
+        status = 'network_conflict';
+      } else if (network) {
+        const sourceId = topologyContainerIdFromNodeId(edge.source);
+        const targetId = topologyContainerIdFromNodeId(edge.target);
+        const sourceAttached = !!topologyNetworkAttachment(network, sourceId);
+        const targetAttached = !!topologyNetworkAttachment(network, targetId);
+        status = sourceAttached && targetAttached ? 'connected' : 'not_attached';
+      } else {
+        status = 'connected';
+      }
+    }
+
+    return {
+      ...edge,
+      status,
+      canConnect,
+      canDisconnect,
+      networkName: edge.connection?.networkName || (edge.mode === 'local_network' ? TOPOLOGY_NETWORK_NAME : ''),
+      sourceMissing,
+      targetMissing
+    };
+  });
+
+  return {
+    version: 1,
+    networkName: TOPOLOGY_NETWORK_NAME,
+    nodes,
+    edges
+  };
+}
+
+async function inspectTopologyNetworkForState(docker, topology) {
+  const hasConnectedEdge = Array.isArray(topology?.edges) && topology.edges.some((edge) => edge?.connection?.networkName);
+  if (!hasConnectedEdge || !docker || typeof docker.inspectNetwork !== 'function') return { network: null, networkMissing: false };
+  try {
+    return { network: await docker.inspectNetwork(TOPOLOGY_NETWORK_NAME), networkMissing: false };
+  } catch (error) {
+    if (error?.code === 'NOT_FOUND' || Number(error?.details?.statusCode) === 404) {
+      return { network: null, networkMissing: true };
+    }
+    return { network: null, networkMissing: false };
+  }
+}
+
 async function bestEffortFreeBytesForUserData() {
   try {
     if (typeof fs.statfs !== 'function') return null;
@@ -1367,6 +1558,19 @@ const _abortControllers = new Map();
 const _warmLayerSizes = { running: false, lastImageRepo: '', lastStartedAtMs: 0 };
 const _backgroundOperations = new Map();
 const _containerOperationChains = new Map();
+let _topologyOperationChain = Promise.resolve();
+
+function enqueueTopologyOperation(run) {
+  if (typeof run !== 'function') {
+    const err = new Error('Invalid topology operation');
+    err.code = 'INVALID_TOPOLOGY_OPERATION';
+    throw err;
+  }
+  const previous = _topologyOperationChain;
+  const next = previous.then(run, run);
+  _topologyOperationChain = next.catch(() => {});
+  return next;
+}
 
 function backgroundOperationsSnapshot() {
   return Array.from(_backgroundOperations.values()).map((op) => ({ ...op }));
@@ -1587,13 +1791,14 @@ async function buildDerivedState(options = {}) {
     }
   }
 
-  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, localInstanceNames, localInstanceColors, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
+  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, rawTopology, localInstanceNames, localInstanceColors, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
     await Promise.all([
       stateStore.readRetentionPolicy(),
       stateStore.readPortPreferences(),
       stateStore.readStoragePreferences(),
       stateStore.readInstanceDefaults(),
       stateStore.readRemoteInstances(),
+      stateStore.readTopology(),
       stateStore.readLocalInstanceNames(),
       stateStore.readLocalInstanceColors(),
       stateStore.readInstallabilityCache(),
@@ -1608,6 +1813,8 @@ async function buildDerivedState(options = {}) {
     localInstanceNames,
     localInstanceColors
   );
+  const topologyNetworkState = await inspectTopologyNetworkForState(docker, rawTopology);
+  const topology = deriveTopology(rawTopology, containers, remoteInstances, topologyNetworkState);
 
   const releases = Array.isArray(releasesResult?.releases) ? releasesResult.releases : [];
   const offline = !!releasesResult?.offline;
@@ -1961,6 +2168,7 @@ async function buildDerivedState(options = {}) {
     containers,
     retainedInstances,
     remoteInstances,
+    topology,
     retentionPolicy,
     portPreferences,
     storagePreferences,
@@ -3590,6 +3798,1068 @@ async function getRemoteInstance(id) {
   return found;
 }
 
+function topologyOperationError(message, code = 'INVALID_TOPOLOGY') {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+function findTopologyEdge(topology, edgeId) {
+  const id = stateStore.normalizeTopologyEdgeId(edgeId);
+  if (!id) throw topologyOperationError('Invalid topology edge', 'INVALID_TOPOLOGY_EDGE');
+  return (Array.isArray(topology?.edges) ? topology.edges : []).find((edge) => edge?.id === id) || null;
+}
+
+function ensureTopologyNode(topology, nodeId) {
+  const id = stateStore.normalizeTopologyNodeId(nodeId);
+  if (!id) throw topologyOperationError('Invalid topology node', 'INVALID_TOPOLOGY_NODE');
+  const nodes = Array.isArray(topology.nodes) ? topology.nodes : [];
+  if (!nodes.some((node) => node?.id === id)) {
+    nodes.push({ id, role: 'peer' });
+  }
+  topology.nodes = nodes;
+  return id;
+}
+
+function normalizeTopologyRole(value) {
+  const role = String(value || '').trim().toLowerCase();
+  return ['peer', 'coordinator', 'worker', 'tool'].includes(role) ? role : 'peer';
+}
+
+async function refreshTopologyState(forceRefresh = false) {
+  const state = await refreshDockerManager({ forceRefresh });
+  return state?.topology || { version: 1, nodes: [], edges: [], networkName: TOPOLOGY_NETWORK_NAME };
+}
+
+async function assertTopologyEndpointRefs(nodeIds = []) {
+  const ids = (Array.isArray(nodeIds) ? nodeIds : [])
+    .map((nodeId) => stateStore.normalizeTopologyNodeId(nodeId))
+    .filter(Boolean);
+  const localIds = ids
+    .filter((nodeId) => topologyNodeKind(nodeId) === 'local')
+    .map((nodeId) => topologyContainerIdFromNodeId(nodeId));
+  const remoteIds = ids
+    .filter((nodeId) => topologyNodeKind(nodeId) === 'remote')
+    .map((nodeId) => nodeId.slice('remote:'.length));
+
+  if (remoteIds.length) {
+    const remotes = await stateStore.readRemoteInstances();
+    const knownRemoteIds = new Set(remotes.map((remote) => remote.id));
+    const missingRemote = remoteIds.find((id) => !knownRemoteIds.has(id));
+    if (missingRemote) {
+      throw topologyOperationError('Remote Instance not found.', 'INSTANCE_NOT_FOUND');
+    }
+  }
+
+  let docker = null;
+  let localContainers = new Map();
+  if (localIds.length) {
+    const imageRepo = getBackendImageRepo();
+    docker = await getManagedDocker(imageRepo);
+    const containers = await docker.listContainers(imageRepo);
+    localContainers = new Map((Array.isArray(containers) ? containers : [])
+      .filter((container) => container?.containerId)
+      .map((container) => [container.containerId, container]));
+    const missingLocal = localIds.find((id) => !localContainers.has(id));
+    if (missingLocal) {
+      throw topologyOperationError('Local Instance not found.', 'INSTANCE_NOT_FOUND');
+    }
+  }
+
+  return { docker, localContainers };
+}
+
+function topologyConnectionHints(sourceNodeId, sourceAlias, targetNodeId, targetAlias) {
+  return [
+    {
+      nodeId: sourceNodeId,
+      alias: sourceAlias,
+      internalUrl: `http://${sourceAlias}/`
+    },
+    {
+      nodeId: targetNodeId,
+      alias: targetAlias,
+      internalUrl: `http://${targetAlias}/`
+    }
+  ];
+}
+
+function topologyConnectionHintForNode(edge, nodeId) {
+  const hints = Array.isArray(edge?.connection?.hints) ? edge.connection.hints : [];
+  return hints.find((hint) => hint?.nodeId === nodeId) || null;
+}
+
+function topologyEndpointForProbe(edge, nodeId, fallbackAlias) {
+  const hint = topologyConnectionHintForNode(edge, nodeId);
+  const endpoint = typeof hint?.a2aEndpoint === 'string' && hint.a2aEndpoint
+    ? hint.a2aEndpoint
+    : typeof hint?.internalUrl === 'string' && hint.internalUrl
+      ? hint.internalUrl
+      : `http://${fallbackAlias}/`;
+  try {
+    const url = new URL(endpoint);
+    if ((url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password) {
+      return url.href;
+    }
+  } catch {
+    // Fall back to the generated topology alias below.
+  }
+  return `http://${fallbackAlias}/`;
+}
+
+function a2aAgentCardUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password) return '';
+    url.pathname = `${url.pathname.replace(/\/+$/u, '')}/.well-known/agent.json`;
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
+function redactTokenizedA2aUrl(value) {
+  return String(value || '').replace(/\/a2a\/t-[^/?#\s]+/gu, '/a2a/t-...');
+}
+
+function topologyProbeRequestsForEdge(edge, preparedA2a = null) {
+  const { sourceContainerId, targetContainerId } = assertLocalTopologyEdge(edge);
+  const endpointByNode = new Map(
+    (Array.isArray(preparedA2a?.endpoints) ? preparedA2a.endpoints : [])
+      .filter((endpoint) => endpoint?.nodeId && endpoint?.a2aUrl)
+      .map((endpoint) => [endpoint.nodeId, endpoint])
+  );
+  const sourceEndpoint = endpointByNode.get(edge.source) || null;
+  const targetEndpoint = endpointByNode.get(edge.target) || null;
+  const requests = [
+    {
+      fromNodeId: edge.source,
+      toNodeId: edge.target,
+      fromContainerId: sourceContainerId,
+      url: a2aAgentCardUrl(targetEndpoint?.a2aUrl),
+      displayUrl: a2aAgentCardUrl(targetEndpoint?.displayUrl) || redactTokenizedA2aUrl(a2aAgentCardUrl(targetEndpoint?.a2aUrl))
+    },
+    {
+      fromNodeId: edge.target,
+      toNodeId: edge.source,
+      fromContainerId: targetContainerId,
+      url: a2aAgentCardUrl(sourceEndpoint?.a2aUrl),
+      displayUrl: a2aAgentCardUrl(sourceEndpoint?.displayUrl) || redactTokenizedA2aUrl(a2aAgentCardUrl(sourceEndpoint?.a2aUrl))
+    }
+  ];
+  return requests.filter((request) => request.url);
+}
+
+async function inspectOwnedTopologyNetworkIfPresent(docker) {
+  try {
+    const network = await docker.inspectNetwork(TOPOLOGY_NETWORK_NAME);
+    if (!topologyNetworkOwnsLabels(network)) {
+      throw topologyOperationError('Docker network name is already in use.', 'NETWORK_CONFLICT');
+    }
+    return network;
+  } catch (error) {
+    if (error?.code === 'NOT_FOUND' || Number(error?.details?.statusCode) === 404) return null;
+    throw error;
+  }
+}
+
+async function saveTopologyLayoutNow(payload = {}) {
+  const current = await stateStore.readTopology();
+  const nodesById = new Map(current.nodes.map((node) => [node.id, { ...node }]));
+  const incomingNodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
+
+  for (const rawNode of incomingNodes) {
+    const id = stateStore.normalizeTopologyNodeId(rawNode?.id);
+    if (!id) continue;
+    const existing = nodesById.get(id) || { id, role: 'peer' };
+    const normalized = stateStore.normalizeTopology({
+      nodes: [{ ...existing, position: rawNode?.position || existing.position, role: rawNode?.role || existing.role }]
+    }).nodes[0];
+    if (normalized) nodesById.set(id, normalized);
+  }
+
+  await stateStore.writeTopology({ ...current, nodes: [...nodesById.values()] });
+  return await refreshTopologyState(false);
+}
+
+async function saveTopologyLayout(payload = {}) {
+  return enqueueTopologyOperation(() => saveTopologyLayoutNow(payload));
+}
+
+async function setTopologyNodeRoleNow(nodeId, role) {
+  const id = stateStore.normalizeTopologyNodeId(nodeId);
+  if (!id) throw topologyOperationError('Invalid topology node', 'INVALID_TOPOLOGY_NODE');
+  const current = await stateStore.readTopology();
+  const nodes = Array.isArray(current.nodes) ? current.nodes : [];
+  const existing = nodes.find((node) => node?.id === id) || null;
+  if (existing) {
+    existing.role = normalizeTopologyRole(role);
+  } else {
+    nodes.push({ id, role: normalizeTopologyRole(role) });
+  }
+  await stateStore.writeTopology({ ...current, nodes });
+  return await refreshTopologyState(false);
+}
+
+async function setTopologyNodeRole(nodeId, role) {
+  return enqueueTopologyOperation(() => setTopologyNodeRoleNow(nodeId, role));
+}
+
+async function createTopologyEdgeNow(payload = {}) {
+  const source = stateStore.normalizeTopologyNodeId(payload?.source);
+  const target = stateStore.normalizeTopologyNodeId(payload?.target);
+  if (!source || !target || source === target) {
+    throw topologyOperationError('Choose two different topology nodes.', 'INVALID_TOPOLOGY_EDGE');
+  }
+  await assertTopologyEndpointRefs([source, target]);
+
+  const current = await stateStore.readTopology();
+  const pairKey = [source, target].sort().join('|');
+  const duplicate = current.edges.find((edge) => [edge.source, edge.target].sort().join('|') === pairKey);
+  if (duplicate) return await refreshTopologyState(false);
+
+  ensureTopologyNode(current, source);
+  ensureTopologyNode(current, target);
+
+  const now = nowIso();
+  const bothLocal = topologyNodeKind(source) === 'local' && topologyNodeKind(target) === 'local';
+  const edge = {
+    id: stateStore.createTopologyEdgeId(),
+    source,
+    target,
+    mode: bothLocal ? 'local_network' : 'metadata',
+    label: typeof payload?.label === 'string' && payload.label.trim()
+      ? payload.label.trim()
+      : bothLocal ? 'Local link' : 'Reference link',
+    createdAt: now,
+    updatedAt: now
+  };
+
+  await stateStore.writeTopology({
+    ...current,
+    edges: [...current.edges, edge]
+  });
+  return await refreshTopologyState(false);
+}
+
+async function createTopologyEdge(payload = {}) {
+  return enqueueTopologyOperation(() => createTopologyEdgeNow(payload));
+}
+
+function assertLocalTopologyEdge(edge) {
+  if (!edge || !topologyEdgeNeedsLocalNetwork(edge)) {
+    throw topologyOperationError('Only local Instance links can be connected in Docker.', 'TOPOLOGY_LOCAL_ONLY');
+  }
+  const sourceContainerId = topologyContainerIdFromNodeId(edge.source);
+  const targetContainerId = topologyContainerIdFromNodeId(edge.target);
+  if (!sourceContainerId || !targetContainerId || sourceContainerId === targetContainerId) {
+    throw topologyOperationError('Invalid local topology link.', 'INVALID_TOPOLOGY_EDGE');
+  }
+  return { sourceContainerId, targetContainerId };
+}
+
+async function connectTopologyEdgeNow(edgeId) {
+  const current = await stateStore.readTopology();
+  const edge = findTopologyEdge(current, edgeId);
+  if (!edge) throw topologyOperationError('Topology link not found.', 'TOPOLOGY_EDGE_NOT_FOUND');
+
+  const { sourceContainerId, targetContainerId } = assertLocalTopologyEdge(edge);
+  const { docker } = await assertTopologyEndpointRefs([edge.source, edge.target]);
+  if (!docker) throw topologyOperationError('Local Docker runtime is not available.', 'RUNTIME_UNAVAILABLE');
+
+  const network = await docker.ensureNetwork(TOPOLOGY_NETWORK_NAME, {
+    driver: 'bridge',
+    labels: TOPOLOGY_NETWORK_LABELS
+  });
+  const sourceAlias = topologyAliasForContainer(sourceContainerId);
+  const targetAlias = topologyAliasForContainer(targetContainerId);
+  let sourceResult = null;
+  let targetResult = null;
+
+  try {
+    sourceResult = await docker.connectContainerToNetwork(TOPOLOGY_NETWORK_NAME, sourceContainerId, { aliases: [sourceAlias] });
+    targetResult = await docker.connectContainerToNetwork(TOPOLOGY_NETWORK_NAME, targetContainerId, { aliases: [targetAlias] });
+
+    const now = nowIso();
+    const edges = current.edges.map((item) => item.id === edge.id
+      ? {
+          ...item,
+          connection: {
+            networkName: TOPOLOGY_NETWORK_NAME,
+            networkId: network?.id || '',
+            aliases: {
+              [item.source]: sourceAlias,
+              [item.target]: targetAlias
+            },
+            hints: topologyConnectionHints(item.source, sourceAlias, item.target, targetAlias),
+            connectedAt: now
+          },
+          updatedAt: now
+        }
+      : item);
+    await stateStore.writeTopology({ ...current, edges });
+    return await refreshTopologyState(true);
+  } catch (error) {
+    if (targetResult?.connected) {
+      await docker.disconnectContainerFromNetwork(TOPOLOGY_NETWORK_NAME, targetContainerId, { force: true }).catch(() => {});
+    }
+    if (sourceResult?.connected) {
+      await docker.disconnectContainerFromNetwork(TOPOLOGY_NETWORK_NAME, sourceContainerId, { force: true }).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+async function connectTopologyEdge(edgeId) {
+  return enqueueTopologyOperation(() => connectTopologyEdgeNow(edgeId));
+}
+
+function topologyProbeErrorMessage(error) {
+  return mapDockerInterfaceErrorToUiMessage(error) ||
+    (error && typeof error === 'object' && typeof error.message === 'string' ? error.message : '') ||
+    'Probe failed';
+}
+
+function normalizeTopologyMessage(value) {
+  const message = String(value || '').trim();
+  if (!message) throw topologyOperationError('Message is required.', 'INVALID_TOPOLOGY_MESSAGE');
+  if (message.length > 8000) throw topologyOperationError('Message is too long.', 'INVALID_TOPOLOGY_MESSAGE');
+  return message;
+}
+
+function isTerminalA2aState(state) {
+  return ['completed', 'failed', 'canceled'].includes(String(state || '').toLowerCase());
+}
+
+function normalizeTopologyMessageResult(raw = {}, fallback = {}) {
+  const responseJson = raw?.responseJson && typeof raw.responseJson === 'object' && !Array.isArray(raw.responseJson)
+    ? raw.responseJson
+    : null;
+  const taskId = typeof raw?.taskId === 'string' ? raw.taskId : '';
+  const state = typeof raw?.state === 'string' ? raw.state : '';
+  const rawError = String(raw?.error || fallback.error || '').slice(0, 500);
+  const pending = raw?.pending === true ||
+    (!!taskId && !isTerminalA2aState(state) && (raw?.ok === true || /A2A task timed out|timed out|timeout/i.test(rawError)));
+  const ok = raw?.ok === true || pending;
+  const response = typeof raw?.assistantText === 'string' && raw.assistantText
+    ? raw.assistantText
+    : typeof responseJson?.message === 'string'
+    ? responseJson.message
+    : typeof responseJson?.response === 'string'
+      ? responseJson.response
+      : pending
+        ? 'A2A task accepted and still running'
+        : '';
+  return {
+    ok,
+    statusCode: Number.isFinite(Number(raw?.statusCode)) ? Number(raw.statusCode) : null,
+    elapsedMs: Number.isFinite(Number(raw?.elapsedMs)) ? Math.max(0, Math.floor(Number(raw.elapsedMs))) : null,
+    taskId,
+    state,
+    contextId: typeof raw?.contextId === 'string' && raw.contextId
+      ? raw.contextId
+      : typeof responseJson?.context === 'string'
+      ? responseJson.context
+      : typeof responseJson?.context_id === 'string'
+        ? responseJson.context_id
+        : '',
+    pending,
+    response,
+    responseText: typeof raw?.responseText === 'string' ? raw.responseText.slice(0, 8192) : '',
+    error: ok ? '' : rawError || 'Message send failed'
+  };
+}
+
+function stripAnsiCodes(value) {
+  return String(value || '').replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+}
+
+function extractJsonErrorMessage(text) {
+  const source = String(text || '');
+  const start = source.indexOf('{"error"');
+  if (start < 0) return '';
+  for (let end = source.length; end > start; end -= 1) {
+    try {
+      const parsed = JSON.parse(source.slice(start, end));
+      const message = parsed?.error?.message;
+      const code = parsed?.error?.code;
+      if (typeof message === 'string' && message.trim()) {
+        return code ? `${code}: ${message.trim()}` : message.trim();
+      }
+    } catch {
+      // Keep shortening the candidate JSON object.
+    }
+  }
+  return '';
+}
+
+function topologyRuntimeErrorFromLogLines(lines = [], taskId = '') {
+  const cleanLines = (Array.isArray(lines) ? lines : [])
+    .map((line) => stripAnsiCodes(typeof line === 'string' ? line : line?.line))
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (!cleanLines.length) return '';
+
+  const relatedLines = taskId
+    ? cleanLines.filter((line) => line.includes(taskId) || /AuthenticationError|OpenRouterException|HTTPStatusError|A0:|A2A] Error processing task/i.test(line))
+    : cleanLines;
+  const candidates = (relatedLines.length ? relatedLines : cleanLines).slice(-40).reverse();
+
+  for (const line of candidates) {
+    const jsonMessage = extractJsonErrorMessage(line);
+    if (/OpenRouterException|openrouter/i.test(line) && jsonMessage) {
+      return `Target runtime auth failed: OpenRouter ${jsonMessage}`.slice(0, 500);
+    }
+    if (/AuthenticationError/i.test(line) && jsonMessage) {
+      return `Target runtime auth failed: ${jsonMessage}`.slice(0, 500);
+    }
+    const taskMatch = line.match(/A2A]\s+Error processing task\s+[a-f0-9-]+:\s*(.+)$/i);
+    if (taskMatch?.[1]) {
+      const detail = taskMatch[1].replace(/^litellm\.AuthenticationError:\s*/i, '').trim();
+      if (detail) return `Target runtime failed: ${detail}`.slice(0, 500);
+    }
+  }
+
+  return '';
+}
+
+function dockerLogTimestampMs(line) {
+  const match = String(line || '').match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z\b/);
+  if (!match) return null;
+  const fraction = match[2] ? match[2].slice(0, 3).padEnd(3, '0') : '000';
+  const ms = Date.parse(`${match[1]}.${fraction}Z`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function topologyLatestRunningA2aTaskIdFromLogLines(lines = [], sinceIso = '') {
+  const sinceMs = Date.parse(String(sinceIso || ''));
+  const hasSince = Number.isFinite(sinceMs);
+  const cleanLines = (Array.isArray(lines) ? lines : [])
+    .map((line) => {
+      const text = stripAnsiCodes(typeof line === 'string' ? line : line?.line);
+      return {
+        text: text.replace(/\s+/g, ' ').trim(),
+        timestampMs: dockerLogTimestampMs(text)
+      };
+    })
+    .filter((entry) => entry.text && (!hasSince || (Number.isFinite(entry.timestampMs) && entry.timestampMs >= sinceMs)));
+  if (!cleanLines.length) return '';
+
+  const terminalTaskIds = new Set();
+  for (let i = cleanLines.length - 1; i >= 0; i -= 1) {
+    const line = cleanLines[i].text;
+    const terminalMatch = line.match(/A2A]\s+(?:Completed task|Error processing task)\s+([a-f0-9-]+)/i);
+    if (terminalMatch?.[1]) {
+      terminalTaskIds.add(terminalMatch[1]);
+      continue;
+    }
+    const processingMatch = line.match(/A2A]\s+Processing task\s+([a-f0-9-]+)/i);
+    if (processingMatch?.[1] && !terminalTaskIds.has(processingMatch[1])) {
+      return processingMatch[1];
+    }
+  }
+  return '';
+}
+
+async function topologyRuntimeErrorFromTargetLogs(docker, targetContainerId, taskId) {
+  if (!docker || typeof docker.readContainerLogs !== 'function' || !targetContainerId) return '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 450));
+    try {
+      const result = await docker.readContainerLogs(targetContainerId, {
+        maxLines: 220,
+        timestamps: false,
+        includeStderr: true
+      });
+      const error = topologyRuntimeErrorFromLogLines(result?.lines || [], taskId);
+      if (error) return error;
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+async function topologyLatestRunningA2aTaskIdFromTargetLogs(docker, targetContainerId, sinceIso = '') {
+  if (!docker || typeof docker.readContainerLogs !== 'function' || !targetContainerId) return '';
+  try {
+    const result = await docker.readContainerLogs(targetContainerId, {
+      maxLines: 1200,
+      timestamps: true,
+      includeStderr: true
+    });
+    return topologyLatestRunningA2aTaskIdFromLogLines(result?.lines || [], sinceIso);
+  } catch {
+    return '';
+  }
+}
+
+function topologyMessagePayload(message, contextId = '') {
+  return {
+    text: message,
+    context: typeof contextId === 'string' ? contextId : '',
+    message_id: randomUUID()
+  };
+}
+
+function splitSetCookieHeader(value) {
+  const text = String(value || '');
+  if (!text) return [];
+  return text.split(/,(?=\s*[^;,=\s]+=)/).map((part) => part.trim()).filter(Boolean);
+}
+
+function cookieHeaderFromSetCookies(headers) {
+  const values = typeof headers?.getSetCookie === 'function'
+    ? headers.getSetCookie()
+    : splitSetCookieHeader(headers?.get?.('set-cookie') || '');
+  return values
+    .map((cookie) => String(cookie || '').split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
+function normalizeAgentZeroBaseUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return '';
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+  if (url.username || url.password || !url.hostname) return '';
+  url.pathname = url.pathname || '/';
+  url.search = '';
+  url.hash = '';
+  return url.href;
+}
+
+function urlOrigin(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return 'http://localhost';
+  }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(500, Math.min(30000, timeoutMs)));
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callAgentZeroJsonApiFromHost(baseUrl, apiPath, payload = {}, options = {}) {
+  const base = normalizeAgentZeroBaseUrl(baseUrl);
+  if (!base) throw topologyOperationError('Instance URL is not available.', 'TOPOLOGY_MESSAGE_TARGET_UNAVAILABLE');
+
+  const started = Date.now();
+  const origin = urlOrigin(base);
+  const csrfUrl = new URL('/api/csrf_token', base).href;
+  const targetUrl = new URL(apiPath, base).href;
+  const csrfResponse = await fetchWithTimeout(csrfUrl, {
+    method: 'GET',
+    headers: {
+      Origin: origin,
+      Referer: `${origin}/`
+    },
+    redirect: 'manual'
+  }, options.timeoutMs || 8000);
+  const cookie = cookieHeaderFromSetCookies(csrfResponse.headers);
+  const csrfText = await csrfResponse.text();
+  let csrfJson = null;
+  try {
+    csrfJson = JSON.parse(csrfText);
+  } catch {
+    // handled below
+  }
+  const token = csrfJson?.ok === true && typeof csrfJson.token === 'string' ? csrfJson.token : '';
+  if (!token) {
+    return normalizeTopologyMessageResult({
+      ok: false,
+      statusCode: csrfResponse.status,
+      elapsedMs: Date.now() - started,
+      responseText: csrfText,
+      responseJson: csrfJson,
+      error: csrfJson?.error || 'CSRF token unavailable'
+    }, { error: 'CSRF token unavailable' });
+  }
+
+  const response = await fetchWithTimeout(targetUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+      Origin: origin,
+      Referer: `${origin}/`,
+      ...(cookie ? { Cookie: cookie } : {})
+    },
+    body: JSON.stringify(payload && typeof payload === 'object' ? payload : {}),
+    redirect: 'manual'
+  }, options.timeoutMs || 8000);
+  const responseText = await response.text();
+  let responseJson = null;
+  try {
+    const parsed = JSON.parse(responseText);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) responseJson = parsed;
+  } catch {
+    // non-JSON error body is still useful as responseText
+  }
+  return {
+    ok: response.ok,
+    statusCode: response.status,
+    elapsedMs: Date.now() - started,
+    responseText,
+    responseJson,
+    error: response.ok ? '' : responseText || `HTTP ${response.status}`
+  };
+}
+
+async function postAgentZeroMessageFromHost(baseUrl, message, options = {}) {
+  const result = await callAgentZeroJsonApiFromHost(baseUrl, '/api/message', topologyMessagePayload(message, options.contextId || ''), {
+    timeoutMs: options.timeoutMs || 60000
+  });
+  return normalizeTopologyMessageResult(result);
+}
+
+function normalizeA2aToken(value) {
+  const token = String(value || '').trim();
+  if (!token || token.length > 256 || /[\0\r\n/]/.test(token)) return '';
+  return token;
+}
+
+function tokenizedA2aUrl(alias, token) {
+  const cleanAlias = String(alias || '').trim();
+  const cleanToken = normalizeA2aToken(token);
+  if (!cleanAlias || !cleanToken) return '';
+  return `http://${cleanAlias}/a2a/t-${encodeURIComponent(cleanToken)}`;
+}
+
+function redactedA2aUrl(alias, token) {
+  const cleanAlias = String(alias || '').trim();
+  const cleanToken = normalizeA2aToken(token);
+  if (!cleanAlias || !cleanToken) return '';
+  const suffix = cleanToken.slice(-4);
+  return `http://${cleanAlias}/a2a/t-...${suffix}`;
+}
+
+async function ensureAgentZeroA2aServerFromHost(baseUrl) {
+  const settingsResult = await callAgentZeroJsonApiFromHost(baseUrl, '/api/settings_get', {}, { timeoutMs: 8000 });
+  const settings = settingsResult.responseJson?.settings;
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    throw topologyOperationError('Agent Zero settings are not available.', 'TOPOLOGY_A2A_SETUP_FAILED');
+  }
+
+  let current = settings;
+  if (current.a2a_server_enabled !== true) {
+    const setResult = await callAgentZeroJsonApiFromHost(baseUrl, '/api/settings_set', {
+      settings: {
+        ...current,
+        a2a_server_enabled: true
+      }
+    }, { timeoutMs: 12000 });
+    current = setResult.responseJson?.settings;
+    if (!setResult.ok || !current || typeof current !== 'object' || Array.isArray(current)) {
+      throw topologyOperationError('Unable to enable Agent Zero A2A server.', 'TOPOLOGY_A2A_SETUP_FAILED');
+    }
+  }
+
+  const token = normalizeA2aToken(current.mcp_server_token);
+  if (!token) throw topologyOperationError('Agent Zero A2A token is not available.', 'TOPOLOGY_A2A_TOKEN_MISSING');
+  return {
+    enabled: current.a2a_server_enabled === true,
+    token
+  };
+}
+
+async function runTopologyProbeRequest(docker, request) {
+  const startedAt = nowIso();
+  try {
+    const result = await docker.probeHttpFromContainer(request.fromContainerId, request.url, {
+      timeoutMs: 3500
+    });
+    const reachable = result?.reachable === true;
+    return {
+      fromNodeId: request.fromNodeId,
+      toNodeId: request.toNodeId,
+      url: request.displayUrl || redactTokenizedA2aUrl(request.url),
+      ok: reachable,
+      statusCode: Number.isFinite(Number(result?.statusCode)) ? Number(result.statusCode) : null,
+      elapsedMs: Number.isFinite(Number(result?.elapsedMs)) ? Math.max(0, Math.floor(Number(result.elapsedMs))) : null,
+      error: reachable ? '' : String(result?.error || 'No response').slice(0, 300),
+      probedAt: startedAt
+    };
+  } catch (error) {
+    return {
+      fromNodeId: request.fromNodeId,
+      toNodeId: request.toNodeId,
+      url: request.displayUrl || redactTokenizedA2aUrl(request.url),
+      ok: false,
+      statusCode: null,
+      elapsedMs: null,
+      error: topologyProbeErrorMessage(error).slice(0, 300),
+      probedAt: startedAt
+    };
+  }
+}
+
+async function probeTopologyEdgeNow(edgeId) {
+  const current = await stateStore.readTopology();
+  const edge = findTopologyEdge(current, edgeId);
+  if (!edge) throw topologyOperationError('Topology link not found.', 'TOPOLOGY_EDGE_NOT_FOUND');
+  if (!edge.connection?.networkName) {
+    throw topologyOperationError('Connect the local link before testing A2A.', 'TOPOLOGY_NOT_CONNECTED');
+  }
+
+  const { sourceContainerId, targetContainerId } = assertLocalTopologyEdge(edge);
+  const endpointRefs = await assertTopologyEndpointRefs([edge.source, edge.target]);
+  const { docker } = endpointRefs;
+  if (!docker) throw topologyOperationError('Local Docker runtime is not available.', 'RUNTIME_UNAVAILABLE');
+  if (typeof docker.probeHttpFromContainer !== 'function') {
+    throw topologyOperationError('A2A probing is not available for this Docker runtime.', 'TOPOLOGY_PROBE_UNAVAILABLE');
+  }
+
+  const network = await inspectOwnedTopologyNetworkIfPresent(docker);
+  if (!network) throw topologyOperationError('Topology network is missing.', 'TOPOLOGY_NETWORK_MISSING');
+  if (!topologyNetworkAttachment(network, sourceContainerId) || !topologyNetworkAttachment(network, targetContainerId)) {
+    throw topologyOperationError('Both Instances must be attached to the topology network.', 'TOPOLOGY_NOT_ATTACHED');
+  }
+
+  const prepared = await assertPreparedLocalA2aEdge(edge, endpointRefs, docker);
+  const probeRequests = topologyProbeRequestsForEdge(edge, prepared);
+  if (!probeRequests.length) {
+    throw topologyOperationError('A2A endpoints are not available.', 'TOPOLOGY_A2A_SETUP_FAILED');
+  }
+  const probes = await Promise.all(probeRequests.map((request) => runTopologyProbeRequest(docker, request)));
+
+  return {
+    edgeId: edge.id,
+    networkName: TOPOLOGY_NETWORK_NAME,
+    probedAt: nowIso(),
+    ok: probes.length > 0 && probes.every((probe) => probe.ok === true),
+    probes
+  };
+}
+
+async function probeTopologyEdge(edgeId) {
+  return enqueueTopologyOperation(() => probeTopologyEdgeNow(edgeId));
+}
+
+function topologyMessageTargetUrl(edge, targetNodeId) {
+  const { sourceContainerId, targetContainerId } = assertLocalTopologyEdge(edge);
+  const aliases = edge?.connection?.aliases && typeof edge.connection.aliases === 'object' ? edge.connection.aliases : {};
+  const fallbackAlias = targetNodeId === edge.source
+    ? topologyAliasForContainer(sourceContainerId)
+    : topologyAliasForContainer(targetContainerId);
+  return topologyEndpointForProbe(edge, targetNodeId, aliases[targetNodeId] || fallbackAlias);
+}
+
+function topologyContainerIdsForMessageDirection(edge, sourceNodeId, targetNodeId) {
+  const { sourceContainerId, targetContainerId } = assertLocalTopologyEdge(edge);
+  return {
+    fromContainerId: sourceNodeId === edge.source ? sourceContainerId : targetContainerId,
+    toContainerId: targetNodeId === edge.source ? sourceContainerId : targetContainerId
+  };
+}
+
+async function hostBaseUrlForLocalTopologyNode(nodeId, endpointRefs) {
+  const containerId = topologyContainerIdFromNodeId(nodeId);
+  const container = endpointRefs.localContainers?.get(containerId) || null;
+  let baseUrl = normalizeAgentZeroBaseUrl(container?.uiUrl);
+  if (!baseUrl && endpointRefs.docker) {
+    baseUrl = normalizeAgentZeroBaseUrl(await getContainerUiUrl(containerId, {
+      timeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
+      intervalMs: 450
+    }));
+  }
+  if (!baseUrl) throw topologyOperationError('Instance UI is not available for A2A setup.', 'TOPOLOGY_A2A_SETUP_FAILED');
+  return baseUrl;
+}
+
+async function assertPreparedLocalA2aEdge(edge, endpointRefs, docker) {
+  if (!edge?.connection?.networkName || !topologyEdgeNeedsLocalNetwork(edge)) {
+    throw topologyOperationError('Only connected local links can use A2A.', 'TOPOLOGY_LOCAL_ONLY');
+  }
+  const { sourceContainerId, targetContainerId } = assertLocalTopologyEdge(edge);
+  if (!docker) throw topologyOperationError('Local Docker runtime is not available.', 'RUNTIME_UNAVAILABLE');
+
+  const network = await inspectOwnedTopologyNetworkIfPresent(docker);
+  if (!network) throw topologyOperationError('Topology network is missing.', 'TOPOLOGY_NETWORK_MISSING');
+  if (!topologyNetworkAttachment(network, sourceContainerId) || !topologyNetworkAttachment(network, targetContainerId)) {
+    throw topologyOperationError('Both Instances must be attached to the topology network.', 'TOPOLOGY_NOT_ATTACHED');
+  }
+
+  const aliases = edge?.connection?.aliases && typeof edge.connection.aliases === 'object' ? edge.connection.aliases : {};
+  const sourceAlias = aliases[edge.source] || topologyAliasForContainer(sourceContainerId);
+  const targetAlias = aliases[edge.target] || topologyAliasForContainer(targetContainerId);
+  const [sourceA2a, targetA2a] = await Promise.all([
+    ensureAgentZeroA2aServerFromHost(await hostBaseUrlForLocalTopologyNode(edge.source, endpointRefs)),
+    ensureAgentZeroA2aServerFromHost(await hostBaseUrlForLocalTopologyNode(edge.target, endpointRefs))
+  ]);
+
+  const sourceUrl = tokenizedA2aUrl(sourceAlias, sourceA2a.token);
+  const targetUrl = tokenizedA2aUrl(targetAlias, targetA2a.token);
+  if (!sourceUrl || !targetUrl) {
+    throw topologyOperationError('A2A connection URL could not be created.', 'TOPOLOGY_A2A_SETUP_FAILED');
+  }
+
+  const endpoints = [
+    {
+      nodeId: edge.source,
+      alias: sourceAlias,
+      a2aUrl: sourceUrl,
+      displayUrl: redactedA2aUrl(sourceAlias, sourceA2a.token),
+      enabled: sourceA2a.enabled === true
+    },
+    {
+      nodeId: edge.target,
+      alias: targetAlias,
+      a2aUrl: targetUrl,
+      displayUrl: redactedA2aUrl(targetAlias, targetA2a.token),
+      enabled: targetA2a.enabled === true
+    }
+  ];
+
+  return {
+    edgeId: edge.id,
+    preparedAt: nowIso(),
+    ok: endpoints.every((endpoint) => endpoint.enabled && endpoint.a2aUrl),
+    endpoints
+  };
+}
+
+function publicA2aSetupResult(result) {
+  const endpoints = Array.isArray(result?.endpoints) ? result.endpoints : [];
+  return {
+    edgeId: typeof result?.edgeId === 'string' ? result.edgeId : '',
+    preparedAt: typeof result?.preparedAt === 'string' ? result.preparedAt : nowIso(),
+    ok: result?.ok === true,
+    endpoints: endpoints.map((endpoint) => ({
+      nodeId: typeof endpoint?.nodeId === 'string' ? endpoint.nodeId : '',
+      alias: typeof endpoint?.alias === 'string' ? endpoint.alias : '',
+      displayUrl: typeof endpoint?.displayUrl === 'string' ? endpoint.displayUrl : '',
+      enabled: endpoint?.enabled === true
+    })).filter((endpoint) => endpoint.nodeId)
+  };
+}
+
+async function prepareTopologyA2aEdgeNow(edgeId) {
+  const current = await stateStore.readTopology();
+  const edge = findTopologyEdge(current, edgeId);
+  if (!edge) throw topologyOperationError('Topology link not found.', 'TOPOLOGY_EDGE_NOT_FOUND');
+  const endpointRefs = await assertTopologyEndpointRefs([edge.source, edge.target]);
+  const prepared = await assertPreparedLocalA2aEdge(edge, endpointRefs, endpointRefs.docker);
+  return publicA2aSetupResult(prepared);
+}
+
+async function prepareTopologyA2aEdge(edgeId) {
+  return enqueueTopologyOperation(() => prepareTopologyA2aEdgeNow(edgeId));
+}
+
+async function sendTopologyMessageNow(payload = {}) {
+  const message = normalizeTopologyMessage(payload?.message);
+  const sourceNodeId = stateStore.normalizeTopologyNodeId(payload?.sourceNodeId);
+  const targetNodeId = stateStore.normalizeTopologyNodeId(payload?.targetNodeId);
+  const edgeId = stateStore.normalizeTopologyEdgeId(payload?.edgeId);
+  if (!targetNodeId) throw topologyOperationError('Choose an Instance to message.', 'INVALID_TOPOLOGY_NODE');
+
+  const current = await stateStore.readTopology();
+  const direction = sourceNodeId ? 'node_to_node' : 'launcher_to_node';
+  const now = nowIso();
+
+  if (sourceNodeId) {
+    const edge = edgeId ? findTopologyEdge(current, edgeId) : current.edges.find((item) =>
+      item?.connection?.networkName &&
+      ((item.source === sourceNodeId && item.target === targetNodeId) || (item.source === targetNodeId && item.target === sourceNodeId))
+    );
+    if (!edge) throw topologyOperationError('Connected topology link not found.', 'TOPOLOGY_EDGE_NOT_FOUND');
+    if (!edge.connection?.networkName || !topologyEdgeNeedsLocalNetwork(edge)) {
+      throw topologyOperationError('Only connected local links can pass Instance-to-Instance messages.', 'TOPOLOGY_LOCAL_ONLY');
+    }
+    if (!((edge.source === sourceNodeId && edge.target === targetNodeId) || (edge.source === targetNodeId && edge.target === sourceNodeId))) {
+      throw topologyOperationError('Message direction does not match this topology link.', 'INVALID_TOPOLOGY_MESSAGE');
+    }
+    const { fromContainerId, toContainerId } = topologyContainerIdsForMessageDirection(edge, sourceNodeId, targetNodeId);
+    const endpointRefs = await assertTopologyEndpointRefs([sourceNodeId, targetNodeId]);
+    const { docker } = endpointRefs;
+    if (!docker || typeof docker.sendA2aMessageFromContainer !== 'function') {
+      throw topologyOperationError('Container A2A message passing is not available for this Docker runtime.', 'TOPOLOGY_MESSAGE_UNAVAILABLE');
+    }
+    const prepared = await assertPreparedLocalA2aEdge(edge, endpointRefs, docker);
+    const targetEndpoint = prepared.endpoints.find((endpoint) => endpoint.nodeId === targetNodeId);
+    if (!targetEndpoint?.a2aUrl) {
+      throw topologyOperationError('Target A2A endpoint is not available.', 'TOPOLOGY_A2A_SETUP_FAILED');
+    }
+    const messageAttemptStartedAt = nowIso();
+    const raw = await docker.sendA2aMessageFromContainer(
+      fromContainerId,
+      targetEndpoint.a2aUrl,
+      message,
+      {
+        timeoutMs: 30000,
+        waitMs: 180000,
+        pollIntervalMs: 2000
+      }
+    );
+    let normalized = normalizeTopologyMessageResult(raw);
+    if (!normalized.ok && !normalized.taskId && /TimeoutError|timed out|timeout/i.test(normalized.error)) {
+      const recoveredTaskId = await topologyLatestRunningA2aTaskIdFromTargetLogs(docker, toContainerId, messageAttemptStartedAt);
+      if (recoveredTaskId) {
+        if (typeof docker.pollA2aTaskFromContainer === 'function') {
+          const recoveredRaw = await docker.pollA2aTaskFromContainer(
+            fromContainerId,
+            targetEndpoint.a2aUrl,
+            recoveredTaskId,
+            {
+              timeoutMs: 30000,
+              waitMs: 120000,
+              pollIntervalMs: 2000
+            }
+          );
+          normalized = normalizeTopologyMessageResult({
+            ...recoveredRaw,
+            taskId: recoveredRaw?.taskId || recoveredTaskId
+          });
+        } else {
+          normalized = normalizeTopologyMessageResult({
+            ok: true,
+            statusCode: null,
+            elapsedMs: raw?.elapsedMs,
+            taskId: recoveredTaskId,
+            state: 'working',
+            pending: true
+          });
+        }
+      } else {
+        normalized.error = 'Target A2A worker did not accept the message before timeout. It may already be busy.';
+      }
+    }
+    if (!normalized.ok && normalized.state === 'failed') {
+      const runtimeError = await topologyRuntimeErrorFromTargetLogs(docker, toContainerId, normalized.taskId);
+      if (runtimeError) normalized.error = runtimeError;
+    }
+    return {
+      direction,
+      protocol: 'a2a',
+      sourceNodeId,
+      targetNodeId,
+      edgeId: edge.id,
+      sentAt: now,
+      message,
+      ...normalized
+    };
+  }
+
+  const endpointRefs = await assertTopologyEndpointRefs([targetNodeId]);
+  let baseUrl = '';
+  if (topologyNodeKind(targetNodeId) === 'local') {
+    const containerId = topologyContainerIdFromNodeId(targetNodeId);
+    const container = endpointRefs.localContainers?.get(containerId) || null;
+    baseUrl = normalizeAgentZeroBaseUrl(container?.uiUrl);
+    if (!baseUrl && endpointRefs.docker) {
+      baseUrl = normalizeAgentZeroBaseUrl(await getContainerUiUrl(containerId, {
+        timeoutMs: UI_READY_ATTEMPT_TIMEOUT_MS,
+        intervalMs: 450
+      }));
+    }
+  } else if (topologyNodeKind(targetNodeId) === 'remote') {
+    const remote = await getRemoteInstance(targetNodeId.slice('remote:'.length));
+    baseUrl = normalizeAgentZeroBaseUrl(remote?.url);
+  }
+  const result = await postAgentZeroMessageFromHost(baseUrl, message, {
+    contextId: payload?.contextId || '',
+    timeoutMs: 60000
+  });
+  return {
+    direction,
+    protocol: 'message',
+    sourceNodeId: '',
+    targetNodeId,
+    edgeId: edgeId || '',
+    sentAt: now,
+    message,
+    ...result
+  };
+}
+
+async function sendTopologyMessage(payload = {}) {
+  return enqueueTopologyOperation(() => sendTopologyMessageNow(payload));
+}
+
+function topologyNodeStillNeeded(topology, nodeId, ignoredEdgeId = '') {
+  return (Array.isArray(topology?.edges) ? topology.edges : []).some((edge) => {
+    if (edge?.id === ignoredEdgeId) return false;
+    if (!edge?.connection?.networkName) return false;
+    return edge.source === nodeId || edge.target === nodeId;
+  });
+}
+
+async function disconnectTopologyEdgeNow(edgeId) {
+  const current = await stateStore.readTopology();
+  const edge = findTopologyEdge(current, edgeId);
+  if (!edge) throw topologyOperationError('Topology link not found.', 'TOPOLOGY_EDGE_NOT_FOUND');
+
+  const shouldDisconnect = !!edge.connection?.networkName && topologyEdgeNeedsLocalNetwork(edge);
+  if (shouldDisconnect) {
+    const { sourceContainerId, targetContainerId } = assertLocalTopologyEdge(edge);
+    const imageRepo = getBackendImageRepo();
+    const docker = await getManagedDocker(imageRepo);
+    const network = await inspectOwnedTopologyNetworkIfPresent(docker);
+    const sourceStillNeeded = topologyNodeStillNeeded(current, edge.source, edge.id);
+    const targetStillNeeded = topologyNodeStillNeeded(current, edge.target, edge.id);
+    if (network && !sourceStillNeeded && topologyNetworkAttachment(network, sourceContainerId)) {
+      await docker.disconnectContainerFromNetwork(TOPOLOGY_NETWORK_NAME, sourceContainerId, { force: true });
+    }
+    if (network && !targetStillNeeded && topologyNetworkAttachment(network, targetContainerId)) {
+      await docker.disconnectContainerFromNetwork(TOPOLOGY_NETWORK_NAME, targetContainerId, { force: true });
+    }
+  }
+
+  const now = nowIso();
+  const edges = current.edges.map((item) => {
+    if (item.id !== edge.id) return item;
+    const next = { ...item, updatedAt: now };
+    delete next.connection;
+    return next;
+  });
+  await stateStore.writeTopology({ ...current, edges });
+  return await refreshTopologyState(true);
+}
+
+async function disconnectTopologyEdge(edgeId) {
+  return enqueueTopologyOperation(() => disconnectTopologyEdgeNow(edgeId));
+}
+
+async function deleteTopologyEdgeNow(edgeId) {
+  const current = await stateStore.readTopology();
+  const edge = findTopologyEdge(current, edgeId);
+  if (!edge) throw topologyOperationError('Topology link not found.', 'TOPOLOGY_EDGE_NOT_FOUND');
+  if (edge.connection?.networkName) {
+    await disconnectTopologyEdgeNow(edge.id);
+  }
+  const next = await stateStore.readTopology();
+  await stateStore.writeTopology({
+    ...next,
+    edges: next.edges.filter((item) => item.id !== edge.id)
+  });
+  return await refreshTopologyState(true);
+}
+
+async function deleteTopologyEdge(edgeId) {
+  return enqueueTopologyOperation(() => deleteTopologyEdgeNow(edgeId));
+}
+
 async function createAndStartActiveContainer(docker, imageRepo, tag, portPreferences, activationOptions = null, storagePreferences = null) {
   const activeName = retention.getActiveContainerName(imageRepo);
   const imageRef = imageRefForTag(imageRepo, tag);
@@ -4560,6 +5830,7 @@ async function deleteRetainedInstance(containerId) {
       await docker.deleteContainer(id, { force: true });
       await stateStore.deleteLocalInstanceName(id).catch(() => {});
       await stateStore.deleteLocalInstanceColor(id).catch(() => {});
+      await stateStore.deleteTopologyNodeRefs([topologyNodeIdForLocal(id)]).catch(() => {});
       finishOperation('completed', null);
       updateOperationProgress({ progress: 100, message: 'Deleted' });
     } catch (error) {
@@ -4607,6 +5878,7 @@ async function deleteLocalInstance(containerId) {
       }
       await stateStore.deleteLocalInstanceName(target.containerId).catch(() => {});
       await stateStore.deleteLocalInstanceColor(target.containerId).catch(() => {});
+      await stateStore.deleteTopologyNodeRefs([topologyNodeIdForLocal(target.containerId)]).catch(() => {});
     }
   });
 }
@@ -5290,6 +6562,15 @@ module.exports = {
   deleteRemoteInstance,
   renameRemoteInstance,
   setRemoteInstanceColor,
+  saveTopologyLayout,
+  createTopologyEdge,
+  deleteTopologyEdge,
+  connectTopologyEdge,
+  probeTopologyEdge,
+  prepareTopologyA2aEdge,
+  sendTopologyMessage,
+  disconnectTopologyEdge,
+  setTopologyNodeRole,
   deleteLocalInstance,
   getRemoteInstance,
   deleteRetainedInstance,
@@ -5334,7 +6615,19 @@ module.exports = {
     matchedSemverReleaseTagForDigest,
     matchedReleaseTagForLocalTag,
     imageTagForContainer,
-    applyContainerMatchedReleaseTags
+    applyContainerMatchedReleaseTags,
+    deriveTopology,
+    topologyAliasForContainer,
+    topologyConnectionHints,
+    topologyProbeRequestsForEdge,
+    topologyMessagePayload,
+    normalizeTopologyMessageResult,
+    publicA2aSetupResult,
+    topologyRuntimeErrorFromLogLines,
+    topologyLatestRunningA2aTaskIdFromLogLines,
+    topologyContainerIdsForMessageDirection,
+    topologyNodeIdForLocal,
+    topologyNodeIdForRemote
   },
 
   // Error helpers for IPC handlers

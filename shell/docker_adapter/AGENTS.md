@@ -20,9 +20,10 @@ This scope owns:
 - `runtime_provisioner.test.mjs`: runtime provisioner selection and parser
   smoke tests.
 - `impl/DockerodeDocker.mjs`: Dockerode-backed container inspection, commit
-  snapshots, creation, lifecycle, volume, image, pull, and log operations.
+  snapshots, creation, lifecycle, network, volume, image, pull, and log
+  operations.
 - `dockerode_docker.test.mjs`: Dockerode adapter regression tests for
-  container state shaping.
+  container and network state shaping.
 - `impl/DockerHubRegistry.mjs`: Docker Hub registry and manifest/digest access.
 - `impl/DockerodeLogProcessor.mjs`: Docker pull/log stream processing.
 - `impl/ColimaRuntime.mjs`: macOS Colima/Lima assessment, self-contained
@@ -152,12 +153,24 @@ This scope owns:
   product layer for bounded workflows such as Backup and Restore, but product
   scope, path filtering, metadata, and user-facing semantics must remain in
   `shell/docker_manager`.
+- Container-internal HTTP probes, JSON+CSRF POSTs, and FastA2A JSON-RPC
+  message send/poll calls are allowed only as bounded primitives for
+  product-layer workflows such as topology A2A reachability and message
+  passing. Existing A2A task polling is also allowed when the product layer has
+  recovered a task id after a timed-out `message/send`. Keep the commands
+  hard-coded, time-limited, URL-scoped, and payload-bounded; never expose a
+  generic container exec API through this adapter. Tokenized A2A URLs must be
+  redacted before they appear in adapter error details.
 - Docker image removal should default to non-forced deletion so callers preserve
   Docker's native protection for images still referenced by containers. Forced
   removal must be an explicit option.
 - Container commit support is a low-level snapshot primitive for product-layer
   clone workflows. Keep clone naming, labels, and port-policy decisions in
   `shell/docker_manager`.
+- Docker network creation, inspection, connect, and disconnect are generic
+  adapter primitives. Product-specific network names and labels belong in
+  `shell/docker_manager`, but Dockerode payloads and idempotent attachment
+  behavior stay here.
 - Log processing should normalize stream events into stable progress messages and
   preserve enough detail for cancellation/failure diagnosis.
 

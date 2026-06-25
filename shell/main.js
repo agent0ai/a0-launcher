@@ -22,12 +22,6 @@ const {
   writeLauncherUpdaterInstallMarker
 } = require('./launcher_updater_artifacts');
 const { resolveLauncherUpdaterLogPath } = require('./launcher_updater_install_options');
-const {
-  resolveLauncherWindowsReleaseArchFallback,
-  resolveLauncherDebugReleaseAssetUrl,
-  resolveLauncherDebugReleaseTag,
-  stageLauncherDebugRelease
-} = require('./launcher_updater_debug_release');
 
 const OPEN_UI_READY_TIMEOUT_MS = 20_000;
 const OPEN_UI_READY_INTERVAL_MS = 450;
@@ -167,6 +161,8 @@ let instanceTabBounds = null;
 let instanceTabSeq = 0;
 let launcherUpdateDismissed = false;
 let launcherAutoUpdater = null;
+let launcherUpdaterDebugRelease = null;
+let launcherUpdaterDebugReleaseLoaded = false;
 let launcherUpdateCheckPromise = null;
 let launcherUpdateDownloadPromise = null;
 let launcherUpdateState = {
@@ -305,6 +301,20 @@ function loadLauncherAutoUpdater() {
   return launcherAutoUpdater;
 }
 
+function loadLauncherUpdaterDebugRelease() {
+  if (launcherUpdaterDebugReleaseLoaded) return launcherUpdaterDebugRelease;
+  launcherUpdaterDebugReleaseLoaded = true;
+
+  try {
+    launcherUpdaterDebugRelease = require('./launcher_updater_debug_release');
+  } catch (error) {
+    console.warn('[launcher-update] launcher updater debug helpers are unavailable.', error);
+    launcherUpdaterDebugRelease = null;
+  }
+
+  return launcherUpdaterDebugRelease;
+}
+
 async function appendLauncherUpdaterPersistentLog(logPath, message, details = null) {
   const resolvedLogPath = String(logPath || '').trim();
   const normalizedMessage = String(message || '').trim();
@@ -441,15 +451,17 @@ async function downloadLauncherUpdateAssetToFile(assetUrl, destinationPath, { on
 
 async function downloadLauncherWindowsUpdateWithArchFallback(autoUpdater) {
   if (process.platform !== 'win32') return null;
+  const debugRelease = loadLauncherUpdaterDebugRelease();
+  if (!debugRelease) return null;
 
   const updateInfoAndProvider = autoUpdater?.updateInfoAndProvider;
   const updateInfo = updateInfoAndProvider?.info || null;
-  const fallback = resolveLauncherWindowsReleaseArchFallback(updateInfo, process.arch);
+  const fallback = debugRelease.resolveLauncherWindowsReleaseArchFallback(updateInfo, process.arch);
   if (!fallback) return null;
 
   const publishConfig = await autoUpdater.configOnDisk.value;
-  const tag = resolveLauncherDebugReleaseTag(updateInfo?.version || '');
-  const installerUrl = resolveLauncherDebugReleaseAssetUrl({
+  const tag = debugRelease.resolveLauncherDebugReleaseTag(updateInfo?.version || '');
+  const installerUrl = debugRelease.resolveLauncherDebugReleaseAssetUrl({
     publishConfig,
     tag,
     fileName: fallback.expectedFileName
@@ -716,7 +728,8 @@ async function stageLauncherDebugReinstall(payload = {}) {
   }
 
   const autoUpdater = loadLauncherAutoUpdater();
-  if (!autoUpdater) {
+  const debugRelease = loadLauncherUpdaterDebugRelease();
+  if (!autoUpdater || !debugRelease) {
     return { ok: false, reason: 'unavailable' };
   }
 
@@ -744,7 +757,7 @@ async function stageLauncherDebugReinstall(payload = {}) {
 
   try {
     const publishConfig = await autoUpdater.configOnDisk.value;
-    const stagedRelease = await stageLauncherDebugRelease({
+    const stagedRelease = await debugRelease.stageLauncherDebugRelease({
       requestedVersion,
       currentVersion,
       platform: process.platform,
@@ -1534,6 +1547,162 @@ function isAllowedLocalUrl(value) {
 
 function isAllowedHttpUrl(value) {
   return isAllowedRemoteInstanceUrl(value);
+}
+
+function sanitizeTopologyProbeResult(result) {
+  if (!isPlainObject(result)) return null;
+
+  const cleanText = (value, maxLength = 180) => String(value || '')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, '')
+    .slice(0, maxLength);
+  const cleanNodeId = (value) => {
+    const id = cleanText(value, 180);
+    const index = id.indexOf(':');
+    if (index <= 0) return '';
+    const kind = id.slice(0, index);
+    const raw = id.slice(index + 1);
+    if (kind === 'local' && /^[a-f0-9]{1,128}$/i.test(raw)) return `local:${raw}`;
+    if (kind === 'remote' && raw.length <= 96 && /^[A-Za-z0-9_.:-]+$/.test(raw)) return `remote:${raw}`;
+    return '';
+  };
+  const cleanEdgeId = (value) => {
+    const id = cleanText(value, 120);
+    return id && /^[A-Za-z0-9_.:-]+$/.test(id) ? id : '';
+  };
+  const cleanStatusCode = (value) => {
+    const code = Number(value);
+    return Number.isInteger(code) && code >= 100 && code <= 599 ? code : null;
+  };
+  const cleanElapsedMs = (value) => {
+    const ms = Number(value);
+    return Number.isFinite(ms) && ms >= 0 ? Math.min(60000, Math.floor(ms)) : null;
+  };
+
+  const edgeId = cleanEdgeId(result.edgeId);
+  if (!edgeId) return null;
+
+  const probes = [];
+  for (const probeIn of Array.isArray(result.probes) ? result.probes : []) {
+    if (!isPlainObject(probeIn)) continue;
+    const fromNodeId = cleanNodeId(probeIn.fromNodeId);
+    const toNodeId = cleanNodeId(probeIn.toNodeId);
+    const url = cleanText(probeIn.url, 240);
+    if (!fromNodeId || !toNodeId || !isAllowedHttpUrl(url)) continue;
+    probes.push({
+      fromNodeId,
+      toNodeId,
+      url,
+      ok: probeIn.ok === true,
+      statusCode: cleanStatusCode(probeIn.statusCode),
+      elapsedMs: cleanElapsedMs(probeIn.elapsedMs),
+      error: cleanText(probeIn.error, 300),
+      probedAt: cleanText(probeIn.probedAt, 40)
+    });
+    if (probes.length >= 4) break;
+  }
+
+  return {
+    edgeId,
+    networkName: cleanText(result.networkName, 120),
+    probedAt: cleanText(result.probedAt, 40),
+    ok: result.ok === true && probes.length > 0 && probes.every((probe) => probe.ok === true),
+    probes
+  };
+}
+
+function sanitizeTopologyMessageResult(result) {
+  if (!isPlainObject(result)) return null;
+
+  const cleanText = (value, maxLength = 180) => String(value || '')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, '')
+    .slice(0, maxLength);
+  const cleanNodeId = (value) => {
+    const id = cleanText(value, 180);
+    const index = id.indexOf(':');
+    if (index <= 0) return '';
+    const kind = id.slice(0, index);
+    const raw = id.slice(index + 1);
+    if (kind === 'local' && /^[a-f0-9]{1,128}$/i.test(raw)) return `local:${raw}`;
+    if (kind === 'remote' && raw.length <= 96 && /^[A-Za-z0-9_.:-]+$/.test(raw)) return `remote:${raw}`;
+    return '';
+  };
+  const cleanEdgeId = (value) => {
+    const id = cleanText(value, 120);
+    return id && /^[A-Za-z0-9_.:-]+$/.test(id) ? id : '';
+  };
+  const cleanStatusCode = (value) => {
+    const code = Number(value);
+    return Number.isInteger(code) && code >= 100 && code <= 599 ? code : null;
+  };
+  const cleanElapsedMs = (value) => {
+    const ms = Number(value);
+    return Number.isFinite(ms) && ms >= 0 ? Math.min(60000, Math.floor(ms)) : null;
+  };
+
+  const targetNodeId = cleanNodeId(result.targetNodeId);
+  if (!targetNodeId) return null;
+  const direction = cleanText(result.direction, 40);
+  return {
+    direction: direction === 'node_to_node' ? 'node_to_node' : 'launcher_to_node',
+    protocol: cleanText(result.protocol, 40),
+    sourceNodeId: cleanNodeId(result.sourceNodeId),
+    targetNodeId,
+    edgeId: cleanEdgeId(result.edgeId),
+    ok: result.ok === true,
+    statusCode: cleanStatusCode(result.statusCode),
+    elapsedMs: cleanElapsedMs(result.elapsedMs),
+    taskId: cleanText(result.taskId, 180),
+    state: cleanText(result.state, 80),
+    contextId: cleanText(result.contextId, 180),
+    response: cleanText(result.response, 500),
+    error: cleanText(result.error, 500),
+    sentAt: cleanText(result.sentAt, 40)
+  };
+}
+
+function sanitizeTopologyA2aSetupResult(result) {
+  if (!isPlainObject(result)) return null;
+
+  const cleanText = (value, maxLength = 180) => String(value || '')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, '')
+    .slice(0, maxLength);
+  const cleanNodeId = (value) => {
+    const id = cleanText(value, 180);
+    const index = id.indexOf(':');
+    if (index <= 0) return '';
+    const kind = id.slice(0, index);
+    const raw = id.slice(index + 1);
+    if (kind === 'local' && /^[a-f0-9]{1,128}$/i.test(raw)) return `local:${raw}`;
+    return '';
+  };
+  const cleanEdgeId = (value) => {
+    const id = cleanText(value, 120);
+    return id && /^[A-Za-z0-9_.:-]+$/.test(id) ? id : '';
+  };
+  const edgeId = cleanEdgeId(result.edgeId);
+  if (!edgeId) return null;
+  const endpoints = [];
+  for (const endpoint of Array.isArray(result.endpoints) ? result.endpoints : []) {
+    if (!isPlainObject(endpoint)) continue;
+    const nodeId = cleanNodeId(endpoint.nodeId);
+    if (!nodeId) continue;
+    endpoints.push({
+      nodeId,
+      alias: cleanText(endpoint.alias, 120),
+      displayUrl: cleanText(endpoint.displayUrl, 240),
+      enabled: endpoint.enabled === true
+    });
+    if (endpoints.length >= 2) break;
+  }
+  return {
+    edgeId,
+    ok: result.ok === true && endpoints.length === 2 && endpoints.every((endpoint) => endpoint.enabled),
+    preparedAt: cleanText(result.preparedAt, 40),
+    endpoints
+  };
 }
 
 function getPublicResourceUrl(id) {
@@ -2833,6 +3002,7 @@ function sanitizeDockerManagerState(state) {
   const containersIn = Array.isArray(state?.containers) ? state.containers : [];
   const retainedIn = Array.isArray(state?.retainedInstances) ? state.retainedInstances : [];
   const remoteIn = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+  const topologyIn = isPlainObject(state?.topology) ? state.topology : {};
   const backgroundIn = Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [];
   const policyIn = isPlainObject(state?.retentionPolicy) ? state.retentionPolicy : {};
   const portsIn = isPlainObject(state?.portPreferences) ? state.portPreferences : {};
@@ -3048,6 +3218,137 @@ function sanitizeDockerManagerState(state) {
     remoteInstances.push(out);
   }
 
+  const cleanTopologyText = (value, maxLength = 160) => String(value || '')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, '')
+    .slice(0, maxLength);
+  const cleanTopologyNodeId = (value) => {
+    const id = cleanTopologyText(value, 180);
+    const index = id.indexOf(':');
+    if (index <= 0) return '';
+    const kind = id.slice(0, index);
+    const raw = id.slice(index + 1);
+    if (kind === 'local' && /^[a-f0-9]{1,128}$/i.test(raw)) return `local:${raw}`;
+    if (kind === 'remote' && raw.length <= 96 && /^[A-Za-z0-9_.:-]+$/.test(raw)) return `remote:${raw}`;
+    return '';
+  };
+  const cleanTopologyEdgeId = (value) => {
+    const id = cleanTopologyText(value, 120);
+    return id && /^[A-Za-z0-9_.:-]+$/.test(id) ? id : '';
+  };
+  const cleanTopologyPosition = (value) => {
+    if (!isPlainObject(value)) return null;
+    const x = Number(value.x);
+    const y = Number(value.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return {
+      x: Math.max(-100000, Math.min(100000, Math.round(x))),
+      y: Math.max(-100000, Math.min(100000, Math.round(y)))
+    };
+  };
+  const allowedTopologyRoles = new Set(['peer', 'coordinator', 'worker', 'tool']);
+  const allowedTopologyKinds = new Set(['local', 'remote']);
+  const allowedTopologyModes = new Set(['local_network', 'metadata']);
+  const allowedTopologyStatuses = new Set(['ready', 'metadata', 'connected', 'missing_endpoint', 'missing_network', 'network_conflict', 'not_attached']);
+  const topology = {
+    version: 1,
+    networkName: cleanTopologyText(topologyIn.networkName, 120) || 'a0-launcher-topology',
+    nodes: [],
+    edges: []
+  };
+  for (const nodeIn of Array.isArray(topologyIn.nodes) ? topologyIn.nodes : []) {
+    if (!isPlainObject(nodeIn)) continue;
+    const id = cleanTopologyNodeId(nodeIn.id);
+    const kind = typeof nodeIn.kind === 'string' && allowedTopologyKinds.has(nodeIn.kind)
+      ? nodeIn.kind
+      : id.startsWith('local:') ? 'local' : id.startsWith('remote:') ? 'remote' : '';
+    if (!id || !kind) continue;
+    const node = {
+      id,
+      kind,
+      label: cleanTopologyText(nodeIn.label, 120) || (kind === 'local' ? 'Local Instance' : 'Remote Instance'),
+      role: typeof nodeIn.role === 'string' && allowedTopologyRoles.has(nodeIn.role) ? nodeIn.role : 'peer',
+      available: nodeIn.available !== false
+    };
+    const position = cleanTopologyPosition(nodeIn.position);
+    if (position) node.position = position;
+    const color = cleanInstanceColor(nodeIn.instanceColor);
+    if (color) node.instanceColor = color;
+    if (typeof nodeIn.missing === 'boolean') node.missing = nodeIn.missing;
+    if (kind === 'local') {
+      node.containerId = id.slice('local:'.length);
+      if (typeof nodeIn.state === 'string' || nodeIn.state === null) node.state = nodeIn.state || null;
+      if (typeof nodeIn.status === 'string' || nodeIn.status === null) node.status = nodeIn.status || null;
+      if (typeof nodeIn.uiUrl === 'string' && isAllowedHttpUrl(nodeIn.uiUrl)) node.uiUrl = nodeIn.uiUrl;
+      if (typeof nodeIn.versionTag === 'string') node.versionTag = nodeIn.versionTag;
+    } else {
+      node.instanceId = id.slice('remote:'.length);
+      if (typeof nodeIn.url === 'string' && isAllowedHttpUrl(nodeIn.url)) node.url = nodeIn.url;
+    }
+    topology.nodes.push(node);
+  }
+  for (const edgeIn of Array.isArray(topologyIn.edges) ? topologyIn.edges : []) {
+    if (!isPlainObject(edgeIn)) continue;
+    const id = cleanTopologyEdgeId(edgeIn.id);
+    const source = cleanTopologyNodeId(edgeIn.source);
+    const target = cleanTopologyNodeId(edgeIn.target);
+    if (!id || !source || !target || source === target) continue;
+    const mode = typeof edgeIn.mode === 'string' && allowedTopologyModes.has(edgeIn.mode) ? edgeIn.mode : 'metadata';
+    const edge = {
+      id,
+      source,
+      target,
+      mode,
+      label: cleanTopologyText(edgeIn.label, 80) || (mode === 'local_network' ? 'Local link' : 'Reference link'),
+      status: typeof edgeIn.status === 'string' && allowedTopologyStatuses.has(edgeIn.status)
+        ? edgeIn.status
+        : mode === 'metadata' ? 'metadata' : 'ready',
+      canConnect: edgeIn.canConnect === true,
+      canDisconnect: edgeIn.canDisconnect === true,
+      sourceMissing: edgeIn.sourceMissing === true,
+      targetMissing: edgeIn.targetMissing === true,
+      networkName: cleanTopologyText(edgeIn.networkName, 120)
+    };
+    if (isPlainObject(edgeIn.connection)) {
+      const connection = {};
+      const networkName = cleanTopologyText(edgeIn.connection.networkName, 120);
+      if (networkName) connection.networkName = networkName;
+      const networkId = cleanTopologyText(edgeIn.connection.networkId, 180);
+      if (networkId) connection.networkId = networkId;
+      if (typeof edgeIn.connection.connectedAt === 'string') connection.connectedAt = edgeIn.connection.connectedAt;
+      if (isPlainObject(edgeIn.connection.aliases)) {
+        const aliases = {};
+        for (const [key, value] of Object.entries(edgeIn.connection.aliases)) {
+          const nodeId = cleanTopologyNodeId(key);
+          const alias = cleanTopologyText(value, 120);
+          if (nodeId && alias) aliases[nodeId] = alias;
+        }
+        if (Object.keys(aliases).length) connection.aliases = aliases;
+      }
+      if (Array.isArray(edgeIn.connection.hints)) {
+        const hints = [];
+        for (const hintIn of edgeIn.connection.hints) {
+          if (!isPlainObject(hintIn)) continue;
+          const nodeId = cleanTopologyNodeId(hintIn.nodeId);
+          const alias = cleanTopologyText(hintIn.alias, 120);
+          if (!nodeId || !alias) continue;
+          const hint = { nodeId, alias };
+          const internalUrl = cleanTopologyText(hintIn.internalUrl, 240);
+          const a2aEndpoint = cleanTopologyText(hintIn.a2aEndpoint, 240);
+          if (/^https?:\/\/[A-Za-z0-9_.-]+(?::[0-9]{1,5})?\//.test(internalUrl)) hint.internalUrl = internalUrl;
+          if (/^https?:\/\/[A-Za-z0-9_.-]+(?::[0-9]{1,5})?\//.test(a2aEndpoint)) hint.a2aEndpoint = a2aEndpoint;
+          hints.push(hint);
+          if (hints.length >= 8) break;
+        }
+        if (hints.length) connection.hints = hints;
+      }
+      if (Object.keys(connection).length) edge.connection = connection;
+    }
+    if (typeof edgeIn.createdAt === 'string') edge.createdAt = edgeIn.createdAt;
+    if (typeof edgeIn.updatedAt === 'string') edge.updatedAt = edgeIn.updatedAt;
+    topology.edges.push(edge);
+  }
+
   const backgroundOperations = [];
   const allowedBackgroundTypes = new Set(['start', 'stop', 'delete_instance']);
   const allowedBackgroundStatuses = new Set(['queued', 'running', 'failed', 'completed']);
@@ -3073,6 +3374,7 @@ function sanitizeDockerManagerState(state) {
     containers,
     retainedInstances,
     remoteInstances,
+    topology,
     backgroundOperations,
     retentionPolicy,
     cli: getA0CliStatus(),
@@ -3555,6 +3857,115 @@ ipcMain.handle('docker-manager:setRemoteInstanceColor', async (_event, body) => 
     const saved = await dockerManager.setRemoteInstanceColor(id, color);
     const sanitized = sanitizeDockerManagerState({ remoteInstances: [saved] }).remoteInstances?.[0];
     return sanitized || dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:saveTopologyLayout', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const topology = await dockerManager.saveTopologyLayout({
+      nodes: Array.isArray(body.nodes) ? body.nodes : []
+    });
+    return sanitizeDockerManagerState({ topology }).topology;
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:createTopologyEdge', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const topology = await dockerManager.createTopologyEdge({
+      source: typeof body.source === 'string' ? body.source : '',
+      target: typeof body.target === 'string' ? body.target : '',
+      label: typeof body.label === 'string' ? body.label : ''
+    });
+    return sanitizeDockerManagerState({ topology }).topology;
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:deleteTopologyEdge', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const edgeId = typeof body.edgeId === 'string' ? body.edgeId : '';
+    const topology = await dockerManager.deleteTopologyEdge(edgeId);
+    return sanitizeDockerManagerState({ topology }).topology;
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:connectTopologyEdge', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const edgeId = typeof body.edgeId === 'string' ? body.edgeId : '';
+    const topology = await dockerManager.connectTopologyEdge(edgeId);
+    return sanitizeDockerManagerState({ topology }).topology;
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:probeTopologyEdge', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const edgeId = typeof body.edgeId === 'string' ? body.edgeId : '';
+    const result = sanitizeTopologyProbeResult(await dockerManager.probeTopologyEdge(edgeId));
+    return result || dockerManager.toErrorResponse({ code: 'INVALID_TOPOLOGY_PROBE', message: 'Invalid topology probe result' });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:prepareTopologyA2aEdge', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const edgeId = typeof body.edgeId === 'string' ? body.edgeId : '';
+    const result = sanitizeTopologyA2aSetupResult(await dockerManager.prepareTopologyA2aEdge(edgeId));
+    return result || dockerManager.toErrorResponse({ code: 'INVALID_TOPOLOGY_A2A_SETUP', message: 'Invalid topology A2A setup result' });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:sendTopologyMessage', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const result = sanitizeTopologyMessageResult(await dockerManager.sendTopologyMessage({
+      edgeId: typeof body.edgeId === 'string' ? body.edgeId : '',
+      sourceNodeId: typeof body.sourceNodeId === 'string' ? body.sourceNodeId : '',
+      targetNodeId: typeof body.targetNodeId === 'string' ? body.targetNodeId : '',
+      message: typeof body.message === 'string' ? body.message : '',
+      contextId: typeof body.contextId === 'string' ? body.contextId : ''
+    }));
+    return result || dockerManager.toErrorResponse({ code: 'INVALID_TOPOLOGY_MESSAGE', message: 'Invalid topology message result' });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:disconnectTopologyEdge', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const edgeId = typeof body.edgeId === 'string' ? body.edgeId : '';
+    const topology = await dockerManager.disconnectTopologyEdge(edgeId);
+    return sanitizeDockerManagerState({ topology }).topology;
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:setTopologyNodeRole', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const nodeId = typeof body.nodeId === 'string' ? body.nodeId : '';
+    const role = typeof body.role === 'string' ? body.role : '';
+    const topology = await dockerManager.setTopologyNodeRole(nodeId, role);
+    return sanitizeDockerManagerState({ topology }).topology;
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

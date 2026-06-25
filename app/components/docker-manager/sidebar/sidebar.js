@@ -1,6 +1,6 @@
 const STORAGE_KEY = "dm-active-tab";
 const DEFAULT_TAB = "installs";
-const VALID_TABS = new Set(["installs", "sessions", "advanced", "settings"]);
+const VALID_TABS = new Set(["installs", "sessions", "topology", "advanced", "settings"]);
 const NAVIGATE_EVENT = "dm:navigate";
 
 let programmaticNavigationBound = false;

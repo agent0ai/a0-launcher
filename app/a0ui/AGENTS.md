@@ -20,6 +20,8 @@ This scope owns:
   `js/device.js`, `js/sleep.js`, and `js/shortcuts.js`: shared client helpers.
 - `vendor/`: locally bundled third-party assets, fonts, Alpine, Ace, and Material
   Symbols.
+  - `vendor/cytoscape/`: Cytoscape.js 3.34.0 UMD bundle and MIT license copied
+    from the npm package for the Docker Manager Topology tab.
 
 ## Local Contracts
 

@@ -75,11 +75,13 @@ function installDom() {
   const navItems = [
     new MiniElement('installs', 'dm-nav-item active'),
     new MiniElement('sessions', 'dm-nav-item'),
+    new MiniElement('topology', 'dm-nav-item'),
     new MiniElement('advanced', 'dm-nav-item')
   ];
   const panels = [
     new MiniElement('installs', 'dm-tab-content active'),
     new MiniElement('sessions', 'dm-tab-content'),
+    new MiniElement('topology', 'dm-tab-content'),
     new MiniElement('advanced', 'dm-tab-content')
   ];
   const storage = new Map();
@@ -135,8 +137,8 @@ test('programmatic navigation requests use the same tab path', () => {
   }));
 
   assert.equal(dom.storage.get('dm-active-tab'), 'advanced');
-  assert.equal(dom.navItems[2].classList.contains('active'), true);
-  assert.equal(dom.panels[2].classList.contains('active'), true);
+  assert.equal(dom.navItems[3].classList.contains('active'), true);
+  assert.equal(dom.panels[3].classList.contains('active'), true);
   assert.deepEqual(events.at(-1), {
     tab: 'advanced',
     userInitiated: false,

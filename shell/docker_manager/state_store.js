@@ -84,8 +84,12 @@ const DEFAULT_STORAGE_PREFERENCES = Object.freeze({
 const MAX_REMOTE_INSTANCES = 64;
 const MAX_LOCAL_INSTANCE_NAMES = 256;
 const MAX_LOCAL_INSTANCE_COLORS = 256;
+const MAX_TOPOLOGY_NODES = 512;
+const MAX_TOPOLOGY_EDGES = 512;
 const INSTANCE_COLOR_IDS = Object.freeze(['blue', 'green', 'rose', 'amber', 'violet', 'cyan', 'coral']);
 const INSTANCE_COLOR_SET = new Set(INSTANCE_COLOR_IDS);
+const TOPOLOGY_NODE_ROLES = Object.freeze(['peer', 'coordinator', 'worker', 'tool']);
+const TOPOLOGY_NODE_ROLE_SET = new Set(TOPOLOGY_NODE_ROLES);
 
 const INSTANCE_DEFAULT_SLOT_IDS = Object.freeze(['Main', 'Utility', 'Embedding']);
 const DEFAULT_INSTANCE_PROVIDERS = Object.freeze({
@@ -557,8 +561,239 @@ async function deleteRemoteInstance(id) {
     throw err;
   }
 
-  await writeJson(stateFile(), { ...state, remoteInstances: next, updatedAt: new Date().toISOString() });
+  const topology = removeTopologyNodeRefsFromValue(state?.topology, [`remote:${cleanId}`]);
+  await writeJson(stateFile(), { ...state, remoteInstances: next, topology, updatedAt: new Date().toISOString() });
   return { deleted: true };
+}
+
+function topologyError(message = 'Invalid topology') {
+  const err = new Error(message);
+  err.code = 'INVALID_TOPOLOGY';
+  return err;
+}
+
+function normalizeTopologyIdText(value, maxLength = 160) {
+  return String(value || '')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, '')
+    .slice(0, maxLength);
+}
+
+function normalizeTopologyNodeId(value) {
+  const raw = normalizeTopologyIdText(value, 180);
+  const index = raw.indexOf(':');
+  if (index <= 0) return '';
+  const kind = raw.slice(0, index);
+  const id = raw.slice(index + 1);
+  if (kind === 'local') {
+    const localId = normalizeLocalInstanceId(id);
+    return localId ? `local:${localId}` : '';
+  }
+  if (kind === 'remote') {
+    const remoteId = normalizeRemoteInstanceId(id);
+    return remoteId ? `remote:${remoteId}` : '';
+  }
+  return '';
+}
+
+function normalizeTopologyEdgeId(value) {
+  const id = normalizeTopologyIdText(value, 120);
+  if (!id || !/^[A-Za-z0-9_.:-]+$/.test(id)) return '';
+  return id;
+}
+
+function createTopologyEdgeId() {
+  return `edge_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function normalizeTopologyLabel(value, fallback = '') {
+  const label = normalizeTopologyIdText(value, 80).replace(/\s+/g, ' ');
+  return label || fallback;
+}
+
+function normalizeTopologyNodeRole(value) {
+  const role = normalizeTopologyIdText(value, 40).toLowerCase();
+  return TOPOLOGY_NODE_ROLE_SET.has(role) ? role : 'peer';
+}
+
+function normalizeTopologyCoordinate(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(-100000, Math.min(100000, Math.round(number)));
+}
+
+function normalizeTopologyPosition(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const x = normalizeTopologyCoordinate(value.x);
+  const y = normalizeTopologyCoordinate(value.y);
+  if (x === null || y === null) return null;
+  return { x, y };
+}
+
+function topologyNodeKind(nodeId) {
+  return String(nodeId || '').startsWith('local:') ? 'local'
+    : String(nodeId || '').startsWith('remote:') ? 'remote'
+      : '';
+}
+
+function normalizeTopologyEdgeMode(mode, source, target) {
+  const requested = normalizeTopologyIdText(mode, 40).toLowerCase();
+  const bothLocal = topologyNodeKind(source) === 'local' && topologyNodeKind(target) === 'local';
+  if (requested === 'local_network' && bothLocal) return 'local_network';
+  if (requested === 'metadata') return 'metadata';
+  return bothLocal ? 'local_network' : 'metadata';
+}
+
+function normalizeTopologyConnection(value, source, target) {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  if (!input) return null;
+
+  const networkName = normalizeTopologyIdText(input.networkName, 120);
+  if (!networkName) return null;
+
+  const aliasesIn = input.aliases && typeof input.aliases === 'object' && !Array.isArray(input.aliases)
+    ? input.aliases
+    : {};
+  const aliases = {};
+  for (const nodeId of [source, target]) {
+    const alias = normalizeTopologyIdText(aliasesIn[nodeId], 120)
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '');
+    if (alias) aliases[nodeId] = alias;
+  }
+
+  const connection = { networkName };
+  const networkId = normalizeTopologyIdText(input.networkId, 180);
+  if (networkId) connection.networkId = networkId;
+  if (Object.keys(aliases).length) connection.aliases = aliases;
+  if (Array.isArray(input.hints)) {
+    const hints = [];
+    for (const hintIn of input.hints) {
+      const hint = hintIn && typeof hintIn === 'object' && !Array.isArray(hintIn) ? hintIn : {};
+      const nodeId = normalizeTopologyNodeId(hint.nodeId);
+      const alias = normalizeTopologyIdText(hint.alias, 120)
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]+/g, '-')
+        .replace(/^-+/, '')
+        .replace(/-+$/, '');
+      if (!nodeId || !alias) continue;
+      const out = { nodeId, alias };
+      const internalUrl = normalizeTopologyIdText(hint.internalUrl, 240);
+      const a2aEndpoint = normalizeTopologyIdText(hint.a2aEndpoint, 240);
+      if (/^https?:\/\/[A-Za-z0-9_.-]+(?::[0-9]{1,5})?\//.test(internalUrl)) out.internalUrl = internalUrl;
+      if (/^https?:\/\/[A-Za-z0-9_.-]+(?::[0-9]{1,5})?\//.test(a2aEndpoint)) out.a2aEndpoint = a2aEndpoint;
+      hints.push(out);
+      if (hints.length >= 8) break;
+    }
+    if (hints.length) connection.hints = hints;
+  }
+  if (typeof input.connectedAt === 'string') connection.connectedAt = input.connectedAt;
+  return connection;
+}
+
+function normalizeTopologyNode(value) {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const id = normalizeTopologyNodeId(input.id);
+  if (!id) return null;
+
+  const node = {
+    id,
+    role: normalizeTopologyNodeRole(input.role)
+  };
+
+  const position = normalizeTopologyPosition(input.position);
+  if (position) node.position = position;
+  const label = normalizeTopologyLabel(input.label);
+  if (label) node.label = label;
+  return node;
+}
+
+function normalizeTopologyEdge(value, options = {}) {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const source = normalizeTopologyNodeId(input.source);
+  const target = normalizeTopologyNodeId(input.target);
+  if (!source || !target || source === target) return null;
+
+  const id = normalizeTopologyEdgeId(input.id) || (options.createIds === true ? createTopologyEdgeId() : '');
+  if (!id) return null;
+
+  const mode = normalizeTopologyEdgeMode(input.mode, source, target);
+  const edge = {
+    id,
+    source,
+    target,
+    mode,
+    label: normalizeTopologyLabel(input.label, mode === 'local_network' ? 'Local link' : 'Reference link')
+  };
+
+  const connection = mode === 'local_network'
+    ? normalizeTopologyConnection(input.connection, source, target)
+    : null;
+  if (connection) edge.connection = connection;
+  if (typeof input.createdAt === 'string') edge.createdAt = input.createdAt;
+  if (typeof input.updatedAt === 'string') edge.updatedAt = input.updatedAt;
+  return edge;
+}
+
+function normalizeTopology(value, options = {}) {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const nodes = [];
+  const seenNodes = new Set();
+  for (const rawNode of Array.isArray(input.nodes) ? input.nodes : []) {
+    const node = normalizeTopologyNode(rawNode);
+    if (!node || seenNodes.has(node.id)) continue;
+    seenNodes.add(node.id);
+    nodes.push(node);
+    if (nodes.length >= MAX_TOPOLOGY_NODES) break;
+  }
+
+  const edges = [];
+  const seenEdges = new Set();
+  for (const rawEdge of Array.isArray(input.edges) ? input.edges : []) {
+    const edge = normalizeTopologyEdge(rawEdge, options);
+    if (!edge || seenEdges.has(edge.id)) continue;
+    seenEdges.add(edge.id);
+    edges.push(edge);
+    if (edges.length >= MAX_TOPOLOGY_EDGES) break;
+  }
+
+  return { version: 1, nodes, edges };
+}
+
+function removeTopologyNodeRefsFromValue(topology, nodeIds) {
+  const remove = new Set((Array.isArray(nodeIds) ? nodeIds : [])
+    .map((id) => normalizeTopologyNodeId(id))
+    .filter(Boolean));
+  const current = normalizeTopology(topology);
+  if (!remove.size) return current;
+  return {
+    version: 1,
+    nodes: current.nodes.filter((node) => !remove.has(node.id)),
+    edges: current.edges.filter((edge) => !remove.has(edge.source) && !remove.has(edge.target))
+  };
+}
+
+async function readTopology() {
+  const state = await readJson(stateFile(), {});
+  return normalizeTopology(state?.topology);
+}
+
+async function writeTopology(topology) {
+  const normalized = normalizeTopology(topology, { createIds: true });
+  const state = await readJson(stateFile(), {});
+  await writeJson(stateFile(), { ...state, topology: normalized, updatedAt: new Date().toISOString() });
+  return normalized;
+}
+
+async function deleteTopologyNodeRefs(nodeIds) {
+  const state = await readJson(stateFile(), {});
+  const before = normalizeTopology(state?.topology);
+  const after = removeTopologyNodeRefsFromValue(before, nodeIds);
+  if (JSON.stringify(before) === JSON.stringify(after)) return after;
+  await writeJson(stateFile(), { ...state, topology: after, updatedAt: new Date().toISOString() });
+  return after;
 }
 
 module.exports = {
@@ -596,6 +831,15 @@ module.exports = {
   writeRemoteInstance,
   deleteRemoteInstance,
 
+  // Instance topology metadata
+  readTopology,
+  writeTopology,
+  deleteTopologyNodeRefs,
+  normalizeTopology,
+  normalizeTopologyNodeId,
+  normalizeTopologyEdgeId,
+  createTopologyEdgeId,
+
   // Local instance display names
   readLocalInstanceNames,
   writeLocalInstanceName,
@@ -613,5 +857,12 @@ module.exports = {
 
   // Installability cache
   readInstallabilityCache,
-  writeInstallabilityCache
+  writeInstallabilityCache,
+
+  _test: {
+    normalizeTopology,
+    normalizeTopologyNodeId,
+    normalizeTopologyEdgeId,
+    removeTopologyNodeRefsFromValue
+  }
 };
