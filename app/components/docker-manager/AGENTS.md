@@ -74,7 +74,8 @@ This scope owns:
 - Sidebar navigation publishes `dm:nav`; click-originated events include
   `userInitiated` so the renderer coordinator can refresh data-heavy tabs.
   Tab content activation remains owned by the renderer coordinator, not
-  individual tab content components. Programmatic tab handoffs should dispatch
+  individual tab content components. Instances is the first sidebar item and
+  the default launcher view. Programmatic tab handoffs should dispatch
   `dm:navigate` and let the sidebar apply the tab plus publish `dm:nav`.
 - Empty, loading, error, success, and disabled states must be explicit enough
   that the user is never left wondering whether Docker or the launcher is still

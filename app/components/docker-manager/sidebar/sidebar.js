@@ -1,5 +1,5 @@
 const STORAGE_KEY = "dm-active-tab";
-const DEFAULT_TAB = "installs";
+const DEFAULT_TAB = "sessions";
 const VALID_TABS = new Set(["installs", "sessions", "advanced", "settings"]);
 const NAVIGATE_EVENT = "dm:navigate";
 

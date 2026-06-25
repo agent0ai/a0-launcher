@@ -73,13 +73,13 @@ class MiniWindow {
 
 function installDom() {
   const navItems = [
-    new MiniElement('installs', 'dm-nav-item active'),
-    new MiniElement('sessions', 'dm-nav-item'),
+    new MiniElement('sessions', 'dm-nav-item active'),
+    new MiniElement('installs', 'dm-nav-item'),
     new MiniElement('advanced', 'dm-nav-item')
   ];
   const panels = [
-    new MiniElement('installs', 'dm-tab-content active'),
-    new MiniElement('sessions', 'dm-tab-content'),
+    new MiniElement('sessions', 'dm-tab-content active'),
+    new MiniElement('installs', 'dm-tab-content'),
     new MiniElement('advanced', 'dm-tab-content')
   ];
   const storage = new Map();
@@ -106,22 +106,41 @@ function installDom() {
 const dom = installDom();
 const { NAVIGATE_EVENT, bindProgrammaticNavigation, navigateToTab } = await import('./sidebar.js');
 
+test('empty navigation falls back to Instances as the default tab', () => {
+  const events = [];
+  window.addEventListener('dm:nav', (event) => events.push(event.detail));
+
+  const tab = navigateToTab('', { userInitiated: false, source: 'initial' });
+
+  assert.equal(tab, 'sessions');
+  assert.equal(dom.storage.get('dm-active-tab'), 'sessions');
+  assert.equal(dom.navItems[0].classList.contains('active'), true);
+  assert.equal(dom.navItems[1].classList.contains('active'), false);
+  assert.equal(dom.panels[0].classList.contains('active'), true);
+  assert.equal(dom.panels[1].classList.contains('active'), false);
+  assert.deepEqual(events.at(-1), {
+    tab: 'sessions',
+    userInitiated: false,
+    source: 'initial'
+  });
+});
+
 test('navigateToTab updates the visible tab and publishes navigation detail', () => {
   const events = [];
   window.addEventListener('dm:nav', (event) => events.push(event.detail));
 
-  const tab = navigateToTab('sessions', { userInitiated: false, source: 'run-completed' });
+  const tab = navigateToTab('installs', { userInitiated: true, source: 'sidebar' });
 
-  assert.equal(tab, 'sessions');
-  assert.equal(dom.storage.get('dm-active-tab'), 'sessions');
+  assert.equal(tab, 'installs');
+  assert.equal(dom.storage.get('dm-active-tab'), 'installs');
   assert.equal(dom.navItems[0].classList.contains('active'), false);
   assert.equal(dom.navItems[1].classList.contains('active'), true);
   assert.equal(dom.panels[0].classList.contains('active'), false);
   assert.equal(dom.panels[1].classList.contains('active'), true);
   assert.deepEqual(events.at(-1), {
-    tab: 'sessions',
-    userInitiated: false,
-    source: 'run-completed'
+    tab: 'installs',
+    userInitiated: true,
+    source: 'sidebar'
   });
 });
 
