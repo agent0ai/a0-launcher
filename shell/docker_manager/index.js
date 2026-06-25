@@ -2,6 +2,7 @@ const { EventEmitter } = require('node:events');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const http = require('node:http');
+const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
 const os = require('node:os');
@@ -28,6 +29,9 @@ const IMAGE_REPO_ENV_VAR = 'A0_BACKEND_IMAGE_REPO';
 const GITHUB_REPO_ENV_VAR = 'A0_BACKEND_GITHUB_REPO';
 const UI_READY_TIMEOUT_MS = 5 * 60_000;
 const UI_READY_ATTEMPT_TIMEOUT_MS = 2_000;
+const REMOTE_HEALTH_PATH = '/api/health';
+const REMOTE_HEALTH_TIMEOUT_MS = 1_500;
+const REMOTE_HEALTH_CACHE_TTL_MS = 30_000;
 const CONTAINER_LOG_DEFAULT_LINES = 400;
 const CONTAINER_LOG_MAX_LINES = 1500;
 const CONTAINER_LOG_MAX_CHARS = 12_000;
@@ -126,6 +130,8 @@ const CLONE_SETTINGS_FIELDS = Object.freeze({
 const CHANNEL_TAGS = Object.freeze(['latest', 'ready', 'testing']);
 const CANONICAL_LOCAL_TAGS = Object.freeze(['local', 'development', 'main']);
 const CONTAINER_SOURCE_WORKDIRS = Object.freeze(['/a0', '/app', '/agent-zero']);
+const remoteHealthCache = new Map();
+const remoteHealthPending = new Map();
 
 function logDockerManagerError(op, error, details = {}) {
   const payload = { ...details };
@@ -1173,7 +1179,7 @@ async function buildUnavailableState(runtime) {
     portPreferences,
     storagePreferences,
     instanceDefaults: instanceDefaults || empty.instanceDefaults,
-    remoteInstances
+    remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances)
   };
 }
 
@@ -1263,6 +1269,142 @@ function isHttpPortReachable(host, port, timeoutMs) {
       resolve(false);
     });
     req.end();
+  });
+}
+
+function remoteHealthKey(remote = {}) {
+  return `${String(remote?.id || '').trim()}\n${String(remote?.url || '').trim()}`;
+}
+
+function remoteHealthUrl(remoteUrl) {
+  const url = new URL(String(remoteUrl || ''));
+  const basePath = String(url.pathname || '/').replace(/\/+$/, '');
+  url.pathname = `${basePath || ''}${REMOTE_HEALTH_PATH}`;
+  url.search = '';
+  url.hash = '';
+  return url;
+}
+
+function remoteHealthSnapshot(entry = null, fallbackStatus = 'checking') {
+  const status = entry?.status === 'online' || entry?.status === 'offline' || entry?.status === 'checking'
+    ? entry.status
+    : fallbackStatus;
+  const out = { status };
+  if (typeof entry?.checkedAt === 'string') out.checkedAt = entry.checkedAt;
+  if (typeof entry?.error === 'string' && entry.error) out.error = entry.error.slice(0, 160);
+  return out;
+}
+
+function requestRemoteHealth(url, timeoutMs = REMOTE_HEALTH_TIMEOUT_MS) {
+  let parsed;
+  try {
+    parsed = url instanceof URL ? url : new URL(String(url || ''));
+  } catch {
+    return Promise.resolve({ online: false, error: 'Invalid remote health URL' });
+  }
+
+  const transport = parsed.protocol === 'https:' ? https : parsed.protocol === 'http:' ? http : null;
+  if (!transport) return Promise.resolve({ online: false, error: 'Unsupported remote health URL' });
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const req = transport.request(
+      parsed,
+      {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'A0-Launcher',
+          'Accept': 'application/json,*/*'
+        }
+      },
+      (res) => {
+        try {
+          res.resume();
+        } catch {
+          // ignore
+        }
+        const status = Number(res.statusCode);
+        finish({
+          online: Number.isFinite(status) && status >= 200 && status < 400,
+          statusCode: Number.isFinite(status) ? status : null,
+          error: Number.isFinite(status) && status >= 400 ? `HTTP ${status}` : ''
+        });
+      }
+    );
+    req.once('error', (error) => {
+      finish({ online: false, error: error?.code || error?.message || 'Health check failed' });
+    });
+    req.setTimeout(Math.max(250, Math.floor(timeoutMs || REMOTE_HEALTH_TIMEOUT_MS)), () => {
+      try {
+        req.destroy();
+      } catch {
+        // ignore
+      }
+      finish({ online: false, error: 'Health check timed out' });
+    });
+    req.end();
+  });
+}
+
+async function probeRemoteHealth(remote = {}) {
+  const key = remoteHealthKey(remote);
+  try {
+    const healthUrl = remoteHealthUrl(remote?.url || '');
+    const result = await requestRemoteHealth(healthUrl, REMOTE_HEALTH_TIMEOUT_MS);
+    const entry = {
+      status: result?.online ? 'online' : 'offline',
+      checkedAt: new Date().toISOString(),
+      error: result?.online ? '' : String(result?.error || 'Health check failed').slice(0, 160)
+    };
+    remoteHealthCache.set(key, entry);
+    return entry;
+  } catch (error) {
+    const entry = {
+      status: 'offline',
+      checkedAt: new Date().toISOString(),
+      error: error?.message || 'Health check failed'
+    };
+    remoteHealthCache.set(key, entry);
+    return entry;
+  } finally {
+    remoteHealthPending.delete(key);
+  }
+}
+
+function enrichRemoteInstancesWithHealth(remoteInstances = [], options = {}) {
+  const remotes = Array.isArray(remoteInstances) ? remoteInstances : [];
+  const now = Date.now();
+  const forceRefresh = options?.forceRefresh === true;
+  return remotes.map((remote) => {
+    const key = remoteHealthKey(remote);
+    const cached = remoteHealthCache.get(key) || null;
+    const checkedAtMs = isoToMs(cached?.checkedAt);
+    const fresh = !forceRefresh && Number.isFinite(checkedAtMs) && now - checkedAtMs < REMOTE_HEALTH_CACHE_TTL_MS;
+    const pending = remoteHealthPending.has(key);
+    if ((!cached || !fresh) && !pending) {
+      const pendingProbe = probeRemoteHealth(remote)
+        .then(() => {
+          if (_cachedState?.remoteInstances) {
+            _cachedState = {
+              ..._cachedState,
+              remoteInstances: enrichRemoteInstancesWithHealth(_cachedState.remoteInstances)
+            };
+            events.emit('state', _cachedState);
+          }
+        })
+        .catch(() => {});
+      remoteHealthPending.set(key, pendingProbe);
+    }
+
+    return {
+      ...remote,
+      health: remoteHealthSnapshot(cached, cached ? cached.status : 'checking')
+    };
   });
 }
 
@@ -1641,6 +1783,7 @@ async function buildDerivedState(options = {}) {
   const releases = Array.isArray(releasesResult?.releases) ? releasesResult.releases : [];
   const offline = !!releasesResult?.offline;
   const lastSyncedAt = releasesResult?.lastSyncedAt || null;
+  const remoteInstancesWithHealth = enrichRemoteInstancesWithHealth(remoteInstances, { forceRefresh });
 
   // Trim dead official releases: allow gaps, but once we see 2 missing in a row,
   // assume we've reached the tail where older tags are no longer available on Docker Hub.
@@ -2006,7 +2149,7 @@ async function buildDerivedState(options = {}) {
     versions: releaseEntries,
     containers,
     retainedInstances,
-    remoteInstances,
+    remoteInstances: remoteInstancesWithHealth,
     retentionPolicy,
     portPreferences,
     storagePreferences,
@@ -2024,6 +2167,12 @@ async function refreshDockerManager(options = {}) {
   const forceRefresh = !!options.forceRefresh;
   const state = await buildDerivedState({ forceRefresh });
   _cachedState = stateWithBackgroundOperations(state);
+  if (Array.isArray(_cachedState.remoteInstances)) {
+    _cachedState = {
+      ..._cachedState,
+      remoteInstances: enrichRemoteInstancesWithHealth(_cachedState.remoteInstances)
+    };
+  }
   events.emit('state', _cachedState);
   return _cachedState;
 }
@@ -3577,7 +3726,7 @@ async function addRemoteInstance(remoteInstance) {
   const saved = await stateStore.writeRemoteInstance(remoteInstance);
   if (_cachedState) {
     const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances };
+    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances, { forceRefresh: true }) };
     events.emit('state', _cachedState);
   }
   return saved;
@@ -3587,7 +3736,7 @@ async function deleteRemoteInstance(id) {
   const result = await stateStore.deleteRemoteInstance(id);
   if (_cachedState) {
     const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances };
+    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances) };
     events.emit('state', _cachedState);
   }
   return result;
@@ -3602,7 +3751,7 @@ async function renameRemoteInstance(id, name) {
   });
   if (_cachedState) {
     const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances };
+    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances) };
     events.emit('state', _cachedState);
   }
   return saved;
@@ -3618,7 +3767,7 @@ async function setRemoteInstanceColor(id, color) {
   });
   if (_cachedState) {
     const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances };
+    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances) };
     events.emit('state', _cachedState);
   }
   return saved;
@@ -5195,7 +5344,7 @@ async function getDockerInventory() {
     images,
     containers,
     volumes,
-    remoteInstances,
+    remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances),
     backgroundOperations: backgroundOperationsSnapshot()
   };
 }
@@ -5361,6 +5510,8 @@ module.exports = {
     workspaceStorageFromInspect,
     workspaceHostPathFromInspect,
     waitForUiReachable,
+    remoteHealthUrl,
+    requestRemoteHealth,
     parsePortMappings,
     settlePortMappings,
     replacementPortMappingsFromInspect,

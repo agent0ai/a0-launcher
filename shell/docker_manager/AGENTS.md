@@ -105,6 +105,9 @@ This scope owns:
 - Remote instances must normalize and validate URLs before persistence. Their
   optional saved `color` field uses the same bounded palette IDs as local
   Instance color overrides.
+  Remote instance online/offline status is transient renderer state from a
+  bounded `/api/health` probe and must not be persisted into saved remote
+  instance records.
 - Retained local containers are rollback targets and should keep enough metadata
   for the renderer to display them without re-inspecting every container
   needlessly.

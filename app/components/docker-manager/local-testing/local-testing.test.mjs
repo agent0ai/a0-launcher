@@ -18,6 +18,7 @@ const {
   computeCardMenuPlacement,
   emptyInstancesStateModel,
   instancePowerMenuConfig,
+  remoteInstanceStatusModel,
   instanceVisualBadge,
   openCardMenu
 } = await import('./local-testing.js');
@@ -169,6 +170,17 @@ test('empty Instances state offers latest install after first inventory', () => 
     }).disabled,
     true
   );
+});
+
+test('remote instance status labels health states', () => {
+  assert.deepEqual(remoteInstanceStatusModel({ health: { status: 'online' } }), {
+    className: 'status-online',
+    label: 'Online',
+    title: 'Remote health check is online'
+  });
+  assert.equal(remoteInstanceStatusModel({ health: { status: 'offline', error: 'ECONNREFUSED' } }).label, 'Offline');
+  assert.equal(remoteInstanceStatusModel({ health: { status: 'checking' } }).label, 'Checking');
+  assert.equal(remoteInstanceStatusModel({}).label, 'Checking');
 });
 
 test('card menu placement reserves fixed bottom chrome in short windows', () => {

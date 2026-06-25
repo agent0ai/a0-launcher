@@ -245,6 +245,8 @@ This scope owns:
   same bounded palette for local and saved remote cards. Do not persist raw CSS,
   arbitrary color strings, or Docker labels for this preference.
 - Saved remote URL-only instance cards must not expose Docker mutation actions.
+  Their footer status should display the Docker Manager-provided remote health
+  state as `Online`, `Offline`, or `Checking`, not a generic `Remote` tag.
   A saved remote card may show `Clone locally` only when its URL is loopback
   (`localhost`, `127.0.0.1`, or IPv6 loopback) and the port matches a discovered
   local Docker container; the action must clone that local container.

@@ -2698,6 +2698,7 @@ function sanitizeDockerManagerState(state) {
   const allowedAvailability = new Set(['available', 'installed', 'update_available', 'installing', 'error']);
   const allowedInstallability = new Set(['unknown', 'installable', 'not_yet_available']);
   const allowedInstanceColors = new Set(['blue', 'green', 'rose', 'amber', 'violet', 'cyan', 'coral']);
+  const allowedRemoteHealthStatuses = new Set(['checking', 'online', 'offline']);
   const cleanInstanceColor = (value) => {
     const color = typeof value === 'string' ? value.trim().toLowerCase() : '';
     return allowedInstanceColors.has(color) ? color : '';
@@ -2906,6 +2907,16 @@ function sanitizeDockerManagerState(state) {
     if (color) out.color = color;
     if (typeof r.createdAt === 'string') out.createdAt = r.createdAt;
     if (typeof r.updatedAt === 'string') out.updatedAt = r.updatedAt;
+    if (isPlainObject(r.health)) {
+      const status = typeof r.health.status === 'string' ? r.health.status : '';
+      if (allowedRemoteHealthStatuses.has(status)) {
+        out.health = { status };
+        if (typeof r.health.checkedAt === 'string') out.health.checkedAt = r.health.checkedAt;
+        if (typeof r.health.error === 'string' && r.health.error) {
+          out.health.error = r.health.error.slice(0, 160);
+        }
+      }
+    }
     remoteInstances.push(out);
   }
 

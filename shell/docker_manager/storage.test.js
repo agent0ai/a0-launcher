@@ -18,6 +18,8 @@ const {
   workspaceStorageFromInspect,
   workspaceHostPathFromInspect,
   waitForUiReachable,
+  remoteHealthUrl,
+  requestRemoteHealth,
   parsePortMappings,
   settlePortMappings,
   replacementPortMappingsFromInspect,
@@ -174,6 +176,35 @@ test('UI readiness wait retries while a published port is still warming up', asy
     assert.equal(result.ok, true);
     assert.equal(result.uiUrl, `http://127.0.0.1:${address.port}/`);
     assert.ok(hits >= 2);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('remote health URL preserves saved base paths', () => {
+  assert.equal(
+    remoteHealthUrl('https://example.com/agent-zero/?tab=home').href,
+    'https://example.com/agent-zero/api/health'
+  );
+  assert.equal(
+    remoteHealthUrl('http://127.0.0.1:5080/').href,
+    'http://127.0.0.1:5080/api/health'
+  );
+});
+
+test('remote health check uses the Agent Zero health endpoint', async () => {
+  let requestedPath = '';
+  const server = http.createServer((req, res) => {
+    requestedPath = req.url || '';
+    res.statusCode = requestedPath === '/api/health' ? 200 : 404;
+    res.end('ok');
+  });
+  const address = await listenLocalServer(server);
+
+  try {
+    const result = await requestRemoteHealth(`http://127.0.0.1:${address.port}/api/health`, 500);
+    assert.equal(result.online, true);
+    assert.equal(requestedPath, '/api/health');
   } finally {
     await closeServer(server);
   }

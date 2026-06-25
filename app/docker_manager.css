@@ -999,6 +999,12 @@ body {
   background: color-mix(in srgb, #7ddc8f 10%, transparent);
 }
 
+.status-online {
+  color: #7ddc8f;
+  border-color: #7ddc8f;
+  background: color-mix(in srgb, #7ddc8f 10%, transparent);
+}
+
 .status-active,
 .status-installed {
   color: #7ddc8f;
@@ -1015,6 +1021,18 @@ body {
   color: var(--color-highlight);
   border-color: var(--color-highlight);
   background: color-mix(in srgb, var(--color-highlight) 10%, transparent);
+}
+
+.status-checking {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  background: color-mix(in srgb, var(--color-panel) 54%, transparent);
+}
+
+.status-offline {
+  color: #fda4af;
+  border-color: #fda4af;
+  background: color-mix(in srgb, #fda4af 10%, transparent);
 }
 
 .status-update,

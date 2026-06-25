@@ -302,6 +302,30 @@ function remoteInstanceVisualSeed(remote) {
   return remote?.url || remote?.name || remote?.id || "remote";
 }
 
+function remoteInstanceStatusModel(remote) {
+  const status = String(remote?.health?.status || "").trim().toLowerCase();
+  if (status === "online") {
+    return {
+      className: "status-online",
+      label: "Online",
+      title: "Remote health check is online"
+    };
+  }
+  if (status === "offline") {
+    const error = typeof remote?.health?.error === "string" ? remote.health.error.trim() : "";
+    return {
+      className: "status-offline",
+      label: "Offline",
+      title: error ? `Remote health check failed: ${error}` : "Remote health check failed"
+    };
+  }
+  return {
+    className: "status-checking",
+    label: "Checking",
+    title: "Checking remote health"
+  };
+}
+
 function closeDialog(dialog) {
   if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
 }
@@ -1258,8 +1282,10 @@ function renderRemoteInstance(list, remote, state) {
   footer.className = "dm-card-footer";
 
   const statusEl = document.createElement("span");
-  statusEl.className = "status status-remote";
-  statusEl.textContent = "Remote";
+  const remoteStatus = remoteInstanceStatusModel(remote);
+  statusEl.className = `status ${remoteStatus.className}`;
+  statusEl.textContent = remoteStatus.label;
+  statusEl.title = remoteStatus.title;
   footer.appendChild(statusEl);
 
   const actions = document.createElement("div");
@@ -1368,6 +1394,7 @@ export {
   computeCardMenuPlacement,
   emptyInstancesStateModel,
   instancePowerMenuConfig,
+  remoteInstanceStatusModel,
   instanceVisualBadge,
   openCardMenu
 };
