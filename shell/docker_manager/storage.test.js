@@ -728,7 +728,7 @@ test('launcher backup metadata matches Agent Zero core /a0/usr backup shape', ()
   assert.deepEqual(metadata.backup_config.include_patterns, ['/a0/usr/**']);
   assert.equal(metadata.environment_info.agent_zero_root, '/a0');
   assert.equal(metadata.environment_info.working_directory, '/a0');
-  assert.equal(metadata.system_info.source, 'A0 Launcher');
+  assert.equal(metadata.system_info.source, 'Agent Zero Launcher');
   assert.equal(metadata.system_info.source_instance, 'Main');
   assert.equal(metadata.total_files, 1);
   assert.equal(metadata.backup_size, 42);

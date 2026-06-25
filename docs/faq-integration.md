@@ -1,6 +1,6 @@
-# FAQ: A0 Launcher Integration
+# FAQ: Agent Zero Launcher Integration
 
-## What is A0 Launcher?
+## What is Agent Zero Launcher?
 
 A lightweight Electron desktop shell that manages Agent Zero instances via Docker and displays a UI downloaded from GitHub Releases.
 
@@ -8,11 +8,11 @@ A lightweight Electron desktop shell that manages Agent Zero instances via Docke
 
 The actual agent/backend system (capabilities, tools, runtime). It is the "engine", not the launcher UI shell.
 
-## How do A0 Launcher and Agent Zero relate?
+## How do Agent Zero Launcher and Agent Zero relate?
 
 - **Agent Zero Core**: the agent runtime + backend logic.
 - **Agent Zero WebUI**: the web interface that talks to the backend.
-- **A0 Launcher**: an Electron desktop wrapper that manages Docker instances and loads UI content.
+- **Agent Zero Launcher**: an Electron desktop wrapper that manages Docker instances and loads UI content.
 
 The launcher uses the same UI framework as Agent Zero (styles, component loader, Alpine stores, modals) so the two projects share a common look and feel.
 

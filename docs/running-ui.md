@@ -1,4 +1,4 @@
-# Running the UI (A0 Launcher)
+# Running the UI (Agent Zero Launcher)
 
 ## Architecture overview
 

@@ -1,6 +1,6 @@
-# A0 Launcher
+# Agent Zero Launcher
 
-A0 Launcher is an Electron desktop app for installing, running, switching,
+Agent Zero Launcher is an Electron desktop app for installing, running, switching,
 inspecting, and opening Dockerized Agent Zero instances without making Docker the
 first thing a user has to understand.
 

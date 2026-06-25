@@ -48,7 +48,7 @@
   "build": {
     "appId": "ai.agent0.launcher",
     "artifactName": "a0-launcher-${version}.${ext}",
-    "productName": "A0 Launcher",
+    "productName": "Agent Zero Launcher",
     "npmRebuild": false,
     "publish": {
       "provider": "github",

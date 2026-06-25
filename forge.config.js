@@ -32,7 +32,7 @@ const shouldNotarize = (() => {
 
 module.exports = {
   packagerConfig: {
-    name: "A0 Launcher",
+    name: "Agent Zero Launcher",
     executableName: "a0-launcher",
     appBundleId: "ai.agent0.launcher",
     asar: true,
@@ -78,7 +78,7 @@ module.exports = {
       name: "@electron-forge/maker-dmg",
       platforms: ["darwin"],
       config: {
-        name: "A0 Launcher",
+        name: "Agent Zero Launcher",
         icon: path.join(__dirname, "shell", "assets", "icon.icns"),
         format: "ULFO",
       },
@@ -89,7 +89,7 @@ module.exports = {
       config: {
         options: {
           name: "a0-launcher",
-          productName: "A0 Launcher",
+          productName: "Agent Zero Launcher",
           maintainer: "Agent Zero Team",
           homepage: "https://github.com/agent0ai/a0-launcher",
           icon: path.join(__dirname, "shell", "assets", "icon.png"),

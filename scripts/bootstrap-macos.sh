@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bootstrap a fresh macOS dev VM for A0 Launcher.
+# Bootstrap a fresh macOS dev VM for Agent Zero Launcher.
 # Intended for ephemeral machines where you want a repeatable "clone -> run/build -> test" flow.
 #
 # What it does:

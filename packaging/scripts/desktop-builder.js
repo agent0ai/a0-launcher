@@ -466,7 +466,7 @@ async function runDesktopPackaging(platformKey, argv = process.argv.slice(2)) {
     console.warn(`Warning: ${warning}`);
   });
 
-  console.log(`Packaging A0 Launcher for ${platformSpec.label}...`);
+  console.log(`Packaging Agent Zero Launcher for ${platformSpec.label}...`);
 
   const artifacts = await build({
     projectDir: PROJECT_ROOT,

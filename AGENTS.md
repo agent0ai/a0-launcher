@@ -4,8 +4,8 @@ Guidance for AI coding agents working in `/home/eclypso/a0/a0-launcher`.
 
 ## Purpose
 
-This root DOX file owns repo-wide policy for the A0 Launcher and is the first
-contract to read before editing any project file.
+This root DOX file owns repo-wide policy for the Agent Zero Launcher and is the
+first contract to read before editing any project file.
 
 The launcher is an Electron desktop app that lets people install, activate,
 switch, inspect, and open Dockerized Agent Zero instances without needing to

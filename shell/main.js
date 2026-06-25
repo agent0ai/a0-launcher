@@ -1268,7 +1268,7 @@ function createWindow(mode = 'splash') {
     height: isSplash ? 300 : 800,
     minWidth: isSplash ? 360 : 800,
     minHeight: isSplash ? 300 : 600,
-    title: 'A0 Launcher',
+    title: 'Agent Zero Launcher',
     icon: iconPath,
     show: false,
     frame: !isSplash,

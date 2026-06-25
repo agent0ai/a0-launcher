@@ -2779,7 +2779,7 @@ function buildAgentZeroBackupMetadata({ filePath, files, sourceName }) {
     include_patterns: [`${WORKSPACE_MOUNT_TARGET}/**`],
     exclude_patterns: [],
     system_info: {
-      source: 'A0 Launcher',
+      source: 'Agent Zero Launcher',
       source_instance: String(sourceName || '').slice(0, 160)
     },
     environment_info: {
@@ -2788,7 +2788,7 @@ function buildAgentZeroBackupMetadata({ filePath, files, sourceName }) {
       runtime_mode: 'container',
       source: 'a0-launcher'
     },
-    backup_author: 'A0 Launcher',
+    backup_author: 'Agent Zero Launcher',
     backup_config: {
       include_patterns: [`${WORKSPACE_MOUNT_TARGET}/**`],
       exclude_patterns: [],
@@ -4101,8 +4101,8 @@ async function cloneLocalInstance(containerId, options = {}) {
       updateOperationProgress({ headline: cloneHeadline, message: 'Snapshotting container', progress: null });
       await docker.commitContainer(target.containerId, cloneImageRef, {
         pause: true,
-        comment: 'A0 Launcher instance clone',
-        author: 'A0 Launcher'
+        comment: 'Agent Zero Launcher instance clone',
+        author: 'Agent Zero Launcher'
       });
 
       updateOperationProgress({ headline: cloneHeadline, message: 'Creating clone on open ports', progress: null });
@@ -4222,8 +4222,8 @@ async function migrateLocalInstanceStorage(containerId, options = {}) {
       updateOperationProgress({ headline: migrationHeadline, message: 'Snapshotting legacy instance', progress: null });
       await docker.commitContainer(target.containerId, cloneImageRef, {
         pause: true,
-        comment: 'A0 Launcher workspace migration',
-        author: 'A0 Launcher'
+        comment: 'Agent Zero Launcher workspace migration',
+        author: 'Agent Zero Launcher'
       });
 
       updateOperationProgress({ headline: migrationHeadline, message: 'Creating persistent replacement', progress: null });
