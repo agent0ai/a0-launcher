@@ -64,10 +64,12 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   strip.appendChild(home);
 
   for (const tab of tabs) {
+    const tabTitle = tab?.title || "Agent Zero";
     const button = document.createElement("button");
     button.type = "button";
     button.className = `dm-instance-tab${tab?.id === selected?.id ? " active" : ""}`;
-    button.title = tab?.url ? `${tab?.title || "Agent Zero"}\n${tab.url}` : (tab?.title || "Agent Zero");
+    button.title = tabTitle;
+    button.setAttribute("aria-label", tabTitle);
     button.addEventListener("click", () => window.dockerManagerActions?.selectInstanceTab?.(tab.id));
 
     const icon = document.createElement("span");
@@ -80,11 +82,7 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
 
     const label = document.createElement("span");
     label.className = "dm-instance-tab-title";
-    label.textContent = tab?.title || "Agent Zero";
-
-    const url = document.createElement("span");
-    url.className = "dm-instance-tab-url";
-    url.textContent = tab?.url || "";
+    label.textContent = tabTitle;
 
     const close = document.createElement("span");
     close.className = "material-symbols-outlined dm-instance-tab-close";
@@ -97,7 +95,6 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
 
     button.appendChild(icon);
     copy.appendChild(label);
-    copy.appendChild(url);
     button.appendChild(copy);
     button.appendChild(close);
     strip.appendChild(button);

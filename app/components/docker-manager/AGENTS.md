@@ -267,6 +267,8 @@ This scope owns:
 - Instance tab chrome keeps a Launcher tab as the first tab whenever any
   instance UI tab is open. Selecting Launcher clears the active shell-owned
   view and leaves the launcher surface usable below the tab strip.
+  Connected instance tabs should display only the tab/instance name, not the
+  URL, so short names stay compact in the tab strip.
 
 ## Work Guidance
 

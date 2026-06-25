@@ -2647,11 +2647,9 @@ body.dm-instance-home-active .dm-page {
 }
 
 .dm-instance-tab-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  display: block;
   min-width: 0;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .dm-instance-tab-title {
@@ -2661,18 +2659,6 @@ body.dm-instance-home-active .dm-page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.dm-instance-tab-url {
-  display: block;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-text-muted);
-  font-size: 0.68rem;
-  font-weight: 400;
 }
 
 .dm-instance-tab-close {
