@@ -3,7 +3,7 @@
 ## Purpose
 
 `shell/` owns the Electron host: main process, preload bridge, content loading,
-window policy, tray behavior, IPC, and the bridge to Docker orchestration.
+window policy, IPC, and the bridge to Docker orchestration.
 
 This layer is privileged. Keep it narrow, explicit, and boring in the best way.
 
@@ -12,8 +12,8 @@ This layer is privileged. Keep it narrow, explicit, and boring in the best way.
 This scope owns:
 
 - `shell/main.js`: Electron app lifecycle, content distribution, custom
-  protocol, main windows, tray, IPC handlers, shell actions, and Docker Manager
-  event forwarding.
+  protocol, main windows, IPC handlers, shell actions, and Docker Manager event
+  forwarding.
 - `shell/preload.js`: safe renderer bridge exposed through `contextBridge`.
 - `shell/loading.html`: loading/error shell while content initializes.
 - `shell/launcher_update.js`: launcher update version formatting and legacy
@@ -155,8 +155,8 @@ This scope owns:
   Manager intent. Do not expose raw Docker log commands or shell execution.
 - Error responses should use `dockerManager.toErrorResponse()` so renderer code
   sees a stable `{ code, message }` shape.
-- The tray should reflect current Docker Manager state without becoming a second
-  state owner.
+- The launcher should not create a system tray/menu-bar status icon. Keep the
+  normal app window plus platform Dock/taskbar entry as the only shell presence.
 
 ## Work Guidance
 

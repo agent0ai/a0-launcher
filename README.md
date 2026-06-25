@@ -24,7 +24,7 @@ container, release, storage-volume, and remote-instance orchestration.
 The launcher has two layers:
 
 1. **Shell** (`shell/`)
-   - Electron main process, preload bridge, secure windows, tray, and IPC.
+   - Electron main process, preload bridge, secure windows, and IPC.
    - Downloads release content from GitHub Releases when local content is not
      requested.
    - Owns privileged Docker and terminal-launch behavior through

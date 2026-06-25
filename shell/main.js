@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, net, ipcMain, shell, Tray, Menu, nativeImage, protocol, dialog } = require('electron');
+const { app, BrowserWindow, WebContentsView, net, ipcMain, shell, nativeImage, protocol, dialog } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const os = require('node:os');
@@ -157,10 +157,6 @@ const CONTENT_SWAP_RETRY_DELAY_MS = 150;
 
 let mainWindow;
 let contentInitialized = false;
-let tray = null;
-let isQuitting = false;
-let lastDockerManagerState = null;
-let trayMenuUpdateTimer = null;
 let instanceTabs = new Map();
 let activeInstanceTabId = '';
 let instanceTabBounds = null;
@@ -682,7 +678,6 @@ async function installLauncherUpdate() {
     targetVersion: launcherUpdateState.version || ''
   });
 
-  isQuitting = true;
   setImmediate(() => {
     autoUpdater.quitAndInstall(useSilentWindowsInstall, useSilentWindowsInstall);
   });
@@ -1304,33 +1299,13 @@ function createWindow(mode = 'splash') {
     if (!windowRef.isDestroyed()) windowRef.show();
   });
 
-  // With a tray present, closing the window hides it on desktop tray platforms.
-  // On macOS, allow the window to close so the app can quit cleanly and avoid
-  // idle Electron helper processes.
-  windowRef.on('close', (e) => {
-    if (isSplash) return;
-    if (isQuitting) return;
-    if (!tray || process.platform === 'darwin') return;
-    e.preventDefault();
-    windowRef.hide();
-  });
-
   windowRef.on('closed', () => {
     if (mainWindow === windowRef) {
       if (!isSplash) cleanupInstanceTabs();
       mainWindow = null;
       mainWindowMode = '';
     }
-    if (tray) scheduleTrayMenuUpdate();
   });
-
-  const updateTrayForWindow = () => {
-    if (tray) scheduleTrayMenuUpdate();
-  };
-  windowRef.on('show', updateTrayForWindow);
-  windowRef.on('hide', updateTrayForWindow);
-  windowRef.on('minimize', updateTrayForWindow);
-  windowRef.on('restore', updateTrayForWindow);
 }
 
 async function playSplashExitAnimation(splashWindow) {
@@ -1353,126 +1328,6 @@ async function ensureAppWindowForContent() {
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close();
   }
-}
-
-function isWindowShown() {
-  try {
-    if (!mainWindow || mainWindow.isDestroyed()) return false;
-    if (!mainWindow.isVisible()) return false;
-    if (typeof mainWindow.isMinimized === 'function' && mainWindow.isMinimized()) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function toggleWindow() {
-  try {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (isWindowShown()) {
-      mainWindow.hide();
-    } else {
-      mainWindow.show();
-      if (typeof mainWindow.isMinimized === 'function' && mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.focus();
-    }
-  } catch {
-    // ignore
-  } finally {
-    if (tray) scheduleTrayMenuUpdate();
-  }
-}
-
-function activeRunningFromState(state) {
-  const versions = Array.isArray(state?.versions) ? state.versions : [];
-  const active = versions.find((v) => v && v.isActive) || null;
-  if (!active) return { hasActive: false, isRunning: false };
-  const s = typeof active.activeState === 'string' ? active.activeState : '';
-  const running = !s || String(s).toLowerCase() === 'running';
-  return { hasActive: true, isRunning: running };
-}
-
-function updateTrayMenu() {
-  if (!tray) return;
-
-  const { hasActive, isRunning } = activeRunningFromState(lastDockerManagerState);
-  const op = typeof dockerManager.getCurrentOperation === 'function' ? dockerManager.getCurrentOperation() : null;
-  const opRunning = !!op && typeof op === 'object' && op.status === 'running';
-
-  const canStart = !!hasActive && !opRunning && !isRunning;
-  const canStop = !!hasActive && !opRunning && isRunning;
-
-  const showLabel = isWindowShown() ? 'Hide' : 'Show';
-  const menu = Menu.buildFromTemplate([
-    { label: showLabel, click: toggleWindow },
-    { type: 'separator' },
-    {
-      label: 'Start',
-      enabled: canStart,
-      click: async () => {
-        try {
-          sendStatus('Starting Agent Zero...');
-          await dockerManager.startActiveInstance();
-        } catch (error) {
-          sendError(error && error.message ? error.message : 'Failed to start Agent Zero');
-        }
-      }
-    },
-    {
-      label: 'Stop',
-      enabled: canStop,
-      click: async () => {
-        try {
-          sendStatus('Stopping Agent Zero...');
-          await dockerManager.stopActiveInstance();
-        } catch (error) {
-          sendError(error && error.message ? error.message : 'Failed to stop Agent Zero');
-        }
-      }
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      }
-    }
-  ]);
-
-  tray.setContextMenu(menu);
-}
-
-function scheduleTrayMenuUpdate() {
-  if (!tray) return;
-  if (trayMenuUpdateTimer) return;
-  trayMenuUpdateTimer = setTimeout(() => {
-    trayMenuUpdateTimer = null;
-    updateTrayMenu();
-  }, 150);
-}
-
-function createTray() {
-  if (tray) return tray;
-
-  try {
-    const iconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
-    let image = nativeImage.createFromPath(iconPath);
-    if (image && !image.isEmpty() && process.platform !== 'darwin') {
-      image = image.resize({ width: 16, height: 16 });
-    }
-    tray = new Tray(image);
-    tray.setToolTip('Agent Zero');
-    updateTrayMenu();
-    tray.on('double-click', toggleWindow);
-  } catch (error) {
-    console.error('[tray] Failed to create system tray', error && error.message ? error.message : String(error));
-    tray = null;
-  }
-
-  return tray;
 }
 
 // IPC Handlers
@@ -3264,8 +3119,6 @@ function scheduleRuntimeSetupResume() {
 }
 
 dockerManager.events.on('state', (state) => {
-  lastDockerManagerState = state;
-  if (tray) scheduleTrayMenuUpdate();
   try {
     sendDockerManagerEvent('docker-manager:state', sanitizeDockerManagerState(state));
   } catch {
@@ -3274,7 +3127,6 @@ dockerManager.events.on('state', (state) => {
 });
 
 dockerManager.events.on('progress', (progress) => {
-  if (tray) scheduleTrayMenuUpdate();
   const sanitized = sanitizeDockerManagerProgress(progress);
   if (sanitized) sendDockerManagerEvent('docker-manager:progress', sanitized);
 });
@@ -3943,7 +3795,6 @@ app.whenReady().then(async () => {
   await cleanupStaleLauncherUpdaterArtifacts();
   configureLauncherAutoUpdate();
   createWindow();
-  createTray();
 
   // Wait a moment for loading screen to render
   await new Promise(resolve => setTimeout(resolve, 500));
@@ -3962,10 +3813,6 @@ app.whenReady().then(async () => {
     // Small delay for visual feedback
     await continueToAppContent({ delayMs: 800 });
   }
-});
-
-app.on('before-quit', () => {
-  isQuitting = true;
 });
 
 app.on('window-all-closed', () => {

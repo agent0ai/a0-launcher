@@ -233,6 +233,6 @@ This index must stay exhaustive.
   and updater metadata helpers.
 - `/scripts/AGENTS.md`: developer and build helper scripts.
 - `/shell/AGENTS.md`: Electron main/preload host, content loading, IPC, windows,
-  tray, and privileged orchestration.
+  and privileged orchestration.
   - `/shell/docker_adapter/AGENTS.md`: generic Docker and Docker Hub adapter.
   - `/shell/docker_manager/AGENTS.md`: Agent Zero Docker Manager product layer.

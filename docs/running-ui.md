@@ -31,7 +31,7 @@ The launcher is structured as two layers with a clean separation boundary:
 
 ### Shell layer (`shell/`)
 
-The Electron main process. It handles window management, content downloading from GitHub Releases, the `a0app://` custom protocol, system tray, and all Docker operations via IPC.
+The Electron main process. It handles window management, content downloading from GitHub Releases, the `a0app://` custom protocol, and all Docker operations via IPC.
 
 ### Content layer (`app/`)
 
