@@ -237,6 +237,37 @@ body {
   scroll-padding-block: 0.25rem;
 }
 
+.dm-tab-content[data-tab="settings"] > x-component {
+  display: block;
+  width: 100%;
+}
+
+.dm-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(20rem, 0.9fr) minmax(32rem, 1.35fr);
+  align-items: start;
+  gap: clamp(1.75rem, 3vw, 3rem);
+  width: 100%;
+  min-width: 0;
+}
+
+.dm-settings-layout > .section {
+  min-width: 0;
+}
+
+.dm-settings-layout .sv-card-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+@media (max-width: 1180px) {
+  .dm-settings-layout {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
 .sv-page {
   width: 100%;
   max-width: none;
@@ -2904,6 +2935,11 @@ body.dm-instance-home-active .dm-page {
   }
 
   .sv-settings-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-settings-layout .dm-model-section,
+  .dm-settings-layout .dm-model-row {
     grid-template-columns: 1fr;
   }
 
