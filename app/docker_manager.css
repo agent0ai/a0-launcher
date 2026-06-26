@@ -1599,6 +1599,13 @@ body {
   border-top: 1px solid var(--dm-line-soft);
 }
 
+.dm-dialog-footer-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .dm-dialog-title {
   margin: 0;
   font-size: 1rem;

@@ -652,9 +652,11 @@ function openInstanceCredentialsDialog({ displayName, credentials = null, onSave
           <div class="dm-field-hint">${saved ? "A password is already saved. Enter a password here only when saving a replacement." : "The launcher stores this with the operating system's secure storage."}</div>
         </div>
       </div>
-      <div class="dm-dialog-footer">
-        ${saved ? '<button class="button" type="button" data-clear-credentials>Clear</button>' : '<span></span>'}
-        <button class="button" type="button" data-dialog-close>Cancel</button>
+      <div class="dm-dialog-footer dm-credentials-dialog-footer">
+        <div class="dm-dialog-footer-group">
+          <button class="button" type="button" data-dialog-close>Cancel</button>
+          ${saved ? '<button class="button" type="button" data-clear-credentials>Clear</button>' : ''}
+        </div>
         <button class="button confirm" type="submit">Save</button>
       </div>
     </form>
