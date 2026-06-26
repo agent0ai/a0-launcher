@@ -51,7 +51,10 @@ This scope owns:
   launching, the shell should use a native directory picker so the user chooses
   the CLI working folder; canceling that picker is a quiet no-op. Start the
   interactive CLI through a launcher-owned wrapper script rather than a long
-  inline shell command so Textual receives normal terminal input.
+  inline shell command so Textual receives normal terminal input. If a local
+  Instance has launcher-saved credentials, pass them to `a0` only as ephemeral
+  `A0_USERNAME` and `A0_PASSWORD` environment variables for that terminal
+  launch; do not write passwords into wrapper scripts or command lines.
 - A0 CLI availability shown to the renderer is based on whether the `a0`
   terminal command can be discovered on the host. Installing A0 CLI is a named
   shell-owned intent that opens a fixed installer wrapper for the official

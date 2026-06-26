@@ -2269,10 +2269,43 @@ function writeA0CliLaunchPowerShellWrapper(host, cli, workingDirectory) {
   return scriptPath;
 }
 
-function openA0CliTerminalWindows(host, cli, workingDirectory) {
+function a0CliLaunchEnv(host, credentials = null) {
+  const env = { ...process.env, AGENT_ZERO_HOST: host };
+  const username = typeof credentials?.username === 'string' ? credentials.username.trim() : '';
+  const password = typeof credentials?.password === 'string' ? credentials.password : '';
+  if (username && password) {
+    env.A0_USERNAME = username;
+    env.A0_PASSWORD = password;
+  }
+  return env;
+}
+
+function normalizeContainerId(value) {
+  const id = String(value || '').trim();
+  if (!id || id.length > 128) return '';
+  return /^[a-f0-9]+$/i.test(id) ? id : '';
+}
+
+function credentialsErrorShouldBlockCli(error) {
+  const code = error && typeof error === 'object' ? error.code : '';
+  return code === 'CREDENTIAL_STORAGE_UNAVAILABLE' || code === 'CREDENTIALS_UNREADABLE';
+}
+
+async function localInstanceCredentialsForCli(containerId) {
+  const id = normalizeContainerId(containerId);
+  if (!id) return null;
+  try {
+    return await dockerManager.getLocalInstanceCredentials(id);
+  } catch (error) {
+    if (credentialsErrorShouldBlockCli(error)) throw error;
+    return null;
+  }
+}
+
+function openA0CliTerminalWindows(host, cli, workingDirectory, credentials = null) {
   const scriptPath = writeA0CliLaunchPowerShellWrapper(host, cli, workingDirectory);
   const psArgs = ['-NoLogo', '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
-  const env = { ...process.env, AGENT_ZERO_HOST: host };
+  const env = a0CliLaunchEnv(host, credentials);
 
   if (findCommandOnPath('wt.exe')) {
     try {
@@ -2317,7 +2350,7 @@ function openA0CliTerminalWindows(host, cli, workingDirectory) {
   return { opened: true, command: 'powershell.exe' };
 }
 
-function openA0CliTerminalMac(host, cli, workingDirectory) {
+function openA0CliTerminalMac(host, cli, workingDirectory, credentials = null) {
   const scriptPath = writeA0CliLaunchShellWrapper(host, cli, workingDirectory);
   const command = `bash ${shellSingleQuote(scriptPath)}`;
 
@@ -2327,14 +2360,15 @@ function openA0CliTerminalMac(host, cli, workingDirectory) {
     '-e',
     'tell application "Terminal" to activate'
   ], {
-    env: { ...process.env, AGENT_ZERO_HOST: host },
+    env: a0CliLaunchEnv(host, credentials),
     cwd: workingDirectory
   });
   return { opened: true, command: 'Terminal.app' };
 }
 
-function openA0CliTerminalLinux(host, cli, workingDirectory) {
+function openA0CliTerminalLinux(host, cli, workingDirectory, credentials = null) {
   const scriptPath = writeA0CliLaunchShellWrapper(host, cli, workingDirectory);
+  const env = a0CliLaunchEnv(host, credentials);
   const candidates = [
     ['gnome-terminal', ['--', 'bash', scriptPath]],
     ['konsole', ['-e', 'bash', scriptPath]],
@@ -2349,7 +2383,7 @@ function openA0CliTerminalLinux(host, cli, workingDirectory) {
       const found = findCommandOnPath(cmd);
       if (!found) continue;
       spawnDetached(cmd, args, {
-        env: { ...process.env, AGENT_ZERO_HOST: host },
+        env,
         cwd: workingDirectory
       });
       return { opened: true, command: cmd };
@@ -2546,7 +2580,7 @@ function openA0CliInstallTerminal() {
   throw err;
 }
 
-async function openA0CliTerminal(host, ownerWindow) {
+async function openA0CliTerminal(host, ownerWindow, options = {}) {
   const h = String(host || '').trim();
   if (!isAllowedLocalUrl(h)) {
     const err = new Error('Start an instance before opening the A0 CLI terminal.');
@@ -2555,12 +2589,13 @@ async function openA0CliTerminal(host, ownerWindow) {
   }
 
   const cli = findA0CliBinary();
+  const credentials = await localInstanceCredentialsForCli(options?.containerId);
   const workingDirectory = await chooseA0CliWorkingDirectory(ownerWindow);
   if (!workingDirectory) return { opened: false, canceled: true };
 
-  if (process.platform === 'win32') return openA0CliTerminalWindows(h, cli, workingDirectory);
-  if (process.platform === 'darwin') return openA0CliTerminalMac(h, cli, workingDirectory);
-  if (process.platform === 'linux') return openA0CliTerminalLinux(h, cli, workingDirectory);
+  if (process.platform === 'win32') return openA0CliTerminalWindows(h, cli, workingDirectory, credentials);
+  if (process.platform === 'darwin') return openA0CliTerminalMac(h, cli, workingDirectory, credentials);
+  if (process.platform === 'linux') return openA0CliTerminalLinux(h, cli, workingDirectory, credentials);
 
   const err = new Error('Opening the A0 CLI terminal is not available on this system.');
   err.code = 'TERMINAL_UNAVAILABLE';
@@ -2868,6 +2903,13 @@ function sanitizeDockerManagerState(state) {
         storage.migrationAvailable = c.workspaceStorage.migrationAvailable;
       }
       if (Object.keys(storage).length) out.workspaceStorage = storage;
+    }
+    if (isPlainObject(c.launcherCredentials) && c.launcherCredentials.saved === true) {
+      out.launcherCredentials = {
+        saved: true,
+        username: typeof c.launcherCredentials.username === 'string' ? c.launcherCredentials.username : '',
+        updatedAt: typeof c.launcherCredentials.updatedAt === 'string' ? c.launcherCredentials.updatedAt : ''
+      };
     }
     containers.push(out);
   }
@@ -3455,6 +3497,30 @@ ipcMain.handle('docker-manager:setLocalInstanceColor', async (_event, body) => {
   }
 });
 
+ipcMain.handle('docker-manager:setLocalInstanceCredentials', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const credentials = isPlainObject(body.credentials) ? body.credentials : body;
+    return await dockerManager.setLocalInstanceCredentials(containerId, {
+      username: typeof credentials.username === 'string' ? credentials.username : '',
+      password: typeof credentials.password === 'string' ? credentials.password : ''
+    });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:clearLocalInstanceCredentials', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    return await dockerManager.clearLocalInstanceCredentials(containerId);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 ipcMain.handle('docker-manager:deleteLocalInstance', async (_event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
@@ -3508,7 +3574,14 @@ ipcMain.handle('docker-manager:activate', async (_event, body) => {
       envText: typeof body.envText === 'string' ? body.envText : '',
       storageMode: typeof body.storageMode === 'string' ? body.storageMode : '',
       hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
-      volumeName: typeof body.volumeName === 'string' ? body.volumeName : ''
+      volumeName: typeof body.volumeName === 'string' ? body.volumeName : '',
+      credentials: isPlainObject(body.credentials)
+        ? {
+            username: typeof body.credentials.username === 'string' ? body.credentials.username : '',
+            password: typeof body.credentials.password === 'string' ? body.credentials.password : '',
+            remember: body.credentials.remember === true
+          }
+        : null
     };
     const accepted = await dockerManager.activateTag(tag, dataLossAck, options);
     if (!accepted || typeof accepted.opId !== 'string') {
@@ -3756,8 +3829,9 @@ ipcMain.handle('docker-manager:openCliTerminal', async (event, body) => {
   try {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const host = typeof body.host === 'string' ? body.host : '';
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-    return await openA0CliTerminal(host, ownerWindow);
+    return await openA0CliTerminal(host, ownerWindow, { containerId });
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

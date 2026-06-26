@@ -37,8 +37,8 @@ This scope owns:
   Instance defaults, port/env overrides, data-loss acknowledgement, and
   update/switch actions.
 - `local-testing/`: local containers, per-instance action menus, rename, color
-  selection, clone/log inspection controls, remote instance CRUD, and instance
-  opening.
+  selection, launcher-saved CLI credential controls, clone/log inspection
+  controls, remote instance CRUD, and instance opening.
 - `advanced/`: tabbed developer-mode custom image runner with inline Docker
   Compose composer, diagnostics, and storage-volume maintenance.
 - `settings/`: port preferences and saved Instance provider/model defaults.

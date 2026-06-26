@@ -1487,18 +1487,29 @@ function computeImageBytesStats(localImages) {
   };
 }
 
-function applyLocalInstanceIdentity(containers, localInstanceNames, localInstanceColors) {
+function applyLocalInstanceIdentity(containers, localInstanceNames, localInstanceColors, localInstanceCredentials) {
   const names = isPlainObject(localInstanceNames) ? localInstanceNames : {};
   const colors = isPlainObject(localInstanceColors) ? localInstanceColors : {};
+  const credentials = isPlainObject(localInstanceCredentials) ? localInstanceCredentials : {};
   return (Array.isArray(containers) ? containers : []).map((container) => {
     const id = typeof container?.containerId === 'string' ? container.containerId : '';
     const override = id && typeof names[id] === 'string' ? names[id] : '';
     const color = id && typeof colors[id] === 'string' ? colors[id] : '';
-    if (!override && !color) return container;
+    const credential = id && isPlainObject(credentials[id]) && credentials[id].saved ? credentials[id] : null;
+    if (!override && !color && !credential) return container;
     return {
       ...container,
       ...(override ? { instanceName: override } : {}),
-      ...(color ? { instanceColor: color } : {})
+      ...(color ? { instanceColor: color } : {}),
+      ...(credential
+        ? {
+            launcherCredentials: {
+              saved: true,
+              username: typeof credential.username === 'string' ? credential.username : '',
+              updatedAt: typeof credential.updatedAt === 'string' ? credential.updatedAt : ''
+            }
+          }
+        : {})
     };
   });
 }
@@ -1760,7 +1771,7 @@ async function buildDerivedState(options = {}) {
     }
   }
 
-  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, localInstanceNames, localInstanceColors, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
+  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, localInstanceNames, localInstanceColors, localInstanceCredentials, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
     await Promise.all([
       stateStore.readRetentionPolicy(),
       stateStore.readPortPreferences(),
@@ -1769,6 +1780,7 @@ async function buildDerivedState(options = {}) {
       stateStore.readRemoteInstances(),
       stateStore.readLocalInstanceNames(),
       stateStore.readLocalInstanceColors(),
+      stateStore.readLocalInstanceCredentialsMetadata(),
       stateStore.readInstallabilityCache(),
       releasesClient.listOfficialReleases({ githubRepo, forceRefresh }),
       docker.listLocalImages(imageRepo),
@@ -1779,7 +1791,8 @@ async function buildDerivedState(options = {}) {
   let containers = applyLocalInstanceIdentity(
     await enrichContainersWithWorkspaceStorage(docker, await enrichContainersWithRuntimeSource(docker, rawContainers)),
     localInstanceNames,
-    localInstanceColors
+    localInstanceColors,
+    localInstanceCredentials
   );
 
   const releases = Array.isArray(releasesResult?.releases) ? releasesResult.releases : [];
@@ -2575,6 +2588,27 @@ function parseMountsText(value) {
   return binds;
 }
 
+function normalizeCredentialInputText(value, maxLength, options = {}) {
+  const cleaned = String(value || '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ');
+  const trimmed = options?.trim === false ? cleaned : cleaned.trim();
+  const normalized = options?.collapseWhitespace === false
+    ? trimmed
+    : trimmed.replace(/\s+/g, ' ');
+  return normalized.slice(0, maxLength);
+}
+
+function normalizeActivationCredentials(raw) {
+  const credentials = isPlainObject(raw?.credentials) ? raw.credentials : raw;
+  const remember =
+    credentials?.remember === true ||
+    credentials?.rememberCredentials === true ||
+    raw?.rememberCredentials === true;
+  const username = normalizeCredentialInputText(credentials?.username ?? raw?.credentialUsername, 256);
+  const password = normalizeCredentialInputText(credentials?.password ?? raw?.credentialPassword, 4096, { collapseWhitespace: false, trim: false });
+  return { remember, username, password };
+}
+
 function normalizeActivationOptions(options = {}, tag = '') {
   const raw = options && typeof options === 'object' ? options : {};
   const fallbackName = sanitizeInstanceName(`agent-zero-${tag || 'instance'}`);
@@ -2583,7 +2617,8 @@ function normalizeActivationOptions(options = {}, tag = '') {
     instanceName: sanitizeInstanceName(raw.instanceName, fallbackName),
     portMappings: hasPortMappings ? parsePortMappings(raw.portMappings) : null,
     env: parseEnvText(raw.envText),
-    storage: normalizeStorageOverride(raw)
+    storage: normalizeStorageOverride(raw),
+    credentials: normalizeActivationCredentials(raw)
   };
 }
 
@@ -4675,6 +4710,47 @@ async function setLocalInstanceColor(containerId, color) {
   return { containerId: id, color: saved.color || '' };
 }
 
+async function setLocalInstanceCredentials(containerId, credentials = {}) {
+  const imageRepo = getBackendImageRepo();
+  const id = assertContainerId(containerId);
+  const docker = await getManagedDocker(imageRepo);
+  const containers = await docker.listContainers(imageRepo);
+  const target = (containers || []).find((c) => c && c.containerId === id) || null;
+
+  if (!target || !target.containerId) {
+    const err = new Error('Instance not found');
+    err.code = 'INSTANCE_NOT_FOUND';
+    throw err;
+  }
+
+  const saved = await stateStore.writeLocalInstanceCredentials(id, credentials);
+  await refreshDockerManager({ forceRefresh: false }).catch(() => {});
+  return saved;
+}
+
+async function clearLocalInstanceCredentials(containerId) {
+  const imageRepo = getBackendImageRepo();
+  const id = assertContainerId(containerId);
+  const docker = await getManagedDocker(imageRepo);
+  const containers = await docker.listContainers(imageRepo);
+  const target = (containers || []).find((c) => c && c.containerId === id) || null;
+
+  if (!target || !target.containerId) {
+    const err = new Error('Instance not found');
+    err.code = 'INSTANCE_NOT_FOUND';
+    throw err;
+  }
+
+  await stateStore.deleteLocalInstanceCredentials(id);
+  await refreshDockerManager({ forceRefresh: false }).catch(() => {});
+  return { containerId: id, cleared: true };
+}
+
+async function getLocalInstanceCredentials(containerId) {
+  const id = assertContainerId(containerId);
+  return await stateStore.readLocalInstanceCredentials(id);
+}
+
 async function startActiveInstance() {
   const imageRepo = getBackendImageRepo();
 
@@ -4762,6 +4838,7 @@ async function deleteRetainedInstance(containerId) {
       await docker.deleteContainer(id, { force: true });
       await stateStore.deleteLocalInstanceName(id).catch(() => {});
       await stateStore.deleteLocalInstanceColor(id).catch(() => {});
+      await stateStore.deleteLocalInstanceCredentials(id).catch(() => {});
       finishOperation('completed', null);
       updateOperationProgress({ progress: 100, message: 'Deleted' });
     } catch (error) {
@@ -4809,6 +4886,7 @@ async function deleteLocalInstance(containerId) {
       }
       await stateStore.deleteLocalInstanceName(target.containerId).catch(() => {});
       await stateStore.deleteLocalInstanceColor(target.containerId).catch(() => {});
+      await stateStore.deleteLocalInstanceCredentials(target.containerId).catch(() => {});
     }
   });
 }
@@ -5109,6 +5187,10 @@ async function activateTag(tag, dataLossAck, options = {}) {
   const t = assertTagAllowedForActivate(tag);
   const ack = dataLossAck ? assertDataLossAck(dataLossAck) : 'proceed_without_backup';
   const activationOptions = normalizeActivationOptions(options, t);
+  const shouldRememberCredentials =
+    activationOptions.credentials?.remember &&
+    !!activationOptions.credentials?.username &&
+    !!activationOptions.credentials?.password;
 
   requireNoRunningOperation();
   const opId = beginOperation('activate', t);
@@ -5122,6 +5204,9 @@ async function activateTag(tag, dataLossAck, options = {}) {
       docker = await getManagedDocker(imageRepo);
 
       updateOperationProgress({ message: 'Preparing instance', progress: null });
+      if (shouldRememberCredentials) {
+        stateStore.assertLocalInstanceCredentialStorageAvailable();
+      }
 
       const localImages = await docker.listLocalImages(imageRepo);
       const hasTag = (localImages || []).some((img) => img && typeof img.tag === 'string' && img.tag === t);
@@ -5139,6 +5224,9 @@ async function activateTag(tag, dataLossAck, options = {}) {
         activationOptions,
         await stateStore.readStoragePreferences()
       );
+      if (shouldRememberCredentials && createdNew?.containerId) {
+        await stateStore.writeLocalInstanceCredentials(createdNew.containerId, activationOptions.credentials);
+      }
 
       updateOperationProgress({ message: 'Starting instance (waiting for UI)', progress: null });
       if (createdNew && createdNew.containerId) {
@@ -5300,10 +5388,11 @@ async function cancelOperation(opId) {
 
 async function getDockerInventory() {
   const imageRepo = getBackendImageRepo();
-  const [remoteInstances, localInstanceNames, localInstanceColors] = await Promise.all([
+  const [remoteInstances, localInstanceNames, localInstanceColors, localInstanceCredentials] = await Promise.all([
     stateStore.readRemoteInstances(),
     stateStore.readLocalInstanceNames(),
-    stateStore.readLocalInstanceColors()
+    stateStore.readLocalInstanceColors(),
+    stateStore.readLocalInstanceCredentialsMetadata()
   ]);
   const docker = await getManagedDocker(imageRepo);
   const env = await docker.getEnvironment();
@@ -5330,7 +5419,8 @@ async function getDockerInventory() {
         await enrichContainersWithRuntimeSource(docker, Array.isArray(results[1]) ? results[1] : [])
       ),
       localInstanceNames,
-      localInstanceColors
+      localInstanceColors,
+      localInstanceCredentials
     );
     volumes = Array.isArray(results[2]) ? results[2] : [];
     listingSucceeded = images.length > 0 || containers.length > 0 || volumes.length > 0;
@@ -5479,6 +5569,9 @@ module.exports = {
   restoreLocalInstance,
   renameLocalInstance,
   setLocalInstanceColor,
+  setLocalInstanceCredentials,
+  clearLocalInstanceCredentials,
+  getLocalInstanceCredentials,
   stopActiveInstance,
   stopLocalInstance,
   setRetentionPolicy,

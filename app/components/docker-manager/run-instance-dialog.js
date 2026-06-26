@@ -58,13 +58,6 @@ function authEnvLinesFromValues(values = {}) {
   return lines;
 }
 
-function authEnvLinesFromDialog(dialog) {
-  return authEnvLinesFromValues({
-    username: dialog?.querySelector?.("#activateAuthLogin")?.value || "",
-    password: dialog?.querySelector?.("#activateAuthPassword")?.value || ""
-  });
-}
-
 function parseReleaseTagParts(tag) {
   const normalized = String(tag || "").trim().replace(/^v/, "");
   const match = normalized.match(/^(\d+)\.(\d+)(?:\.(\d+))?$/);
@@ -298,6 +291,10 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
             <input id="activateAuthPassword" class="dm-text-input" type="password" autocomplete="new-password" placeholder="Password">
           </div>
           <div class="dm-field-hint">Optional. Leave blank to use Agent Zero defaults or finish login setup in the Web UI.</div>
+          <label class="dm-checkbox-line">
+            <input id="activateRememberCredentials" type="checkbox">
+            <span>Save in Launcher for A0 CLI</span>
+          </label>
         </div>
         <div class="dm-field dm-model-defaults">
           <div class="dm-field-label">Choose your models</div>
@@ -390,13 +387,23 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
       window.toastFrontendError?.(envResult.message, "Agent Zero");
       return;
     }
-    const envText = mergeGeneratedEnvText(authEnvLinesFromDialog(dialog), envResult.value || "");
+    const username = cleanEnvValue(dialog.querySelector("#activateAuthLogin")?.value || "", 256);
+    const password = cleanEnvValue(dialog.querySelector("#activateAuthPassword")?.value || "", 4096);
+    const rememberCredentials = dialog.querySelector("#activateRememberCredentials")?.checked === true;
+    if (rememberCredentials && (!username || !password)) {
+      window.toastFrontendError?.("Enter both username and password to save launcher credentials.", "Agent Zero");
+      return;
+    }
+    const envText = mergeGeneratedEnvText(authEnvLinesFromValues({ username, password }), envResult.value || "");
     const options = {
       instanceName: nameInput?.value || "",
       portMappings: portInput?.value || "0:80",
       envText,
       dataLossAck: "proceed_without_backup"
     };
+    if (rememberCredentials) {
+      options.credentials = { username, password, remember: true };
+    }
     if (storageModeInput?.value) {
       options.storageMode = storageModeInput.value;
       options.hostRoot = storageHostRootInput?.value || "";

@@ -1,6 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const { app } = require('electron');
+const { app, safeStorage } = require('electron');
 
 function baseDir() {
   return path.join(app.getPath('userData'), 'docker_manager');
@@ -84,8 +84,10 @@ const DEFAULT_STORAGE_PREFERENCES = Object.freeze({
 const MAX_REMOTE_INSTANCES = 64;
 const MAX_LOCAL_INSTANCE_NAMES = 256;
 const MAX_LOCAL_INSTANCE_COLORS = 256;
+const MAX_LOCAL_INSTANCE_CREDENTIALS = 256;
 const INSTANCE_COLOR_IDS = Object.freeze(['blue', 'green', 'rose', 'amber', 'violet', 'cyan', 'coral']);
 const INSTANCE_COLOR_SET = new Set(INSTANCE_COLOR_IDS);
+const LOCAL_CREDENTIALS_VERSION = 1;
 
 const INSTANCE_DEFAULT_SLOT_IDS = Object.freeze(['Main', 'Utility', 'Embedding']);
 const DEFAULT_INSTANCE_PROVIDERS = Object.freeze({
@@ -367,6 +369,12 @@ function localInstanceNameError(message = 'Invalid instance name') {
   return err;
 }
 
+function localInstanceCredentialError(message, code = 'INVALID_INSTANCE_CREDENTIALS') {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
 function normalizeInstanceColor(value) {
   const color = String(value || '').trim().toLowerCase();
   return INSTANCE_COLOR_SET.has(color) ? color : '';
@@ -386,6 +394,22 @@ function normalizeLocalInstanceName(value) {
     .slice(0, 80);
   if (!cleaned) throw localInstanceNameError('Instance name is required');
   return cleaned;
+}
+
+function normalizeCredentialText(value, maxLength, options = {}) {
+  const cleaned = String(value || '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ');
+  const trimmed = options?.trim === false ? cleaned : cleaned.trim();
+  const normalized = options?.collapseWhitespace === false
+    ? trimmed
+    : trimmed.replace(/\s+/g, ' ');
+  return normalized.slice(0, maxLength);
+}
+
+function normalizeEncryptedSecret(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 32_768) return '';
+  return /^[A-Za-z0-9+/=]+$/.test(text) ? text : '';
 }
 
 function normalizeLocalInstanceNames(value) {
@@ -418,6 +442,79 @@ function normalizeLocalInstanceColors(value) {
   return out;
 }
 
+function normalizeLocalInstanceCredentialRecord(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const username = normalizeCredentialText(source.username, 256);
+  const encryptedPassword = normalizeEncryptedSecret(source.encryptedPassword);
+  if (!username || !encryptedPassword) return null;
+  return {
+    version: LOCAL_CREDENTIALS_VERSION,
+    username,
+    encryptedPassword,
+    updatedAt: typeof source.updatedAt === 'string' ? source.updatedAt : ''
+  };
+}
+
+function normalizeLocalInstanceCredentials(value) {
+  const out = {};
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  for (const [idRaw, recordRaw] of Object.entries(source)) {
+    const id = normalizeLocalInstanceId(idRaw);
+    const record = normalizeLocalInstanceCredentialRecord(recordRaw);
+    if (!id || !record) continue;
+    out[id] = record;
+    if (Object.keys(out).length >= MAX_LOCAL_INSTANCE_CREDENTIALS) break;
+  }
+  return out;
+}
+
+function localInstanceCredentialMetadata(containerId, record) {
+  return {
+    containerId,
+    saved: !!record,
+    username: record?.username || '',
+    updatedAt: record?.updatedAt || ''
+  };
+}
+
+function requireSafeCredentialStorage() {
+  if (!safeStorage || typeof safeStorage.encryptString !== 'function' || typeof safeStorage.decryptString !== 'function') {
+    throw localInstanceCredentialError(
+      'Secure credential storage is not available in this launcher runtime.',
+      'CREDENTIAL_STORAGE_UNAVAILABLE'
+    );
+  }
+  if (typeof safeStorage.isEncryptionAvailable === 'function' && !safeStorage.isEncryptionAvailable()) {
+    throw localInstanceCredentialError(
+      'Secure credential storage is not available on this system.',
+      'CREDENTIAL_STORAGE_UNAVAILABLE'
+    );
+  }
+  return safeStorage;
+}
+
+function encryptLocalInstancePassword(password) {
+  const storage = requireSafeCredentialStorage();
+  return storage.encryptString(password).toString('base64');
+}
+
+function decryptLocalInstancePassword(encryptedPassword) {
+  const storage = requireSafeCredentialStorage();
+  try {
+    return storage.decryptString(Buffer.from(encryptedPassword, 'base64'));
+  } catch {
+    throw localInstanceCredentialError(
+      'Saved credentials could not be read. Clear and save them again.',
+      'CREDENTIALS_UNREADABLE'
+    );
+  }
+}
+
+function assertLocalInstanceCredentialStorageAvailable() {
+  requireSafeCredentialStorage();
+  return { available: true };
+}
+
 async function readLocalInstanceNames() {
   const state = await readJson(stateFile(), {});
   return normalizeLocalInstanceNames(state?.localInstanceNames);
@@ -426,6 +523,29 @@ async function readLocalInstanceNames() {
 async function readLocalInstanceColors() {
   const state = await readJson(stateFile(), {});
   return normalizeLocalInstanceColors(state?.localInstanceColors);
+}
+
+async function readLocalInstanceCredentialsMetadata() {
+  const state = await readJson(stateFile(), {});
+  const current = normalizeLocalInstanceCredentials(state?.localInstanceCredentials);
+  return Object.fromEntries(
+    Object.entries(current).map(([containerId, record]) => [containerId, localInstanceCredentialMetadata(containerId, record)])
+  );
+}
+
+async function readLocalInstanceCredentials(containerId) {
+  const id = normalizeLocalInstanceId(containerId);
+  if (!id) throw localInstanceCredentialError('Invalid instance');
+  const state = await readJson(stateFile(), {});
+  const current = normalizeLocalInstanceCredentials(state?.localInstanceCredentials);
+  const record = current[id] || null;
+  if (!record) return null;
+  return {
+    containerId: id,
+    username: record.username,
+    password: decryptLocalInstancePassword(record.encryptedPassword),
+    updatedAt: record.updatedAt || ''
+  };
 }
 
 async function writeLocalInstanceName(containerId, name) {
@@ -470,6 +590,39 @@ async function deleteLocalInstanceColor(containerId) {
   if (!Object.prototype.hasOwnProperty.call(current, id)) return false;
   delete current[id];
   await writeJson(stateFile(), { ...state, localInstanceColors: current, updatedAt: new Date().toISOString() });
+  return true;
+}
+
+async function writeLocalInstanceCredentials(containerId, credentials = {}) {
+  const id = normalizeLocalInstanceId(containerId);
+  if (!id) throw localInstanceCredentialError('Invalid instance');
+  const username = normalizeCredentialText(credentials?.username, 256);
+  const password = normalizeCredentialText(credentials?.password, 4096, { collapseWhitespace: false, trim: false });
+  if (!username || !password) {
+    throw localInstanceCredentialError('Username and password are required.');
+  }
+
+  const record = {
+    version: LOCAL_CREDENTIALS_VERSION,
+    username,
+    encryptedPassword: encryptLocalInstancePassword(password),
+    updatedAt: new Date().toISOString()
+  };
+  const state = await readJson(stateFile(), {});
+  const current = normalizeLocalInstanceCredentials(state?.localInstanceCredentials);
+  current[id] = record;
+  await writeJson(stateFile(), { ...state, localInstanceCredentials: current, updatedAt: new Date().toISOString() });
+  return localInstanceCredentialMetadata(id, record);
+}
+
+async function deleteLocalInstanceCredentials(containerId) {
+  const id = normalizeLocalInstanceId(containerId);
+  if (!id) return false;
+  const state = await readJson(stateFile(), {});
+  const current = normalizeLocalInstanceCredentials(state?.localInstanceCredentials);
+  if (!Object.prototype.hasOwnProperty.call(current, id)) return false;
+  delete current[id];
+  await writeJson(stateFile(), { ...state, localInstanceCredentials: current, updatedAt: new Date().toISOString() });
   return true;
 }
 
@@ -603,6 +756,11 @@ module.exports = {
   readLocalInstanceColors,
   writeLocalInstanceColor,
   deleteLocalInstanceColor,
+  readLocalInstanceCredentialsMetadata,
+  readLocalInstanceCredentials,
+  writeLocalInstanceCredentials,
+  deleteLocalInstanceCredentials,
+  assertLocalInstanceCredentialStorageAvailable,
 
   // Runtime setup resume
   readRuntimeSetupResume,

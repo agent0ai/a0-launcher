@@ -1253,6 +1253,46 @@ async function setLocalInstanceColor(containerId, color) {
   }
 }
 
+async function setLocalInstanceCredentials(containerId, credentials = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.setLocalInstanceCredentials !== "function") return false;
+  const payload = credentials && typeof credentials === "object" ? credentials : {};
+  try {
+    const res = await api.setLocalInstanceCredentials(containerId || "", {
+      username: payload.username || "",
+      password: payload.password || ""
+    });
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    setBanner("info", "Instance credentials saved.");
+    await refresh();
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to save instance credentials");
+    return false;
+  }
+}
+
+async function clearLocalInstanceCredentials(containerId) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.clearLocalInstanceCredentials !== "function") return false;
+  try {
+    const res = await api.clearLocalInstanceCredentials(containerId || "");
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    setBanner("info", "Instance credentials cleared.");
+    await refresh();
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to clear instance credentials");
+    return false;
+  }
+}
+
 async function getLocalInstanceLogs(containerId, options = {}) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.getLocalInstanceLogs !== "function") return null;
@@ -1310,16 +1350,20 @@ async function runCustomImage(options = {}) {
   return !isErrorResponse(res);
 }
 
-async function openCliTerminal(host = "") {
+async function openCliTerminal(target = "") {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.openCliTerminal !== "function") return;
-  const target = localUrl(host);
-  if (!target) {
+  const request = target && typeof target === "object" ? target : { host: target };
+  const host = localUrl(request.host || "");
+  if (!host) {
     setBanner("error", "Open the A0 CLI from a running local instance.");
     return false;
   }
   try {
-    const res = await api.openCliTerminal(target);
+    const res = await api.openCliTerminal({
+      host,
+      containerId: typeof request.containerId === "string" ? request.containerId : ""
+    });
     if (res?.canceled) return false;
     if (isErrorResponse(res)) {
       setBanner("error", res.message);
@@ -1531,6 +1575,8 @@ window.dockerManagerActions = {
   migrateLocalInstanceStorage,
   renameLocalInstance,
   setLocalInstanceColor,
+  setLocalInstanceCredentials,
+  clearLocalInstanceCredentials,
   stopActive,
   stopLocalInstance,
   deleteLocalInstance,

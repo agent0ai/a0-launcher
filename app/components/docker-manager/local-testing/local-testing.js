@@ -588,6 +588,77 @@ function openRenameInstanceDialog({ title, currentName, onRename }) {
   }, 0);
 }
 
+function openInstanceCredentialsDialog({ displayName, credentials = null, onSave, onClear }) {
+  const existing = document.getElementById("instanceCredentialsDialog");
+  if (existing) existing.remove();
+
+  const saved = credentials?.saved === true;
+  const username = String(credentials?.username || "");
+  const dialog = document.createElement("div");
+  dialog.id = "instanceCredentialsDialog";
+  dialog.className = "dm-dialog-backdrop";
+  dialog.setAttribute("role", "presentation");
+
+  dialog.innerHTML = `
+    <form class="dm-dialog" role="dialog" aria-modal="true" aria-labelledby="instanceCredentialsTitle">
+      <div class="dm-dialog-header">
+        <h2 id="instanceCredentialsTitle" class="dm-dialog-title">Login credentials</h2>
+        <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">×</button>
+      </div>
+      <div class="dm-dialog-body">
+        <p class="dm-dialog-copy">Saved credentials are used when opening A0 CLI for <strong>${escapeHtml(displayName || "this instance")}</strong>.</p>
+        <div class="dm-field">
+          <label for="instanceCredentialsUsername">Username</label>
+          <input id="instanceCredentialsUsername" class="dm-text-input" type="text" maxlength="256" autocomplete="username" value="${escapeHtml(username)}">
+        </div>
+        <div class="dm-field">
+          <label for="instanceCredentialsPassword">Password</label>
+          <input id="instanceCredentialsPassword" class="dm-text-input" type="password" maxlength="4096" autocomplete="new-password" placeholder="${saved ? "Enter password to update" : "Password"}">
+          <div class="dm-field-hint">${saved ? "A password is already saved. Enter a password here only when saving a replacement." : "The launcher stores this with the operating system's secure storage."}</div>
+        </div>
+      </div>
+      <div class="dm-dialog-footer">
+        ${saved ? '<button class="button" type="button" data-clear-credentials>Clear</button>' : '<span></span>'}
+        <button class="button" type="button" data-dialog-close>Cancel</button>
+        <button class="button confirm" type="submit">Save</button>
+      </div>
+    </form>
+  `;
+
+  const form = dialog.querySelector("form");
+  const usernameInput = dialog.querySelector("#instanceCredentialsUsername");
+  const passwordInput = dialog.querySelector("#instanceCredentialsPassword");
+
+  dialog.querySelectorAll("[data-dialog-close]").forEach((btn) => {
+    btn.addEventListener("click", () => closeDialog(dialog));
+  });
+  dialog.addEventListener("mousedown", (event) => {
+    if (event.target === dialog) closeDialog(dialog);
+  });
+  dialog.querySelector("[data-clear-credentials]")?.addEventListener("click", async () => {
+    closeDialog(dialog);
+    await onClear?.();
+  });
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const nextUsername = String(usernameInput?.value || "").trim();
+    const nextPassword = String(passwordInput?.value || "").replace(/[\r\n]+/g, " ");
+    if (!nextUsername || !nextPassword) {
+      window.toastFrontendError?.("Enter both username and password to save credentials.", "Agent Zero");
+      (!nextUsername ? usernameInput : passwordInput)?.focus();
+      return;
+    }
+    closeDialog(dialog);
+    await onSave?.({ username: nextUsername, password: nextPassword });
+  });
+
+  document.body.appendChild(dialog);
+  window.setTimeout(() => {
+    if (usernameInput && !usernameInput.value) usernameInput.focus();
+    else passwordInput?.focus();
+  }, 0);
+}
+
 function openInstanceColorDialog({ title, currentColor, onSelect }) {
   const existing = document.getElementById("instanceColorDialog");
   if (existing) existing.remove();
@@ -1059,6 +1130,7 @@ function renderDockerInstance(list, c, state) {
   const visualBadge = instanceVisualBadge(c);
   const cliHost = localUiUrl(c?.uiUrl);
   const cliInstalled = state?.cli?.installed === true;
+  const launcherCredentials = c?.launcherCredentials && typeof c.launcherCredentials === "object" ? c.launcherCredentials : null;
   const card = document.createElement("div");
   card.className = "dm-card";
 
@@ -1182,6 +1254,19 @@ function renderDockerInstance(list, c, state) {
       disabled: !containerId || backgroundOperation?.type === "delete_instance",
       title: "Choose this instance color"
     }),
+    menuButton("key", "Login credentials", () => {
+      openInstanceCredentialsDialog({
+        displayName,
+        credentials: launcherCredentials,
+        onSave: (credentials) => window.dockerManagerActions?.setLocalInstanceCredentials?.(containerId, credentials),
+        onClear: () => window.dockerManagerActions?.clearLocalInstanceCredentials?.(containerId)
+      });
+    }, {
+      disabled: !containerId || backgroundOperation?.type === "delete_instance",
+      title: launcherCredentials?.saved
+        ? "Update or clear saved credentials for A0 CLI"
+        : "Save credentials for A0 CLI"
+    }),
     menuButton("article", "See logs", () => {
       openLogsPanel(c);
     }, {
@@ -1221,7 +1306,7 @@ function renderDockerInstance(list, c, state) {
       title: "Clone this instance on open ports"
     }),
     menuButton(cliInstalled ? "terminal" : "download", cliInstalled ? "Open A0 CLI" : "Install A0 CLI", () => {
-      if (cliInstalled) window.dockerManagerActions?.openCliTerminal?.(cliHost);
+      if (cliInstalled) window.dockerManagerActions?.openCliTerminal?.({ host: cliHost, containerId });
       else window.dockerManagerActions?.installCli?.();
     }, {
       disabled: cliInstalled ? (!isRunning || !cliHost || operationRunning || containerOperationRunning) : operationRunning,

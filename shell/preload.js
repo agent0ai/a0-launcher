@@ -175,6 +175,18 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   renameLocalInstance: (containerId, name) => ipcRenderer.invoke('docker-manager:renameLocalInstance', { containerId, name }),
   setRemoteInstanceColor: (id, color) => ipcRenderer.invoke('docker-manager:setRemoteInstanceColor', { id, color }),
   setLocalInstanceColor: (containerId, color) => ipcRenderer.invoke('docker-manager:setLocalInstanceColor', { containerId, color }),
+  setLocalInstanceCredentials: (containerId, credentials) => {
+    const c = credentials && typeof credentials === 'object' ? credentials : {};
+    return ipcRenderer.invoke('docker-manager:setLocalInstanceCredentials', {
+      containerId,
+      credentials: {
+        username: typeof c.username === 'string' ? c.username : '',
+        password: typeof c.password === 'string' ? c.password : ''
+      }
+    });
+  },
+  clearLocalInstanceCredentials: (containerId) =>
+    ipcRenderer.invoke('docker-manager:clearLocalInstanceCredentials', { containerId }),
   deleteLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:deleteLocalInstance', { containerId }),
   deleteRetainedInstance: (containerId) =>
     ipcRenderer.invoke('docker-manager:deleteRetainedInstance', { containerId }),
@@ -189,7 +201,14 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
       envText: typeof opts.envText === 'string' ? opts.envText : '',
       storageMode: typeof opts.storageMode === 'string' ? opts.storageMode : '',
       hostRoot: typeof opts.hostRoot === 'string' ? opts.hostRoot : '',
-      volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : ''
+      volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : '',
+      credentials: opts.credentials && typeof opts.credentials === 'object'
+        ? {
+            username: typeof opts.credentials.username === 'string' ? opts.credentials.username : '',
+            password: typeof opts.credentials.password === 'string' ? opts.credentials.password : '',
+            remember: opts.credentials.remember === true
+          }
+        : null
     });
   },
   runCustomImage: (options) => {
@@ -228,7 +247,13 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   openResourceLink: (id) => ipcRenderer.invoke('docker-manager:openResourceLink', {
     id: typeof id === 'string' ? id : ''
   }),
-  openCliTerminal: (host) => ipcRenderer.invoke('docker-manager:openCliTerminal', { host }),
+  openCliTerminal: (target) => {
+    const t = target && typeof target === 'object' ? target : { host: target };
+    return ipcRenderer.invoke('docker-manager:openCliTerminal', {
+      host: typeof t.host === 'string' ? t.host : '',
+      containerId: typeof t.containerId === 'string' ? t.containerId : ''
+    });
+  },
   installCli: () => ipcRenderer.invoke('docker-manager:installCli'),
   openDockerLoginTerminal: () => ipcRenderer.invoke('docker-manager:openDockerLoginTerminal'),
   getInstanceTabs: () => ipcRenderer.invoke('docker-manager:getInstanceTabs'),
