@@ -49,6 +49,14 @@ test('create local instance button model explains disabled states', () => {
   });
 
   assert.deepEqual(createLocalInstanceButtonModel({
+    versions: [{ id: 'latest', availability: 'installed' }],
+    progress: { status: 'running', presentation: 'toast' }
+  }), {
+    disabled: false,
+    title: 'Create a local Instance from an installed version'
+  });
+
+  assert.deepEqual(createLocalInstanceButtonModel({
     versions: [{ id: 'latest', availability: 'installed' }]
   }), {
     disabled: false,

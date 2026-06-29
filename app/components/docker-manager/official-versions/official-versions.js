@@ -361,6 +361,17 @@ function isAwaitingFirstInventory(state, entries) {
 
 const versionGroupOpenState = new Map();
 let currentInstallFilter = "all";
+let lastInstallRenderKey = "";
+
+function installCardsRenderKey(state = {}, filter = currentInstallFilter) {
+  return JSON.stringify({
+    loading: !!state?.loading,
+    stateLoaded: !!state?.stateLoaded,
+    filter: normalizeInstallFilter(filter),
+    images: Array.isArray(state?.images) ? state.images : [],
+    versions: Array.isArray(state?.versions) ? state.versions : []
+  });
+}
 
 function setInstallFilter(value) {
   const next = normalizeInstallFilter(value);
@@ -520,6 +531,9 @@ function render(state) {
   const subtitle = byId("officialSubtitle");
   const list = byId("officialList");
   if (!list) return;
+  const renderKey = installCardsRenderKey(state);
+  if (renderKey === lastInstallRenderKey) return;
+  lastInstallRenderKey = renderKey;
 
   bindInstallFilterControls();
   syncInstallFilterControls();
@@ -573,6 +587,7 @@ export {
   defaultInstanceName,
   displayDateForEntry,
   filterInstallEntries,
+  installCardsRenderKey,
   isInstalledEntry,
   metaPartsForEntry,
   releaseMatchBadgeLabel,

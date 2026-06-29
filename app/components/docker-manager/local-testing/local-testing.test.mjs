@@ -19,8 +19,10 @@ const {
   computeCardMenuPlacement,
   emptyInstancesStateModel,
   instancePowerMenuConfig,
+  isBlockingOperationRunning,
   remoteInstanceStatusModel,
   instanceVisualBadge,
+  localCardsRenderKey,
   openCardMenu
 } = await import('./local-testing.js');
 
@@ -185,6 +187,43 @@ test('empty Instances state offers latest install after first inventory', () => 
       progress: { status: 'running' }
     }).disabled,
     true
+  );
+  assert.equal(
+    emptyInstancesStateModel({
+      stateLoaded: true,
+      containers: [],
+      remoteInstances: [],
+      progress: { status: 'running', presentation: 'toast' }
+    }).disabled,
+    false
+  );
+});
+
+test('toast progress does not change the Instance card render key', () => {
+  const baseState = {
+    stateLoaded: true,
+    loading: false,
+    containers: [{ containerId: 'abc', state: 'running', instanceName: 'Main' }],
+    remoteInstances: [],
+    backgroundOperations: [],
+    cli: { installed: true, command: 'a0' }
+  };
+
+  assert.equal(
+    isBlockingOperationRunning({ progress: { status: 'running', presentation: 'toast' } }),
+    false
+  );
+  assert.equal(
+    isBlockingOperationRunning({ progress: { status: 'running' } }),
+    true
+  );
+  assert.equal(
+    localCardsRenderKey({ ...baseState, progress: { status: 'running', presentation: 'toast', progress: 10 } }),
+    localCardsRenderKey({ ...baseState, progress: { status: 'running', presentation: 'toast', progress: 80 } })
+  );
+  assert.notEqual(
+    localCardsRenderKey(baseState),
+    localCardsRenderKey({ ...baseState, progress: { status: 'running' } })
   );
 });
 

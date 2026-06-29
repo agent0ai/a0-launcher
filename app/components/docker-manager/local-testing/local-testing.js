@@ -131,6 +131,29 @@ function backgroundOperationLabel(operation) {
   return queued ? "Queued" : "Working";
 }
 
+function progressPresentedAsToast(progress = null) {
+  return typeof progress?.presentation === "string" && progress.presentation.trim() === "toast";
+}
+
+function isBlockingOperationRunning(state = {}) {
+  const progress = state?.progress || null;
+  return progress?.status === "running" && !progressPresentedAsToast(progress);
+}
+
+function localCardsRenderKey(state = {}) {
+  return JSON.stringify({
+    loading: !!state?.loading,
+    stateLoaded: !!state?.stateLoaded,
+    images: Array.isArray(state?.images) ? state.images : [],
+    versions: Array.isArray(state?.versions) ? state.versions : [],
+    containers: Array.isArray(state?.containers) ? state.containers : [],
+    remoteInstances: Array.isArray(state?.remoteInstances) ? state.remoteInstances : [],
+    backgroundOperations: Array.isArray(state?.backgroundOperations) ? state.backgroundOperations : [],
+    cli: state?.cli || null,
+    blockingOperationRunning: isBlockingOperationRunning(state)
+  });
+}
+
 function instancePowerMenuConfig({ isRunning, canStart, containerId, containerOperationRunning } = {}) {
   const hasContainer = !!String(containerId || "").trim();
   const busy = !!containerOperationRunning;
@@ -181,7 +204,7 @@ function emptyInstancesStateModel(state = {}) {
       message: "Checking Instances..."
     };
   }
-  const operationRunning = state?.progress?.status === "running";
+  const operationRunning = isBlockingOperationRunning(state);
   return {
     kind: "install_latest",
     title: "No Instances yet",
@@ -1161,7 +1184,7 @@ function bindActions() {
 }
 
 function renderDockerInstance(list, c, state) {
-  const operationRunning = state?.progress?.status === "running";
+  const operationRunning = isBlockingOperationRunning(state);
   const containerId = c?.containerId || "";
   const backgroundOperation = backgroundOperationForContainer(state, containerId);
   const containerOperationRunning = !!backgroundOperation;
@@ -1391,7 +1414,7 @@ function renderDockerInstance(list, c, state) {
 }
 
 function renderRemoteInstance(list, remote, state) {
-  const operationRunning = state?.progress?.status === "running";
+  const operationRunning = isBlockingOperationRunning(state);
   const cloneTarget = localCloneTargetForRemote(remote, state?.containers);
   const card = document.createElement("div");
   card.className = "dm-card";
@@ -1494,10 +1517,15 @@ function renderRemoteInstance(list, remote, state) {
   list.appendChild(card);
 }
 
+let lastLocalRenderKey = "";
+
 function render(state) {
   const list = byId("localList");
   const subtitle = byId("sessionsSubtitle");
   if (!list) return;
+  const renderKey = localCardsRenderKey(state);
+  if (renderKey === lastLocalRenderKey) return;
+  lastLocalRenderKey = renderKey;
   const createBtn = byId("createLocalInstanceBtn");
   if (createBtn) {
     const buttonModel = createLocalInstanceButtonModel(state);
@@ -1538,6 +1566,8 @@ export {
   instancePowerMenuConfig,
   remoteInstanceStatusModel,
   instanceVisualBadge,
+  isBlockingOperationRunning,
+  localCardsRenderKey,
   openCardMenu
 };
 

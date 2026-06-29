@@ -19,6 +19,7 @@ const {
   defaultInstanceName,
   displayDateForEntry,
   filterInstallEntries,
+  installCardsRenderKey,
   isInstalledEntry,
   metaPartsForEntry,
   releaseMatchBadgeLabel,
@@ -76,6 +77,24 @@ test('update action uses background install update flow', () => {
   actions.find((action) => action.label === 'Update')?.handler();
 
   assert.equal(updatedTag, 'latest');
+});
+
+test('toast progress does not change the Install card render key', () => {
+  const baseState = {
+    stateLoaded: true,
+    loading: false,
+    versions: [{ id: 'latest', displayVersion: 'latest', availability: 'installed' }],
+    images: []
+  };
+
+  assert.equal(
+    installCardsRenderKey({ ...baseState, progress: { status: 'running', presentation: 'toast', progress: 12 } }),
+    installCardsRenderKey({ ...baseState, progress: { status: 'running', presentation: 'toast', progress: 47 } })
+  );
+  assert.notEqual(
+    installCardsRenderKey(baseState),
+    installCardsRenderKey({ ...baseState, versions: [{ id: 'latest', displayVersion: 'latest', availability: 'update_available' }] })
+  );
 });
 
 test('running operations still suppress install card actions', () => {

@@ -199,9 +199,13 @@ function installedVersionChoices(state = {}) {
   return choices.sort(installedVersionSort);
 }
 
+function progressPresentedAsToast(progress = null) {
+  return typeof progress?.presentation === "string" && progress.presentation.trim() === "toast";
+}
+
 function createLocalInstanceButtonModel(state = {}) {
   const choices = installedVersionChoices(state);
-  const operationRunning = state?.progress?.status === "running";
+  const operationRunning = state?.progress?.status === "running" && !progressPresentedAsToast(state.progress);
   if (!choices.length) {
     return {
       disabled: true,
