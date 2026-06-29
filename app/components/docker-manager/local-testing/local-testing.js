@@ -662,11 +662,11 @@ function openInstanceCredentialsDialog({ displayName, credentials = null, onSave
   dialog.innerHTML = `
     <form class="dm-dialog" role="dialog" aria-modal="true" aria-labelledby="instanceCredentialsTitle">
       <div class="dm-dialog-header">
-        <h2 id="instanceCredentialsTitle" class="dm-dialog-title">Login credentials</h2>
+        <h2 id="instanceCredentialsTitle" class="dm-dialog-title">Save credentials</h2>
         <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">×</button>
       </div>
       <div class="dm-dialog-body">
-        <p class="dm-dialog-copy">Saved credentials are used when opening A0 CLI for <strong>${escapeHtml(displayName || "this instance")}</strong>.</p>
+        <p class="dm-dialog-copy">Save credentials for <strong>${escapeHtml(displayName || "this instance")}</strong>.</p>
         <div class="dm-field">
           <label for="instanceCredentialsUsername">Username</label>
           <input id="instanceCredentialsUsername" class="dm-text-input" type="text" maxlength="256" autocomplete="username" value="${escapeHtml(username)}">
@@ -1316,7 +1316,7 @@ function renderDockerInstance(list, c, state) {
       disabled: !containerId || backgroundOperation?.type === "delete_instance",
       title: "Choose this instance color"
     }),
-    menuButton("key", "Login credentials", () => {
+    menuButton("key", "Save credentials", () => {
       openInstanceCredentialsDialog({
         displayName,
         credentials: launcherCredentials,
@@ -1326,8 +1326,8 @@ function renderDockerInstance(list, c, state) {
     }, {
       disabled: !containerId || backgroundOperation?.type === "delete_instance",
       title: launcherCredentials?.saved
-        ? "Update or clear saved credentials for A0 CLI"
-        : "Save credentials for A0 CLI"
+        ? "Update or clear saved credentials"
+        : "Save credentials"
     }),
     menuButton("article", "See logs", () => {
       openLogsPanel(c);

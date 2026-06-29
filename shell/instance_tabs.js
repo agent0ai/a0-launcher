@@ -73,6 +73,25 @@ function makeTabKey(target) {
   return `${kind}:${url}`;
 }
 
+function webUiLoginRequestForTarget(target, credentials) {
+  const safeTarget = target && typeof target === 'object' ? target : {};
+  const safeCredentials = credentials && typeof credentials === 'object' ? credentials : {};
+  if (safeTarget.kind !== 'local' || !safeTarget.containerId) return null;
+
+  const url = parseHttpUrl(safeTarget.url);
+  if (!url || !isAllowedLocalInstanceUrl(url.href)) return null;
+
+  const username = typeof safeCredentials.username === 'string' ? safeCredentials.username.trim() : '';
+  const password = typeof safeCredentials.password === 'string' ? safeCredentials.password : '';
+  if (!username || !password) return null;
+
+  const next = `${url.pathname || '/'}${url.search || ''}` || '/';
+  return {
+    url: new URL('/login', url).href,
+    body: new URLSearchParams({ username, password, next }).toString()
+  };
+}
+
 function makeTabsSnapshot(tabs, activeTabId) {
   const source = tabs instanceof Map ? tabs.values() : [];
   return {
@@ -99,5 +118,6 @@ module.exports = {
   isAllowedLocalInstanceUrl,
   isAllowedRemoteInstanceUrl,
   makeTabKey,
+  webUiLoginRequestForTarget,
   makeTabsSnapshot
 };

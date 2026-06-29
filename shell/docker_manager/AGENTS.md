@@ -84,7 +84,8 @@ This scope owns:
   `state_store.js` as container-id keyed, Electron-safe-storage encrypted
   password records. The renderer may receive only saved-credential metadata
   such as saved state and username; decrypted passwords must stay in the shell
-  process and be used only for explicit CLI launch or save/clear operations.
+  process and be used only for explicit CLI launch, Web UI login, or save/clear
+  operations.
 - Port preferences are stored as UI and SSH host-port preferences.
 - Host-port requests using `0` must be settled to explicit loopback host ports
   before Docker container creation so a container's published port remains

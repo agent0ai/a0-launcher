@@ -14,6 +14,7 @@ const {
   isAllowedLocalInstanceUrl,
   isAllowedRemoteInstanceUrl,
   makeTabKey,
+  webUiLoginRequestForTarget,
   makeTabsSnapshot
 } = require('./instance_tabs');
 const { formatLauncherVersion } = require('./launcher_update');
@@ -1408,7 +1409,7 @@ async function openPublicResourceLink(id) {
   return { opened: true };
 }
 
-function openAgentZeroUiWindow(url, title = 'Agent Zero') {
+async function openAgentZeroUiWindow(url, title = 'Agent Zero', target = null) {
   const iconPath = path.join(__dirname, 'assets',
     process.platform === 'win32' ? 'icon.ico' : 'icon.png'
   );
@@ -1423,7 +1424,8 @@ function openAgentZeroUiWindow(url, title = 'Agent Zero') {
       sandbox: true
     }
   });
-  uiWindow.loadURL(url);
+  await loginInstanceWebUiSession(target, uiWindow.webContents);
+  await uiWindow.loadURL(url);
   return uiWindow;
 }
 
@@ -1741,7 +1743,15 @@ async function openInstanceTab(target) {
     existing.containerId = target.containerId || existing.containerId || '';
     existing.instanceId = target.instanceId || existing.instanceId || '';
     const nextUrl = normalizeHttpUrl(target.url);
+    const didLogin = await loginInstanceWebUiSession(target, existing.view?.webContents);
+    const existingUrl = normalizeHttpUrl(existing.url);
+    const existingPath = existingUrl ? new URL(existingUrl).pathname : '';
     if (nextUrl && nextUrl !== normalizeHttpUrl(existing.url)) {
+      existing.url = nextUrl;
+      existing.loading = true;
+      sendInstanceTabsEvent();
+      await existing.view?.webContents?.loadURL(nextUrl);
+    } else if (nextUrl && didLogin?.attempted && existingPath === '/login') {
       existing.url = nextUrl;
       existing.loading = true;
       sendInstanceTabsEvent();
@@ -1752,7 +1762,7 @@ async function openInstanceTab(target) {
   }
 
   if (!mainWindow.contentView || typeof mainWindow.contentView.addChildView !== 'function') {
-    openAgentZeroUiWindow(target.url, target.title);
+    await openAgentZeroUiWindow(target.url, target.title, target);
     return { opened: true, detached: true };
   }
 
@@ -1780,6 +1790,7 @@ async function openInstanceTab(target) {
   sendInstanceTabsEvent();
 
   try {
+    await loginInstanceWebUiSession(target, view.webContents);
     await view.webContents.loadURL(target.url);
   } catch (error) {
     instanceTabs.delete(tab.id);
@@ -2299,6 +2310,35 @@ async function localInstanceCredentialsForCli(containerId) {
   } catch (error) {
     if (credentialsErrorShouldBlockCli(error)) throw error;
     return null;
+  }
+}
+
+async function loginInstanceWebUiSession(target, webContents) {
+  const containerId = typeof target?.containerId === 'string' ? target.containerId : '';
+  if (!containerId || !webContents?.session || typeof webContents.session.fetch !== 'function') {
+    return { attempted: false };
+  }
+
+  let credentials = null;
+  try {
+    credentials = await localInstanceCredentialsForCli(containerId);
+  } catch {
+    return { attempted: false };
+  }
+  const request = webUiLoginRequestForTarget(target, credentials);
+  if (!request) return { attempted: false };
+
+  try {
+    await webContents.session.fetch(request.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: request.body,
+      redirect: 'manual',
+      credentials: 'include'
+    });
+    return { attempted: true };
+  } catch {
+    return { attempted: true };
   }
 }
 

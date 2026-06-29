@@ -6,6 +6,7 @@ const {
   isAllowedLocalInstanceUrl,
   isAllowedRemoteInstanceUrl,
   makeTabKey,
+  webUiLoginRequestForTarget,
   makeTabsSnapshot
 } = require('./instance_tabs');
 
@@ -46,6 +47,37 @@ test('makeTabKey uses stable identity before URL fallback', () => {
   assert.equal(
     makeTabKey({ kind: 'local', url: 'http://127.0.0.1:32080/' }),
     'local:http://127.0.0.1:32080/'
+  );
+});
+
+test('web UI login request posts local credentials to same-origin login route', () => {
+  const request = webUiLoginRequestForTarget(
+    {
+      kind: 'local',
+      containerId: 'abc123',
+      url: 'http://127.0.0.1:32080/plugins/tool?next=nope#section'
+    },
+    { username: ' jan ', password: 'secret pass' }
+  );
+
+  assert.equal(request.url, 'http://127.0.0.1:32080/login');
+  assert.equal(request.body, 'username=jan&password=secret+pass&next=%2Fplugins%2Ftool%3Fnext%3Dnope');
+});
+
+test('web UI login request ignores remote or incomplete credential targets', () => {
+  assert.equal(
+    webUiLoginRequestForTarget(
+      { kind: 'remote', instanceId: 'remote-1', url: 'https://example.com/' },
+      { username: 'jan', password: 'secret' }
+    ),
+    null
+  );
+  assert.equal(
+    webUiLoginRequestForTarget(
+      { kind: 'local', containerId: 'abc123', url: 'http://127.0.0.1:32080/' },
+      { username: 'jan', password: '' }
+    ),
+    null
   );
 });
 

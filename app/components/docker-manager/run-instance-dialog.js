@@ -298,7 +298,7 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
           <div class="dm-field-hint">Optional. Leave blank to use Agent Zero defaults or finish login setup in the Web UI.</div>
           <label class="dm-checkbox-line">
             <input id="activateRememberCredentials" type="checkbox">
-            <span>Save credentials for A0 CLI</span>
+            <span>Save credentials</span>
           </label>
         </div>
         <div class="dm-field dm-model-defaults">
@@ -397,7 +397,7 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
     const password = cleanEnvValue(dialog.querySelector("#activateAuthPassword")?.value || "", 4096);
     const rememberCredentials = dialog.querySelector("#activateRememberCredentials")?.checked === true;
     if (rememberCredentials && (!username || !password)) {
-      window.toastFrontendError?.("Enter both username and password to save credentials for A0 CLI.", "Agent Zero");
+      window.toastFrontendError?.("Enter both username and password to save credentials.", "Agent Zero");
       return;
     }
     const envText = mergeGeneratedEnvText(authEnvLinesFromValues({ username, password }), envResult.value || "");
