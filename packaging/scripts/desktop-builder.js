@@ -468,12 +468,27 @@ async function runDesktopPackaging(platformKey, argv = process.argv.slice(2)) {
 
   console.log(`Packaging Agent Zero Launcher for ${platformSpec.label}...`);
 
-  const artifacts = await build({
-    projectDir: PROJECT_ROOT,
-    config: buildConfig,
-    targets: createTargets(platformSpec, options),
-    publish: null
-  });
+  const originalPackageJsonText = fs.readFileSync(PACKAGE_JSON_PATH, "utf8");
+  const packageJsonForBuild = JSON.parse(originalPackageJsonText);
+  const shouldRestorePackageJson = packageJsonForBuild.version !== buildVersion;
+  if (shouldRestorePackageJson) {
+    packageJsonForBuild.version = buildVersion;
+    fs.writeFileSync(PACKAGE_JSON_PATH, `${JSON.stringify(packageJsonForBuild, null, 2)}\n`);
+  }
+
+  let artifacts;
+  try {
+    artifacts = await build({
+      projectDir: PROJECT_ROOT,
+      config: buildConfig,
+      targets: createTargets(platformSpec, options),
+      publish: null
+    });
+  } finally {
+    if (shouldRestorePackageJson) {
+      fs.writeFileSync(PACKAGE_JSON_PATH, originalPackageJsonText);
+    }
+  }
 
   const localUpdateConfigPaths =
     platformSpec.key === "macos" ? writeMacDirBuildUpdateConfig(options, buildConfig, packageJson, platformSpec) : [];
