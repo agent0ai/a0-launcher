@@ -1280,7 +1280,7 @@ function createWindow(mode = 'splash') {
     maximizable: !isSplash,
     fullscreenable: !isSplash,
     hasShadow: !isSplash,
-    backgroundColor: isSplash ? '#00000000' : undefined,
+    backgroundColor: isSplash ? '#00000000' : '#131313',
     skipTaskbar: isSplash,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1788,6 +1788,7 @@ async function openInstanceTab(target) {
 
   const previousActiveTabId = activeInstanceTabId;
   const view = new WebContentsView({ webPreferences: createInstanceWebPreferences() });
+  view.setBackgroundColor('#131313');
   const tab = {
     id: nextInstanceTabId(),
     key: target.key,
