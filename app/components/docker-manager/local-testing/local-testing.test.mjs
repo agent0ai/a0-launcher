@@ -115,6 +115,11 @@ test('instance visual color stays stable when the badge changes', () => {
   assert.equal(next.children[1].textContent, '2.0');
 });
 
+test('version-like instance names use compact visual text', () => {
+  assert.equal(createInstanceVisual('agent-zero').className.includes('is-compact'), false);
+  assert.equal(createInstanceVisual('agent-zero-v2.0').className.includes('is-compact'), true);
+});
+
 test('instance chips prefer concrete image tags over runtime branch names', () => {
   assert.equal(
     instanceVisualBadge({

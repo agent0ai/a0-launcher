@@ -77,7 +77,7 @@ function createInstanceVisual(value, options = {}) {
   const badge = versionVisualLabel(options.badge || options.version || "", "");
   const seed = String(options.seed || value || badge || "instance");
   const tone = toneForSeed(seed, options.color || "");
-  const lengthClass = label.length > 30 ? " is-compact" : label.length > 18 ? " is-long" : "";
+  const lengthClass = label.length > 14 ? " is-compact" : label.length > 10 ? " is-long" : "";
   const visual = document.createElement("div");
   visual.className = `dm-card-visual dm-card-instance-visual${lengthClass}`;
   visual.style.setProperty("--dm-version-fg", tone.fg);

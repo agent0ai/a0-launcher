@@ -665,7 +665,6 @@ body {
   z-index: 1;
   display: -webkit-box;
   max-width: calc(100% - 1rem);
-  max-height: 6.1rem;
   overflow: hidden;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -673,7 +672,7 @@ body {
   color: var(--dm-version-fg);
   font-size: 2.85rem;
   font-weight: 700;
-  line-height: 1.06;
+  line-height: 1.08;
   text-align: center;
   filter: drop-shadow(0 0.45rem 1.35rem color-mix(in srgb, var(--dm-version-fg) 24%, transparent));
 }
