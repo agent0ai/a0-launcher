@@ -2,10 +2,11 @@ import {
   ADVANCED_INSTANCE_MODEL_SLOTS,
   PRIMARY_INSTANCE_MODEL_SLOTS,
   bindInstanceDefaultProviderPlaceholderSync,
-  buildInstanceEnvTextFromForm,
+  buildInstanceEnvText,
   defaultInstanceName,
   instanceModelRowsHtml,
-  normalizeInstanceDefaults
+  normalizeInstanceDefaults,
+  readInstanceDefaultsFromForm
 } from "./instance-defaults.js";
 
 function closeDialog(dialog) {
@@ -443,7 +444,8 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
       window.toastFrontendError?.("Choose an installed version before creating an Instance.", "Agent Zero");
       return;
     }
-    const envResult = buildInstanceEnvTextFromForm(dialog, "activate", envInput?.value || "");
+    const instanceDefaults = readInstanceDefaultsFromForm(dialog, "activate");
+    const envResult = buildInstanceEnvText(instanceDefaults, envInput?.value || "");
     if (!envResult.ok) {
       window.toastFrontendError?.(envResult.message, "Agent Zero");
       return;
@@ -472,6 +474,8 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
       options.hostRoot = storageModeInput?.value === "host_directory_exact" ? storageHostRootInput?.value || "" : "";
       options.volumeName = storageModeInput?.value === "named_volume" ? storageVolumeNameInput?.value || "" : "";
     }
+    const defaultsSaved = await window.dockerManagerActions?.setInstanceDefaults?.(instanceDefaults, { quiet: true });
+    if (defaultsSaved === false) return;
     closeDialog(dialog);
     await window.dockerManagerActions?.activateTag?.(tag, options);
   });

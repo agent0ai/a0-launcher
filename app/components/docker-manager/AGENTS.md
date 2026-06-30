@@ -173,11 +173,12 @@ This scope owns:
   the backup/proceed acknowledgement.
 - Activation may offer optional model provider/model/API-key helpers. Keep Main
   and Utility in the primary dialog body, keep Embedding under Advanced, compile
-  helpers to Agent Zero environment defaults, and preserve Advanced environment
-  variables as the explicit escape hatch. Activation may also offer optional
-  web login username/password helpers that compile to Agent Zero auth
-  environment defaults; blank values must preserve Agent Zero's normal
-  onboarding/default behavior.
+  helpers to Agent Zero environment defaults, save edited helpers as Instance
+  Defaults for future runs, and preserve Advanced environment variables as the
+  explicit escape hatch. Activation may also offer optional web login
+  username/password helpers that compile to Agent Zero auth environment
+  defaults; blank values must preserve Agent Zero's normal onboarding/default
+  behavior.
 - Port mappings and environment text stay advanced activation inputs. They
   should not become a required path for normal users.
 - Advanced activation may expose a storage override, but it should name concrete
