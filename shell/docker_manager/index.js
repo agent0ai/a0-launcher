@@ -1482,13 +1482,16 @@ async function waitForHttpPort(host, port, options = {}) {
   const attemptTimeoutMs =
     Number.isFinite(Number(options.attemptTimeoutMs)) ? Number(options.attemptTimeoutMs) : UI_READY_ATTEMPT_TIMEOUT_MS;
   const onTick = typeof options.onTick === 'function' ? options.onTick : null;
+  const signal = options?.signal && typeof options.signal === 'object' ? options.signal : null;
 
   const startedAt = Date.now();
   let lastTickSeconds = -1;
 
   while (Date.now() - startedAt < timeoutMs) {
+    throwIfBackgroundOperationCanceled(signal);
     // eslint-disable-next-line no-await-in-loop
     const ok = await isHttpPortReachable(host, port, attemptTimeoutMs);
+    throwIfBackgroundOperationCanceled(signal);
     if (ok) return true;
 
     const seconds = Math.floor((Date.now() - startedAt) / 1000);
@@ -1502,9 +1505,10 @@ async function waitForHttpPort(host, port, options = {}) {
     }
 
     // eslint-disable-next-line no-await-in-loop
-    await new Promise((r) => setTimeout(r, intervalMs));
+    await abortableBackgroundDelay(intervalMs, signal);
   }
 
+  throwIfBackgroundOperationCanceled(signal);
   if (onTick) {
     const seconds = Math.floor((Date.now() - startedAt) / 1000);
     try {
@@ -1525,7 +1529,8 @@ async function waitForUiReachable(docker, containerId, options = {}) {
     if (!hp) return { uiUrl: null, ok: false };
     const ok = await waitForHttpPort(hp.host, hp.port, options);
     return { uiUrl, ok };
-  } catch {
+  } catch (error) {
+    if (error?.code === 'OP_CANCELED') throw error;
     return { uiUrl: null, ok: false };
   }
 }
@@ -1538,7 +1543,8 @@ async function waitForStartedLocalInstanceUi(docker, containerId, options = {}) 
     intervalMs: Number.isFinite(Number(options.intervalMs)) ? Number(options.intervalMs) : 450,
     attemptTimeoutMs: Number.isFinite(Number(options.attemptTimeoutMs))
       ? Number(options.attemptTimeoutMs)
-      : UI_READY_ATTEMPT_TIMEOUT_MS
+      : UI_READY_ATTEMPT_TIMEOUT_MS,
+    signal: options.signal
   });
   if (!waitRes.ok) {
     const err = new Error('Agent Zero started, but the UI is not reachable yet.');
@@ -1641,6 +1647,7 @@ let _currentOperation = null;
 const _abortControllers = new Map();
 const _warmLayerSizes = { running: false, lastImageRepo: '', lastStartedAtMs: 0 };
 const _backgroundOperations = new Map();
+const _backgroundAbortControllers = new Map();
 const _containerOperationChains = new Map();
 
 function backgroundOperationsSnapshot() {
@@ -1680,6 +1687,58 @@ function finishBackgroundOperation(opId, status, error = null) {
   });
 }
 
+function backgroundOperationCanceledError() {
+  const err = new Error('Operation canceled.');
+  err.code = 'OP_CANCELED';
+  return err;
+}
+
+function throwIfBackgroundOperationCanceled(signal) {
+  if (signal?.aborted) throw backgroundOperationCanceledError();
+}
+
+function abortableBackgroundDelay(ms, signal) {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  throwIfBackgroundOperationCanceled(signal);
+  return new Promise((resolve, reject) => {
+    const done = () => {
+      signal.removeEventListener?.('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(backgroundOperationCanceledError());
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener?.('abort', onAbort, { once: true });
+  });
+}
+
+function activeBackgroundOperationForContainer(containerId, type = '') {
+  const id = String(containerId || '').trim();
+  if (!id) return null;
+  return Array.from(_backgroundOperations.values()).find((op) => {
+    if (!op || op.containerId !== id) return false;
+    if (op.status !== 'queued' && op.status !== 'running') return false;
+    return !type || op.type === type;
+  }) || null;
+}
+
+function abortRunningBackgroundOperationForContainer(containerId, type = '') {
+  const id = String(containerId || '').trim();
+  if (!id) return false;
+  const op = Array.from(_backgroundOperations.values()).find((candidate) => {
+    if (!candidate || candidate.containerId !== id) return false;
+    if (candidate.status !== 'running') return false;
+    return !type || candidate.type === type;
+  }) || null;
+  const controller = op?.opId ? _backgroundAbortControllers.get(op.opId) : null;
+  if (!controller) return false;
+  updateBackgroundOperation(op.opId, { message: 'Stopping' });
+  controller.abort();
+  return true;
+}
+
 function pruneBackgroundOperation(opId) {
   if (!_backgroundOperations.delete(opId)) return;
   emitBackgroundOperationsState();
@@ -1712,6 +1771,8 @@ function enqueueContainerOperation({ type, containerId, message, run }) {
   const task = previous
     .catch(() => {})
     .then(async () => {
+      const controller = new AbortController();
+      _backgroundAbortControllers.set(opId, controller);
       updateBackgroundOperation(opId, {
         status: 'running',
         startedAt: nowIso(),
@@ -1719,7 +1780,7 @@ function enqueueContainerOperation({ type, containerId, message, run }) {
       });
       let failure = null;
       try {
-        await run(id, opId);
+        await run(id, opId, { signal: controller.signal });
       } catch (error) {
         failure = error;
       }
@@ -1729,7 +1790,8 @@ function enqueueContainerOperation({ type, containerId, message, run }) {
       } catch {
         // Keep background action completion independent from inventory refresh.
       } finally {
-        if (failure) finishBackgroundOperation(opId, 'failed', failure);
+        _backgroundAbortControllers.delete(opId);
+        if (failure) finishBackgroundOperation(opId, failure?.code === 'OP_CANCELED' ? 'canceled' : 'failed', failure);
         else finishBackgroundOperation(opId, 'completed');
         setTimeout(() => {
           pruneBackgroundOperation(opId);
@@ -4350,6 +4412,11 @@ async function stopActiveInstance() {
 async function stopLocalInstance(containerId) {
   const imageRepo = getBackendImageRepo();
   const id = assertContainerId(containerId);
+  const existingStop = activeBackgroundOperationForContainer(id, 'stop');
+  if (existingStop) {
+    return { opId: existingStop.opId, queued: existingStop.status === 'queued', background: true };
+  }
+  abortRunningBackgroundOperationForContainer(id, 'start');
 
   return enqueueContainerOperation({
     type: 'stop',
@@ -4382,7 +4449,7 @@ async function startLocalInstance(containerId) {
     type: 'start',
     containerId: id,
     message: 'Starting',
-    run: async (targetId, opId) => {
+    run: async (targetId, opId, runOptions = {}) => {
       const docker = await getManagedDocker(imageRepo);
       const containers = await docker.listContainers(imageRepo);
       const target = (containers || []).find((c) => c && c.containerId === targetId) || null;
@@ -4399,7 +4466,8 @@ async function startLocalInstance(containerId) {
       }
 
       await waitForStartedLocalInstanceUi(docker, target.containerId, {
-        onStatus: (patch) => updateBackgroundOperation(opId, patch)
+        onStatus: (patch) => updateBackgroundOperation(opId, patch),
+        signal: runOptions.signal
       });
     }
   });

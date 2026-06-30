@@ -132,6 +132,7 @@ test('instance power menu switches between stop and start', () => {
     instancePowerMenuConfig({
       isRunning: false,
       canStart: true,
+      canStop: false,
       containerId: 'abc123',
       containerOperationRunning: false
     }),
@@ -141,6 +142,25 @@ test('instance power menu switches between stop and start', () => {
       label: 'Start',
       disabled: false,
       title: 'Start this instance'
+    }
+  );
+});
+
+test('instance power menu allows stop while start is waiting for UI', () => {
+  assert.deepEqual(
+    instancePowerMenuConfig({
+      isRunning: false,
+      canStart: true,
+      canStop: true,
+      containerId: 'abc123',
+      containerOperationRunning: true
+    }),
+    {
+      action: 'stop',
+      icon: 'stop_circle',
+      label: 'Stop',
+      disabled: false,
+      title: 'Stop this starting instance'
     }
   );
 });

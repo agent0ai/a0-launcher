@@ -229,6 +229,45 @@ test('local instance start readiness reports waiting until the UI responds', asy
   }
 });
 
+test('local instance start readiness can be aborted while the UI hangs', async () => {
+  const server = http.createServer((_req, res) => {
+    res.statusCode = 200;
+    res.end('unused');
+  });
+  const address = await listenLocalServer(server);
+  await closeServer(server);
+
+  const controller = new AbortController();
+  const statusPatches = [];
+  const fakeDocker = {
+    async inspectContainer(containerId) {
+      assert.equal(containerId, 'container-1');
+      return {
+        NetworkSettings: {
+          Ports: {
+            '80/tcp': [{ HostPort: String(address.port) }]
+          }
+        }
+      };
+    }
+  };
+
+  const timer = setTimeout(() => controller.abort(), 50);
+  if (typeof timer.unref === 'function') timer.unref();
+
+  await assert.rejects(
+    waitForStartedLocalInstanceUi(fakeDocker, 'container-1', {
+      timeoutMs: 5000,
+      intervalMs: 1000,
+      attemptTimeoutMs: 90,
+      signal: controller.signal,
+      onStatus: (patch) => statusPatches.push(patch)
+    }),
+    (error) => error?.code === 'OP_CANCELED'
+  );
+  assert.deepEqual(statusPatches, [{ message: 'Waiting for UI', uiReady: false }]);
+});
+
 test('remote health URL preserves saved base paths', () => {
   assert.equal(
     remoteHealthUrl('https://example.com/agent-zero/?tab=home').href,

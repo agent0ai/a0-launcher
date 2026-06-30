@@ -167,16 +167,17 @@ function localCardsRenderKey(state = {}) {
   });
 }
 
-function instancePowerMenuConfig({ isRunning, canStart, containerId, containerOperationRunning } = {}) {
+function instancePowerMenuConfig({ isRunning, canStart, canStop, containerId, containerOperationRunning } = {}) {
   const hasContainer = !!String(containerId || "").trim();
   const busy = !!containerOperationRunning;
-  if (isRunning) {
+  const stoppingAllowed = isRunning || canStop;
+  if (stoppingAllowed) {
     return {
       action: "stop",
       icon: "stop_circle",
       label: "Stop",
-      disabled: !hasContainer || busy,
-      title: busy ? "An action is already queued for this instance" : "Stop this instance"
+      disabled: !hasContainer || (busy && !canStop),
+      title: canStop ? "Stop this starting instance" : busy ? "An action is already queued for this instance" : "Stop this instance"
     };
   }
   return {
@@ -1266,9 +1267,11 @@ function renderDockerInstance(list, c, state) {
   const isManagedLocalInstance = c?.labels?.["a0.launcher.managed"] === "true" || role === "developer" || role === "clone";
   const isRunning = st === "running";
   const canStartLocalInstance = !isRunning && (isActiveInstance || isManagedLocalInstance);
+  const canStopStartingInstance = backgroundOperation?.type === "start" && backgroundOperation.status === "running";
   const powerMenuItem = instancePowerMenuConfig({
     isRunning,
     canStart: canStartLocalInstance,
+    canStop: canStopStartingInstance,
     containerId,
     containerOperationRunning
   });
@@ -1287,7 +1290,17 @@ function renderDockerInstance(list, c, state) {
     });
   }
 
-  if (isRunning) {
+  if (canStopStartingInstance) {
+    const stopBtn = document.createElement("button");
+    stopBtn.className = "button cancel";
+    stopBtn.type = "button";
+    stopBtn.textContent = "Stop";
+    stopBtn.title = "Stop this starting instance";
+    stopBtn.addEventListener("click", () => {
+      window.dockerManagerActions?.stopLocalInstance?.(containerId);
+    });
+    actions.appendChild(stopBtn);
+  } else if (isRunning) {
     const openBtn = document.createElement("button");
     openBtn.className = "button confirm";
     openBtn.type = "button";
