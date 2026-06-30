@@ -94,11 +94,14 @@ This scope owns:
   Replacement flows should preserve the source container's inspected settled
   ports when Docker exposes them; clones still receive fresh explicit open
   ports so they can run beside the source.
-- Workspace storage preferences are stored as `mode`, `hostRoot`, and
-  `volumePrefix`. The default mode is `host_directory`, default root is
-  `~/agent-zero`, and every new launcher-managed local container must mount a
-  per-instance workspace at `/a0/usr` unless the user explicitly selects the
-  no-volume ephemeral workspace mode for that run.
+- Workspace storage preferences are stored as `mode`, `hostRoot`,
+  `hostPathMode`, and `volumePrefix`. The default mode is `host_directory`,
+  default root is `~/agent-zero`, and the default path mode creates a
+  per-instance workspace at `/a0/usr` using the Instance name as the host
+  folder, with a numeric suffix only when that folder already exists. Exact
+  path mode mounts the selected host folder directly at `/a0/usr`. A new
+  launcher-managed local container should skip persistent storage only when the
+  user explicitly selects the no-volume ephemeral workspace mode for that run.
 - Windows WSL Engine bind mounts should keep the Windows host path in launcher
   labels and state, but send Docker a WSL-visible `/mnt/<drive>/...` source path
   for the actual container mount.

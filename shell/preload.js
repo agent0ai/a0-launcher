@@ -135,6 +135,7 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
       containerId,
       storageMode: typeof opts.storageMode === 'string' ? opts.storageMode : '',
       hostRoot: typeof opts.hostRoot === 'string' ? opts.hostRoot : '',
+      hostPathMode: typeof opts.hostPathMode === 'string' ? opts.hostPathMode : '',
       volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : ''
     });
   },
@@ -150,6 +151,7 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
     return ipcRenderer.invoke('docker-manager:setStoragePreferences', {
       mode: typeof p.mode === 'string' ? p.mode : '',
       hostRoot: typeof p.hostRoot === 'string' ? p.hostRoot : '',
+      hostPathMode: typeof p.hostPathMode === 'string' ? p.hostPathMode : '',
       volumePrefix: typeof p.volumePrefix === 'string' ? p.volumePrefix : ''
     });
   },
@@ -201,6 +203,7 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
       envText: typeof opts.envText === 'string' ? opts.envText : '',
       storageMode: typeof opts.storageMode === 'string' ? opts.storageMode : '',
       hostRoot: typeof opts.hostRoot === 'string' ? opts.hostRoot : '',
+      hostPathMode: typeof opts.hostPathMode === 'string' ? opts.hostPathMode : '',
       volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : '',
       credentials: opts.credentials && typeof opts.credentials === 'object'
         ? {
@@ -222,6 +225,7 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
       mountsText: typeof opts.mountsText === 'string' ? opts.mountsText : '',
       storageMode: typeof opts.storageMode === 'string' ? opts.storageMode : '',
       hostRoot: typeof opts.hostRoot === 'string' ? opts.hostRoot : '',
+      hostPathMode: typeof opts.hostPathMode === 'string' ? opts.hostPathMode : '',
       volumeName: typeof opts.volumeName === 'string' ? opts.volumeName : '',
       pull: opts.pull !== false
     });

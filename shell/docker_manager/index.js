@@ -44,6 +44,8 @@ const WORKSPACE_MOUNT_TARGET = '/a0/usr';
 const STORAGE_MODE_HOST_DIRECTORY = 'host_directory';
 const STORAGE_MODE_NAMED_VOLUME = 'named_volume';
 const STORAGE_MODE_EPHEMERAL = 'ephemeral';
+const HOST_PATH_MODE_PER_INSTANCE = 'per_instance';
+const HOST_PATH_MODE_EXACT = 'exact';
 const ZIP_UINT16_MAX = 0xffff;
 const ZIP_UINT32_MAX = 0xffffffff;
 const CLONE_WORKSPACE_CATEGORY_IDS = Object.freeze([
@@ -871,9 +873,40 @@ function dockerVolumeName(value, fallback = 'a0-launcher-workspace') {
   return fallback;
 }
 
+function normalizeHostPathMode(value, fallback = HOST_PATH_MODE_PER_INSTANCE) {
+  const mode = String(value || '').trim();
+  if (mode === HOST_PATH_MODE_EXACT) return HOST_PATH_MODE_EXACT;
+  return fallback === HOST_PATH_MODE_EXACT ? HOST_PATH_MODE_EXACT : HOST_PATH_MODE_PER_INSTANCE;
+}
+
 function workspaceSlug(instanceName, containerName) {
   const candidate = containerName || instanceName || 'agent-zero';
   return sanitizeInstanceName(candidate, 'agent-zero-workspace').slice(0, 96);
+}
+
+function workspaceHostSlug(instanceName, containerName) {
+  const fallback = workspaceSlug('', containerName);
+  return sanitizeInstanceName(instanceName, fallback).slice(0, 96);
+}
+
+async function createPerInstanceWorkspaceHostPath(root, slug) {
+  await fs.mkdir(root, { recursive: true });
+  for (let index = 0; index < 1000; index += 1) {
+    const name = index === 0 ? slug : `${slug}-${index + 1}`;
+    const workspaceRoot = path.join(root, name);
+    try {
+      await fs.mkdir(workspaceRoot);
+      const hostPath = path.join(workspaceRoot, 'usr');
+      await fs.mkdir(hostPath);
+      return hostPath;
+    } catch (error) {
+      if (error?.code === 'EEXIST') continue;
+      throw error;
+    }
+  }
+  const err = new Error('No available workspace folder name');
+  err.code = 'WORKSPACE_FOLDER_UNAVAILABLE';
+  throw err;
 }
 
 function normalizeStorageOverride(raw) {
@@ -885,11 +918,14 @@ function normalizeStorageOverride(raw) {
       : '';
   const mode = rawMode ? normalizeStorageMode(rawMode) : '';
   const hostRoot = typeof input.hostRoot === 'string' && input.hostRoot.trim() ? input.hostRoot.trim().slice(0, 512) : '';
+  const hostPathMode = typeof input.hostPathMode === 'string' && input.hostPathMode.trim()
+    ? normalizeHostPathMode(input.hostPathMode)
+    : '';
   const volumeName = typeof input.volumeName === 'string' && input.volumeName.trim()
     ? dockerVolumeName(input.volumeName.trim())
     : '';
-  if (!mode && !hostRoot && !volumeName) return null;
-  return { mode, hostRoot, volumeName };
+  if (!mode && !hostRoot && !hostPathMode && !volumeName) return null;
+  return { mode, hostRoot, hostPathMode, volumeName };
 }
 
 async function resolveWorkspaceStorage(options = {}) {
@@ -925,14 +961,18 @@ async function resolveWorkspaceStorage(options = {}) {
   }
 
   const root = normalizeHostRootForUse(override?.hostRoot || preferences.hostRoot);
+  const hostPathMode = normalizeHostPathMode(override?.hostPathMode, preferences.hostPathMode);
   storage.hostRoot = root;
-  storage.hostPath = path.join(root, slug, 'usr');
+  storage.hostPathMode = hostPathMode;
+  storage.hostPath = hostPathMode === HOST_PATH_MODE_EXACT
+    ? root
+    : await createPerInstanceWorkspaceHostPath(root, workspaceHostSlug(options.instanceName, options.containerName));
   storage.mount = {
     Type: 'bind',
     Source: storage.hostPath,
     Target: WORKSPACE_MOUNT_TARGET
   };
-  await fs.mkdir(storage.hostPath, { recursive: true });
+  if (hostPathMode === HOST_PATH_MODE_EXACT) await fs.mkdir(storage.hostPath, { recursive: true });
   return storage;
 }
 

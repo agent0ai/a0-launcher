@@ -78,6 +78,7 @@ const DEFAULT_PORT_PREFERENCES = Object.freeze({
 const DEFAULT_STORAGE_PREFERENCES = Object.freeze({
   mode: 'host_directory',
   hostRoot: '~/agent-zero',
+  hostPathMode: 'per_instance',
   volumePrefix: 'a0-launcher'
 });
 
@@ -162,6 +163,10 @@ function normalizeHostRoot(value) {
   return text;
 }
 
+function normalizeHostPathMode(value) {
+  return String(value || '').trim() === 'exact' ? 'exact' : DEFAULT_STORAGE_PREFERENCES.hostPathMode;
+}
+
 function normalizeVolumePrefix(value) {
   const text = normalizePreferenceText(value, 120)
     .replace(/[^A-Za-z0-9_.-]+/g, '-')
@@ -176,6 +181,7 @@ function normalizeStoragePreferences(value) {
   return {
     mode: normalizeStorageMode(input.mode),
     hostRoot: normalizeHostRoot(input.hostRoot),
+    hostPathMode: normalizeHostPathMode(input.hostPathMode),
     volumePrefix: normalizeVolumePrefix(input.volumePrefix)
   };
 }

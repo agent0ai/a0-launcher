@@ -121,9 +121,17 @@
             </select>
           </div>
           <div class="dm-field">
-            <label for="workspaceHostRoot">Host root</label>
+            <label for="workspaceHostRoot">Host folder</label>
             <input id="workspaceHostRoot" class="dm-text-input" type="text" autocomplete="off" placeholder="~/agent-zero">
-            <div class="dm-field-hint">New instances use a per-instance usr folder under this root.</div>
+            <div class="dm-field-hint">Choose where host-directory workspaces live.</div>
+          </div>
+          <div class="dm-field">
+            <label for="workspaceHostPathMode">Directory mapping</label>
+            <select id="workspaceHostPathMode" class="dm-text-input">
+              <option value="per_instance">Separate folder per Instance</option>
+              <option value="exact">Use this folder directly</option>
+            </select>
+            <div class="dm-field-hint">Direct mapping mounts the chosen folder itself at /a0/usr; separate keeps Instances isolated.</div>
           </div>
           <div class="dm-field">
             <label for="workspaceVolumePrefix">Volume prefix</label>

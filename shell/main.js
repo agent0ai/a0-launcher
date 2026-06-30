@@ -3054,6 +3054,7 @@ function sanitizeDockerManagerState(state) {
 
   {
     const mode = storagePrefsIn.mode === 'named_volume' ? 'named_volume' : 'host_directory';
+    const hostPathMode = storagePrefsIn.hostPathMode === 'exact' ? 'exact' : 'per_instance';
     const cleanText = (value, fallback, maxLength = 512) => {
       const text = String(value || '')
         .trim()
@@ -3064,6 +3065,7 @@ function sanitizeDockerManagerState(state) {
     outState.storagePreferences = {
       mode,
       hostRoot: cleanText(storagePrefsIn.hostRoot, '~/agent-zero'),
+      hostPathMode,
       volumePrefix: cleanText(storagePrefsIn.volumePrefix, 'a0-launcher', 120)
     };
   }
@@ -3353,6 +3355,7 @@ ipcMain.handle('docker-manager:migrateLocalInstanceStorage', async (_event, body
     const accepted = await dockerManager.migrateLocalInstanceStorage(containerId, {
       storageMode: typeof body.storageMode === 'string' ? body.storageMode : '',
       hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      hostPathMode: typeof body.hostPathMode === 'string' ? body.hostPathMode : '',
       volumeName: typeof body.volumeName === 'string' ? body.volumeName : ''
     });
     if (!accepted || typeof accepted.opId !== 'string') {
@@ -3425,6 +3428,7 @@ ipcMain.handle('docker-manager:setStoragePreferences', async (_event, body) => {
     const prefs = await dockerManager.setStoragePreferences({
       mode: typeof body.mode === 'string' ? body.mode : '',
       hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      hostPathMode: typeof body.hostPathMode === 'string' ? body.hostPathMode : '',
       volumePrefix: typeof body.volumePrefix === 'string' ? body.volumePrefix : ''
     });
     return sanitizeDockerManagerState({ storagePreferences: prefs }).storagePreferences;
@@ -3615,6 +3619,7 @@ ipcMain.handle('docker-manager:activate', async (_event, body) => {
       envText: typeof body.envText === 'string' ? body.envText : '',
       storageMode: typeof body.storageMode === 'string' ? body.storageMode : '',
       hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      hostPathMode: typeof body.hostPathMode === 'string' ? body.hostPathMode : '',
       volumeName: typeof body.volumeName === 'string' ? body.volumeName : '',
       credentials: isPlainObject(body.credentials)
         ? {
@@ -3646,6 +3651,7 @@ ipcMain.handle('docker-manager:runCustomImage', async (_event, body) => {
       mountsText: typeof body.mountsText === 'string' ? body.mountsText : '',
       storageMode: typeof body.storageMode === 'string' ? body.storageMode : '',
       hostRoot: typeof body.hostRoot === 'string' ? body.hostRoot : '',
+      hostPathMode: typeof body.hostPathMode === 'string' ? body.hostPathMode : '',
       volumeName: typeof body.volumeName === 'string' ? body.volumeName : '',
       pull: body.pull !== false
     };

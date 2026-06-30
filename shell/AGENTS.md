@@ -151,8 +151,8 @@ This scope owns:
   owns native save/open dialogs for `.zip` files; Docker Manager owns the
   `/a0/usr` archive semantics and progress events.
 - Workspace storage preference and migration actions are named Docker Manager
-  intents. They may expose storage mode/root/volume fields, but Docker mount
-  creation, migration, and archive copy behavior must stay in
+  intents. They may expose storage mode/root/path-mode/volume fields, but
+  Docker mount creation, migration, and archive copy behavior must stay in
   `shell/docker_manager` and `shell/docker_adapter`.
 - Opening an Instance storage folder is a named Docker Manager intent. The
   renderer passes a container id; the shell resolves and opens only validated

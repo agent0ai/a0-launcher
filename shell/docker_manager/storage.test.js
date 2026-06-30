@@ -356,7 +356,7 @@ test('host directory workspace storage creates a per-container /a0/usr mount and
   const root = await tempRoot();
   const storage = await resolveWorkspaceStorage({
     preferences: { mode: 'host_directory', hostRoot: root, volumePrefix: 'a0-launcher' },
-    instanceName: 'Agent Zero',
+    instanceName: 'personal2',
     containerName: 'a0-inst-agent-zero-abc123'
   });
   const createOptions = { Labels: {}, HostConfig: {} };
@@ -365,11 +365,42 @@ test('host directory workspace storage creates a per-container /a0/usr mount and
 
   assert.equal(storage.mode, 'host_directory');
   assert.equal(storage.target, WORKSPACE_MOUNT_TARGET);
-  assert.equal(storage.hostPath, path.join(root, 'a0-inst-agent-zero-abc123', 'usr'));
+  assert.equal(storage.hostPathMode, 'per_instance');
+  assert.equal(storage.hostPath, path.join(root, 'personal2', 'usr'));
   assert.equal(createOptions.HostConfig.Mounts[0].Type, 'bind');
   assert.equal(createOptions.HostConfig.Mounts[0].Target, WORKSPACE_MOUNT_TARGET);
   assert.equal(createOptions.Labels['a0.launcher.storage.mode'], 'host_directory');
   assert.equal(createOptions.Labels['a0.launcher.storage.persistent'], 'true');
+});
+
+test('host directory workspace storage adds a numeric suffix when the instance folder exists', async () => {
+  const root = await tempRoot();
+  await fs.mkdir(path.join(root, 'personal2'), { recursive: true });
+  const storage = await resolveWorkspaceStorage({
+    preferences: { mode: 'host_directory', hostRoot: root, volumePrefix: 'a0-launcher' },
+    instanceName: 'personal2',
+    containerName: 'a0-inst-agent-zero-abc123'
+  });
+
+  assert.equal(storage.hostPath, path.join(root, 'personal2-2', 'usr'));
+});
+
+test('exact host directory workspace storage mounts the selected folder directly', async () => {
+  const root = await tempRoot();
+  const storage = await resolveWorkspaceStorage({
+    preferences: { mode: 'host_directory', hostRoot: root, hostPathMode: 'exact', volumePrefix: 'a0-launcher' },
+    instanceName: 'Agent Zero',
+    containerName: 'a0-inst-agent-zero-abc123'
+  });
+
+  assert.equal(storage.mode, 'host_directory');
+  assert.equal(storage.hostPathMode, 'exact');
+  assert.equal(storage.hostPath, root);
+  assert.deepEqual(storage.mount, {
+    Type: 'bind',
+    Source: root,
+    Target: WORKSPACE_MOUNT_TARGET
+  });
 });
 
 test('Windows WSL runtime bind mounts use WSL-visible sources while labels keep host paths', () => {
@@ -554,7 +585,7 @@ test('clone create options replace source workspace mounts with a fresh workspac
   assert.equal(options.Labels['a0.launcher.storage.mode'], 'host_directory');
   assert.equal(options.HostConfig.Mounts.length, 1);
   assert.equal(options.HostConfig.Mounts[0].Target, WORKSPACE_MOUNT_TARGET);
-  assert.equal(options.HostConfig.Mounts[0].Source, path.join(root, 'a0-inst-main-clone-test', 'usr'));
+  assert.equal(options.HostConfig.Mounts[0].Source, path.join(root, 'Main-clone', 'usr'));
   assert.deepEqual(options.HostConfig.Binds, ['/old/other:/a0/other:rw']);
   assert.equal(options.HostConfig.PortBindings['80/tcp'][0].HostPort, '32123');
   assert.equal(options.Labels['a0.launcher.port.map'], '32123:80');
