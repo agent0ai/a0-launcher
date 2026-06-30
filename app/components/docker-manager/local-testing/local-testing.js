@@ -1212,7 +1212,7 @@ function renderDockerInstance(list, c, state) {
 
   const visual = createInstanceVisual(displayName, {
     badge: visualBadge,
-    seed: `${displayName}:${visualBadge || containerId}`,
+    seed: containerId || displayName,
     color: c?.instanceColor || ""
   });
 

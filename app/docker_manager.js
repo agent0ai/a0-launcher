@@ -595,9 +595,9 @@ async function refresh() {
     store.runtime = state?.runtime || inventory?.runtime || null;
     store.runtimeDiagnostics = inventory?.runtimeDiagnostics || state?.runtimeDiagnostics || null;
     store.images = Array.isArray(inventory?.images) ? inventory.images : [];
-    store.containers = Array.isArray(inventory?.containers) ? inventory.containers : [];
-    if (Array.isArray(inventory?.remoteInstances)) store.remoteInstances = inventory.remoteInstances;
-    if (Array.isArray(inventory?.backgroundOperations)) store.backgroundOperations = inventory.backgroundOperations;
+    if (!Array.isArray(state?.containers) && Array.isArray(inventory?.containers)) store.containers = inventory.containers;
+    if (!Array.isArray(state?.remoteInstances) && Array.isArray(inventory?.remoteInstances)) store.remoteInstances = inventory.remoteInstances;
+    if (!Array.isArray(state?.backgroundOperations) && Array.isArray(inventory?.backgroundOperations)) store.backgroundOperations = inventory.backgroundOperations;
     store.volumes = Array.isArray(inventory?.volumes) ? inventory.volumes : [];
   } catch (e) {
     store.error = e?.message || "Failed to load Docker inventory.";

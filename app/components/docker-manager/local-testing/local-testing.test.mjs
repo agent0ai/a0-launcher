@@ -4,6 +4,26 @@ import { test } from 'node:test';
 globalThis.document = {
   body: { dataset: {} },
   addEventListener: () => {},
+  createElement: (tag) => {
+    const styles = new Map();
+    return {
+      tagName: String(tag || '').toUpperCase(),
+      children: [],
+      className: '',
+      textContent: '',
+      style: {
+        setProperty: (name, value) => styles.set(name, String(value)),
+        getPropertyValue: (name) => styles.get(name) || ''
+      },
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+      setAttribute(name, value) {
+        this[name] = String(value);
+      }
+    };
+  },
   getElementById: () => null
 };
 
@@ -26,6 +46,7 @@ const {
   localCardsRenderKey,
   openCardMenu
 } = await import('./local-testing.js');
+const { createInstanceVisual } = await import('../card-visuals.js');
 
 function fakeClassList(initial = []) {
   const values = new Set(initial);
@@ -80,6 +101,18 @@ test('channel instance chips show matched concrete release without channel text'
     }),
     '1.20'
   );
+});
+
+test('instance visual color stays stable when the badge changes', () => {
+  const first = createInstanceVisual('RFC', { badge: 'ready', seed: 'abc123' });
+  const next = createInstanceVisual('RFC', { badge: '2.0', seed: 'abc123' });
+
+  assert.equal(
+    first.style.getPropertyValue('--dm-version-fg'),
+    next.style.getPropertyValue('--dm-version-fg')
+  );
+  assert.equal(first.children[1].textContent, 'ready');
+  assert.equal(next.children[1].textContent, '2.0');
 });
 
 test('instance chips prefer concrete image tags over runtime branch names', () => {
