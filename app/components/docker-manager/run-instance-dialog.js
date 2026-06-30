@@ -59,6 +59,35 @@ function authEnvLinesFromValues(values = {}) {
   return lines;
 }
 
+function storageOverrideFromChoice(value) {
+  const choice = String(value || "").trim();
+  if (choice === "host_directory_exact") {
+    return { storageMode: "host_directory", hostPathMode: "exact" };
+  }
+  if (choice === "host_directory") {
+    return { storageMode: "host_directory", hostPathMode: "per_instance" };
+  }
+  if (choice === "named_volume") {
+    return { storageMode: "named_volume" };
+  }
+  return null;
+}
+
+function cleanFolderSegment(value, fallback = "agent-zero") {
+  return String(value || "")
+    .trim()
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/[\\/]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 80) || fallback;
+}
+
+function directWorkspaceFolder(root, instanceName) {
+  const base = String(root || "~/agent-zero").trim().replace(/[\\/]+$/g, "") || "~/agent-zero";
+  return `${base}/${cleanFolderSegment(instanceName)}`;
+}
+
 function parseReleaseTagParts(tag) {
   const normalized = String(tag || "").trim().replace(/^v/, "");
   const match = normalized.match(/^(\d+)\.(\d+)(?:\.(\d+))?$/);
@@ -325,17 +354,16 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
             <div class="dm-field">
               <label for="activateStorageMode">Workspace storage</label>
               <select id="activateStorageMode" class="dm-text-input">
-                <option value="">Use storage preferences</option>
-                <option value="host_directory">Host directory</option>
+                <option value="host_directory">Create folder named after Instance</option>
+                <option value="host_directory_exact">Choose custom folder</option>
                 <option value="named_volume">Named Docker volume</option>
               </select>
-              <div class="dm-field-hint">Every instance mounts a separate workspace at <strong>/a0/usr</strong>.</div>
             </div>
-            <div class="dm-field">
-              <label for="activateStorageHostRoot">Host root</label>
+            <div id="activateStorageHostRootField" class="dm-field" hidden>
+              <label for="activateStorageHostRoot">Folder</label>
               <input id="activateStorageHostRoot" class="dm-text-input" type="text" autocomplete="off" placeholder="~/agent-zero">
             </div>
-            <div class="dm-field">
+            <div id="activateStorageVolumeNameField" class="dm-field" hidden>
               <label for="activateStorageVolumeName">Volume name</label>
               <input id="activateStorageVolumeName" class="dm-text-input" type="text" autocomplete="off" placeholder="optional exact Docker volume name">
             </div>
@@ -363,15 +391,34 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
   const storageVolumeNameInput = dialog.querySelector("#activateStorageVolumeName");
   const envInput = dialog.querySelector("#activateEnvVars");
   let nameDirty = false;
+  let storageHostDirty = false;
+  const defaultHostRoot = state?.storagePreferences?.hostRoot || "~/agent-zero";
 
   bindInstanceDefaultProviderPlaceholderSync(dialog, "activate");
   if (nameInput) nameInput.value = defaultInstanceName(initialTag, state);
   if (portInput) portInput.value = "0:80";
-  if (storageHostRootInput) storageHostRootInput.value = state?.storagePreferences?.hostRoot || "~/agent-zero";
-  nameInput?.addEventListener("input", () => { nameDirty = true; });
+  if (storageHostRootInput) storageHostRootInput.value = directWorkspaceFolder(defaultHostRoot, nameInput?.value || "");
+  const syncStorageFields = () => {
+    const choice = storageModeInput?.value || "";
+    const hostField = dialog.querySelector("#activateStorageHostRootField");
+    const volumeField = dialog.querySelector("#activateStorageVolumeNameField");
+    if (hostField) hostField.hidden = choice !== "host_directory_exact";
+    if (volumeField) volumeField.hidden = choice !== "named_volume";
+    if (!storageHostDirty && storageHostRootInput) {
+      storageHostRootInput.value = directWorkspaceFolder(defaultHostRoot, nameInput?.value || "");
+    }
+  };
+  storageHostRootInput?.addEventListener("input", () => { storageHostDirty = true; });
+  storageModeInput?.addEventListener("change", syncStorageFields);
+  syncStorageFields();
+  nameInput?.addEventListener("input", () => {
+    nameDirty = true;
+    if (!storageHostDirty) syncStorageFields();
+  });
   versionInput?.addEventListener("change", () => {
     if (!nameInput || nameDirty) return;
     nameInput.value = defaultInstanceName(versionInput.value, state);
+    if (!storageHostDirty) syncStorageFields();
   });
 
   dialog.querySelectorAll("[data-dialog-close]").forEach((btn) => {
@@ -410,10 +457,12 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
     if (rememberCredentials) {
       options.credentials = { username, password, remember: true };
     }
-    if (storageModeInput?.value) {
-      options.storageMode = storageModeInput.value;
-      options.hostRoot = storageHostRootInput?.value || "";
-      options.volumeName = storageVolumeNameInput?.value || "";
+    const storageOverride = storageOverrideFromChoice(storageModeInput?.value);
+    if (storageOverride) {
+      options.storageMode = storageOverride.storageMode;
+      if (storageOverride.hostPathMode) options.hostPathMode = storageOverride.hostPathMode;
+      options.hostRoot = storageModeInput?.value === "host_directory_exact" ? storageHostRootInput?.value || "" : "";
+      options.volumeName = storageModeInput?.value === "named_volume" ? storageVolumeNameInput?.value || "" : "";
     }
     closeDialog(dialog);
     await window.dockerManagerActions?.activateTag?.(tag, options);
@@ -443,8 +492,10 @@ function openCreateLocalInstanceDialog(state = {}) {
 export {
   authEnvLinesFromValues,
   createLocalInstanceButtonModel,
+  directWorkspaceFolder,
   installedVersionChoices,
   mergeGeneratedEnvText,
   openCreateLocalInstanceDialog,
-  openRunInstanceDialog
+  openRunInstanceDialog,
+  storageOverrideFromChoice
 };

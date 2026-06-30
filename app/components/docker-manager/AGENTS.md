@@ -180,10 +180,10 @@ This scope owns:
   onboarding/default behavior.
 - Port mappings and environment text stay advanced activation inputs. They
   should not become a required path for normal users.
-- Advanced activation may expose a storage override, but the default path should
-  use saved workspace storage preferences and create a separate `/a0/usr`
-  workspace for every new local instance unless the user explicitly selects the
-  no-volume ephemeral mode.
+- Advanced activation may expose a storage override, but it should name concrete
+  outcomes instead of internal preferences: create a folder named after the
+  Instance, choose a custom folder, or use a named Docker volume. The named
+  Instance folder under the default workspace root should be first/default.
 - The Advanced tab may expose developer-mode custom image, tag, environment,
   port, mount, and editable Compose-file controls. Keep it opt-in, validate
   through Docker Manager IPC, and never expose a generic command runner or a

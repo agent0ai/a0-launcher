@@ -4,8 +4,10 @@ import { test } from 'node:test';
 const {
   authEnvLinesFromValues,
   createLocalInstanceButtonModel,
+  directWorkspaceFolder,
   installedVersionChoices,
-  mergeGeneratedEnvText
+  mergeGeneratedEnvText,
+  storageOverrideFromChoice
 } = await import('./run-instance-dialog.js');
 
 test('installed version choices include runnable installed versions and local images only', () => {
@@ -80,4 +82,23 @@ test('auth environment helpers clean values and preserve explicit advanced overr
     ], 'AUTH_PASSWORD=manual\nAPI_KEY_OPENAI=sk-test'),
     'AUTH_LOGIN=dev\n\nAUTH_PASSWORD=manual\nAPI_KEY_OPENAI=sk-test'
   );
+});
+
+test('workspace storage choices map to explicit mount behavior', () => {
+  assert.deepEqual(storageOverrideFromChoice('host_directory_exact'), {
+    storageMode: 'host_directory',
+    hostPathMode: 'exact'
+  });
+  assert.deepEqual(storageOverrideFromChoice('host_directory'), {
+    storageMode: 'host_directory',
+    hostPathMode: 'per_instance'
+  });
+  assert.deepEqual(storageOverrideFromChoice('named_volume'), {
+    storageMode: 'named_volume'
+  });
+});
+
+test('direct workspace folder defaults to the instance name under the root', () => {
+  assert.equal(directWorkspaceFolder('~/agent-zero', 'personal2'), '~/agent-zero/personal2');
+  assert.equal(directWorkspaceFolder('~/agent-zero/', 'Personal/Two'), '~/agent-zero/Personal-Two');
 });
