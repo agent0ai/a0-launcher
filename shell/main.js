@@ -2933,6 +2933,10 @@ function sanitizeDockerManagerState(state) {
       const matchedReleaseTag = cleanMatchedReleaseTag(c.matchedReleaseTag);
       if (matchedReleaseTag) out.matchedReleaseTag = matchedReleaseTag;
     }
+    {
+      const runtimeTag = cleanMatchedReleaseTag(c.runtimeTag);
+      if (runtimeTag) out.runtimeTag = runtimeTag;
+    }
     if (typeof c.runtimeBranch === 'string' || c.runtimeBranch === null) out.runtimeBranch = c.runtimeBranch || null;
     if (typeof c.runtimeCommit === 'string' || c.runtimeCommit === null) out.runtimeCommit = c.runtimeCommit || null;
     if (typeof c.runtimeShortCommit === 'string' || c.runtimeShortCommit === null) out.runtimeShortCommit = c.runtimeShortCommit || null;
@@ -2940,6 +2944,10 @@ function sanitizeDockerManagerState(state) {
       const runtimeSource = {};
       if (c.runtimeSource.type === 'git') runtimeSource.type = 'git';
       if (typeof c.runtimeSource.workdir === 'string') runtimeSource.workdir = c.runtimeSource.workdir;
+      {
+        const runtimeTag = cleanMatchedReleaseTag(c.runtimeSource.tag);
+        if (runtimeTag) runtimeSource.tag = runtimeTag;
+      }
       if (typeof c.runtimeSource.branch === 'string' || c.runtimeSource.branch === null) runtimeSource.branch = c.runtimeSource.branch || null;
       if (typeof c.runtimeSource.commit === 'string' || c.runtimeSource.commit === null) runtimeSource.commit = c.runtimeSource.commit || null;
       if (typeof c.runtimeSource.shortCommit === 'string' || c.runtimeSource.shortCommit === null) {

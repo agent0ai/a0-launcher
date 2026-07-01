@@ -134,6 +134,7 @@ const CANONICAL_LOCAL_TAGS = Object.freeze(['local', 'development', 'main']);
 const CONTAINER_SOURCE_WORKDIRS = Object.freeze(['/a0', '/app', '/agent-zero']);
 const remoteHealthCache = new Map();
 const remoteHealthPending = new Map();
+let lastInstanceInventoryDiagnosticsKey = '';
 
 function logDockerManagerError(op, error, details = {}) {
   const payload = { ...details };
@@ -152,6 +153,42 @@ function logDockerManagerError(op, error, details = {}) {
       // ignore
     }
   }
+}
+
+function shortLogId(value) {
+  return String(value || '').replace(/^sha256:/, '').slice(0, 12);
+}
+
+function localTagsForImageId(imageId, localByTag) {
+  const id = String(imageId || '').trim();
+  if (!id || !(localByTag instanceof Map)) return [];
+  return [...localByTag.entries()]
+    .filter(([, image]) => String(image?.imageId || '').trim() === id)
+    .map(([tag]) => tag)
+    .sort();
+}
+
+function logInstanceInventoryDiagnostics(containers, localByTag) {
+  const rows = (Array.isArray(containers) ? containers : []).map((container) => ({
+    id: shortLogId(container?.containerId),
+    name: container?.instanceName || container?.containerName || '',
+    state: container?.state || '',
+    imageRef: container?.imageRef || '',
+    imageId: shortLogId(container?.imageId),
+    localTags: localTagsForImageId(container?.imageId, localByTag),
+    versionTag: imageTagForContainer(container),
+    matchedReleaseTag: container?.matchedReleaseTag || '',
+    runtimeTag: container?.runtimeTag || container?.runtimeSource?.tag || '',
+    runtimeBranch: container?.runtimeBranch || container?.runtimeSource?.branch || '',
+    runtimeCommit: container?.runtimeShortCommit || container?.runtimeSource?.shortCommit || '',
+    uiUrl: container?.uiUrl || '',
+    launcherManaged: container?.labels?.['a0.launcher.managed'] === 'true',
+    legacyManaged: container?.labels?.['ai.agent0.managed'] === 'true'
+  }));
+  const key = JSON.stringify(rows);
+  if (key === lastInstanceInventoryDiagnosticsKey) return;
+  lastInstanceInventoryDiagnosticsKey = key;
+  console.info('[docker-manager] instance inventory', rows);
 }
 
 function quoteWindowsCommandArg(value) {
@@ -2236,6 +2273,7 @@ async function buildDerivedState(options = {}) {
     if (matchedReleaseTag) matchedReleaseTagByTag.set(tag, matchedReleaseTag);
   }
   containers = applyContainerMatchedReleaseTags(containers, matchedReleaseTagByTag, localByTag);
+  logInstanceInventoryDiagnostics(containers, localByTag);
 
   // First-class channel tags (not derived from GitHub Releases).
   for (const tag of CHANNEL_TAGS) {

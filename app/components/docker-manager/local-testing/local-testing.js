@@ -12,6 +12,7 @@ import {
 function byId(id) { return document.getElementById(id); }
 
 let logsRequestSeq = 0;
+let lastInstanceCardDiagnosticsKey = "";
 
 function localUiUrl(value) {
   const raw = String(value || "").trim();
@@ -189,8 +190,47 @@ function instancePowerMenuConfig({ isRunning, canStart, canStop, containerId, co
       ? "An action is already queued for this instance"
       : canStart
         ? "Start this instance"
-        : "Start is available for launcher-managed instances"
+        : "Start needs a container id"
   };
+}
+
+function logInstanceCardDiagnostics(containers, state) {
+  const rows = (Array.isArray(containers) ? containers : []).map((c) => {
+    const containerId = c?.containerId || "";
+    const st = String(c?.state || "unknown").toLowerCase();
+    const backgroundOperation = backgroundOperationForContainer(state, containerId);
+    const containerOperationRunning = !!backgroundOperation;
+    const isRunning = st === "running";
+    const canStart = !isRunning && !!containerId;
+    const powerMenu = instancePowerMenuConfig({
+      isRunning,
+      canStart,
+      canStop: backgroundOperation?.type === "start" && backgroundOperation.status === "running",
+      containerId,
+      containerOperationRunning
+    });
+    return {
+      id: String(containerId).slice(0, 12),
+      name: c?.instanceName || c?.containerName || "",
+      state: c?.state || "",
+      primaryAction: isRunning ? "Open UI" : canStart ? "Start" : "",
+      primaryDisabled: isRunning ? containerOperationRunning : canStart ? containerOperationRunning : true,
+      menuAction: powerMenu.action,
+      menuDisabled: powerMenu.disabled,
+      menuTitle: powerMenu.title,
+      imageRef: c?.imageRef || "",
+      versionTag: imageTagForContainer(c),
+      matchedReleaseTag: c?.matchedReleaseTag || "",
+      runtimeTag: runtimeTag(c),
+      runtimeBranch: runtimeBranch(c),
+      runtimeCommit: runtimeShortCommit(c),
+      uiUrl: c?.uiUrl || ""
+    };
+  });
+  const key = JSON.stringify(rows);
+  if (key === lastInstanceCardDiagnosticsKey) return;
+  lastInstanceCardDiagnosticsKey = key;
+  console.info("[instances] card actions", rows);
 }
 
 function bindOpenableCardHeader(header, onOpen, options = {}) {
@@ -1572,6 +1612,7 @@ function render(state) {
   }
   const containers = Array.isArray(state?.containers) ? state.containers : [];
   const remoteInstances = Array.isArray(state?.remoteInstances) ? state.remoteInstances : [];
+  logInstanceCardDiagnostics(containers, state);
 
   if (subtitle) {
     const running = containers.filter(c => c?.state === "running").length;

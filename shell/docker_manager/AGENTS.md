@@ -74,6 +74,10 @@ This scope owns:
   flows that must restore a previous active Instance.
 - Prefer structured state over renderer-side inference. If the UI needs a
   status, add it to the Docker Manager state shape.
+- Docker Manager may log a de-duplicated Instance inventory snapshot for
+  diagnostics. Keep it bounded to container identity, image/version/runtime
+  fields, UI URL, and managed-label booleans; do not log environment variables,
+  credentials, or full container inspect payloads.
 - Runtime diagnostics for the Advanced tab belong in the Docker Manager state
   shape as sanitized `runtimeDiagnostics`, sourced from Docker adapter
   inspection rather than renderer guesses.
