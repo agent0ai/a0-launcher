@@ -68,10 +68,12 @@ This scope owns:
   bounds, but URL resolution, URL validation, web contents lifecycle, and
   detached windows stay in `shell/main.js`. Local `Open UI` requests should wait
   briefly for a freshly running container's HTTP UI before returning an
-  unavailable error. If a local Instance has launcher-saved credentials, `Open
-  UI` may POST them to the same-origin Agent Zero `/login` route in the
-  shell-owned browser session before loading the tab; do not put credentials in
-  URLs or expose decrypted passwords to the renderer. After a tab starts from a
+  unavailable error. If a local Instance or saved remote Instance has
+  launcher-saved credentials, `Open UI` may POST them to the same-origin Agent
+  Zero `/login` route in the shell-owned browser session before loading the
+  tab; remote credential POSTs must stay on `https:` URLs unless the target is
+  local loopback. Do not put credentials in URLs or expose decrypted passwords
+  to the renderer. After a tab starts from a
   validated Instance URL, in-tab navigation may follow credential-free `http:`
   and `https:` URLs so OAuth, callback, and tunnel flows can complete inside the
   tab. Embedded and detached Agent Zero UI web contents should attach the same

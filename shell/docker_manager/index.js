@@ -1522,6 +1522,34 @@ function enrichRemoteInstancesWithHealth(remoteInstances = [], options = {}) {
   });
 }
 
+function applyRemoteInstanceCredentials(remoteInstances, remoteInstanceCredentials) {
+  const credentials = isPlainObject(remoteInstanceCredentials) ? remoteInstanceCredentials : {};
+  return (Array.isArray(remoteInstances) ? remoteInstances : []).map((remote) => {
+    const id = typeof remote?.id === 'string' ? remote.id : '';
+    const credential = id && isPlainObject(credentials[id]) && credentials[id].saved ? credentials[id] : null;
+    if (!credential) return remote;
+    return {
+      ...remote,
+      launcherCredentials: {
+        saved: true,
+        username: typeof credential.username === 'string' ? credential.username : '',
+        updatedAt: typeof credential.updatedAt === 'string' ? credential.updatedAt : ''
+      }
+    };
+  });
+}
+
+async function remoteInstancesForState(options = {}) {
+  const [remoteInstances, remoteInstanceCredentials] = await Promise.all([
+    stateStore.readRemoteInstances(),
+    stateStore.readRemoteInstanceCredentialsMetadata()
+  ]);
+  return enrichRemoteInstancesWithHealth(
+    applyRemoteInstanceCredentials(remoteInstances, remoteInstanceCredentials),
+    options
+  );
+}
+
 async function waitForHttpPort(host, port, options = {}) {
   const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : 60_000;
   const intervalMs = Number.isFinite(Number(options.intervalMs)) ? Number(options.intervalMs) : 450;
@@ -1979,13 +2007,14 @@ async function buildDerivedState(options = {}) {
     }
   }
 
-  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, localInstanceNames, localInstanceColors, localInstanceCredentials, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
+  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, remoteInstances, remoteInstanceCredentials, localInstanceNames, localInstanceColors, localInstanceCredentials, installabilityCache, releasesResult, localImages, rawContainers, freeBytes, remoteTags] =
     await Promise.all([
       stateStore.readRetentionPolicy(),
       stateStore.readPortPreferences(),
       stateStore.readStoragePreferences(),
       stateStore.readInstanceDefaults(),
       stateStore.readRemoteInstances(),
+      stateStore.readRemoteInstanceCredentialsMetadata(),
       stateStore.readLocalInstanceNames(),
       stateStore.readLocalInstanceColors(),
       stateStore.readLocalInstanceCredentialsMetadata(),
@@ -2006,7 +2035,10 @@ async function buildDerivedState(options = {}) {
   const releases = Array.isArray(releasesResult?.releases) ? releasesResult.releases : [];
   const offline = !!releasesResult?.offline;
   const lastSyncedAt = releasesResult?.lastSyncedAt || null;
-  const remoteInstancesWithHealth = enrichRemoteInstancesWithHealth(remoteInstances, { forceRefresh });
+  const remoteInstancesWithHealth = enrichRemoteInstancesWithHealth(
+    applyRemoteInstanceCredentials(remoteInstances, remoteInstanceCredentials),
+    { forceRefresh }
+  );
 
   // Trim dead official releases: allow gaps, but once we see 2 missing in a row,
   // assume we've reached the tail where older tags are no longer available on Docker Hub.
@@ -3977,8 +4009,7 @@ async function resumeRuntimeSetupIfPending() {
 async function addRemoteInstance(remoteInstance) {
   const saved = await stateStore.writeRemoteInstance(remoteInstance);
   if (_cachedState) {
-    const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances, { forceRefresh: true }) };
+    _cachedState = { ..._cachedState, remoteInstances: await remoteInstancesForState({ forceRefresh: true }) };
     events.emit('state', _cachedState);
   }
   return saved;
@@ -3987,8 +4018,7 @@ async function addRemoteInstance(remoteInstance) {
 async function deleteRemoteInstance(id) {
   const result = await stateStore.deleteRemoteInstance(id);
   if (_cachedState) {
-    const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances) };
+    _cachedState = { ..._cachedState, remoteInstances: await remoteInstancesForState() };
     events.emit('state', _cachedState);
   }
   return result;
@@ -4002,8 +4032,7 @@ async function renameRemoteInstance(id, name) {
     url: found.url
   });
   if (_cachedState) {
-    const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances) };
+    _cachedState = { ..._cachedState, remoteInstances: await remoteInstancesForState() };
     events.emit('state', _cachedState);
   }
   return saved;
@@ -4018,8 +4047,7 @@ async function setRemoteInstanceColor(id, color) {
     color
   });
   if (_cachedState) {
-    const remoteInstances = await stateStore.readRemoteInstances();
-    _cachedState = { ..._cachedState, remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances) };
+    _cachedState = { ..._cachedState, remoteInstances: await remoteInstancesForState() };
     events.emit('state', _cachedState);
   }
   return saved;
@@ -4035,6 +4063,31 @@ async function getRemoteInstance(id) {
     throw err;
   }
   return found;
+}
+
+async function setRemoteInstanceCredentials(id, credentials = {}) {
+  const found = await getRemoteInstance(id);
+  const saved = await stateStore.writeRemoteInstanceCredentials(found.id, credentials);
+  if (_cachedState) {
+    _cachedState = { ..._cachedState, remoteInstances: await remoteInstancesForState() };
+    events.emit('state', _cachedState);
+  }
+  return saved;
+}
+
+async function clearRemoteInstanceCredentials(id) {
+  const found = await getRemoteInstance(id);
+  await stateStore.deleteRemoteInstanceCredentials(found.id);
+  if (_cachedState) {
+    _cachedState = { ..._cachedState, remoteInstances: await remoteInstancesForState() };
+    events.emit('state', _cachedState);
+  }
+  return { instanceId: found.id, cleared: true };
+}
+
+async function getRemoteInstanceCredentials(id) {
+  const found = await getRemoteInstance(id);
+  return await stateStore.readRemoteInstanceCredentials(found.id);
 }
 
 async function createAndStartActiveContainer(docker, imageRepo, tag, portPreferences, activationOptions = null, storagePreferences = null) {
@@ -5611,8 +5664,9 @@ async function cancelOperation(opId) {
 
 async function getDockerInventory() {
   const imageRepo = getBackendImageRepo();
-  const [remoteInstances, localInstanceNames, localInstanceColors, localInstanceCredentials] = await Promise.all([
+  const [remoteInstances, remoteInstanceCredentials, localInstanceNames, localInstanceColors, localInstanceCredentials] = await Promise.all([
     stateStore.readRemoteInstances(),
+    stateStore.readRemoteInstanceCredentialsMetadata(),
     stateStore.readLocalInstanceNames(),
     stateStore.readLocalInstanceColors(),
     stateStore.readLocalInstanceCredentialsMetadata()
@@ -5664,7 +5718,7 @@ async function getDockerInventory() {
     images,
     containers,
     volumes,
-    remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances),
+    remoteInstances: enrichRemoteInstancesWithHealth(applyRemoteInstanceCredentials(remoteInstances, remoteInstanceCredentials)),
     backgroundOperations: backgroundOperationsSnapshot()
   };
 }
@@ -5808,6 +5862,9 @@ module.exports = {
   deleteRemoteInstance,
   renameRemoteInstance,
   setRemoteInstanceColor,
+  setRemoteInstanceCredentials,
+  clearRemoteInstanceCredentials,
+  getRemoteInstanceCredentials,
   deleteLocalInstance,
   getRemoteInstance,
   deleteRetainedInstance,

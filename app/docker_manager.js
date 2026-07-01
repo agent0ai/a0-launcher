@@ -1349,6 +1349,46 @@ async function clearLocalInstanceCredentials(containerId) {
   }
 }
 
+async function setRemoteInstanceCredentials(id, credentials = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.setRemoteInstanceCredentials !== "function") return false;
+  const payload = credentials && typeof credentials === "object" ? credentials : {};
+  try {
+    const res = await api.setRemoteInstanceCredentials(id || "", {
+      username: payload.username || "",
+      password: payload.password || ""
+    });
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    setBanner("info", "Instance credentials saved.");
+    await refresh();
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to save instance credentials");
+    return false;
+  }
+}
+
+async function clearRemoteInstanceCredentials(id) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.clearRemoteInstanceCredentials !== "function") return false;
+  try {
+    const res = await api.clearRemoteInstanceCredentials(id || "");
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    setBanner("info", "Instance credentials cleared.");
+    await refresh();
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to clear instance credentials");
+    return false;
+  }
+}
+
 async function getLocalInstanceLogs(containerId, options = {}) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.getLocalInstanceLogs !== "function") return null;
@@ -1634,6 +1674,8 @@ window.dockerManagerActions = {
   setLocalInstanceColor,
   setLocalInstanceCredentials,
   clearLocalInstanceCredentials,
+  setRemoteInstanceCredentials,
+  clearRemoteInstanceCredentials,
   stopActive,
   stopLocalInstance,
   deleteLocalInstance,

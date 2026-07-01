@@ -189,6 +189,18 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   },
   clearLocalInstanceCredentials: (containerId) =>
     ipcRenderer.invoke('docker-manager:clearLocalInstanceCredentials', { containerId }),
+  setRemoteInstanceCredentials: (id, credentials) => {
+    const c = credentials && typeof credentials === 'object' ? credentials : {};
+    return ipcRenderer.invoke('docker-manager:setRemoteInstanceCredentials', {
+      id,
+      credentials: {
+        username: typeof c.username === 'string' ? c.username : '',
+        password: typeof c.password === 'string' ? c.password : ''
+      }
+    });
+  },
+  clearRemoteInstanceCredentials: (id) =>
+    ipcRenderer.invoke('docker-manager:clearRemoteInstanceCredentials', { id }),
   deleteLocalInstance: (containerId) => ipcRenderer.invoke('docker-manager:deleteLocalInstance', { containerId }),
   deleteRetainedInstance: (containerId) =>
     ipcRenderer.invoke('docker-manager:deleteRetainedInstance', { containerId }),

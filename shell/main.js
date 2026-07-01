@@ -2333,15 +2333,28 @@ async function localInstanceCredentialsForCli(containerId) {
   }
 }
 
+async function remoteInstanceCredentialsForWebUi(instanceId) {
+  const id = String(instanceId || '').trim();
+  if (!id) return null;
+  try {
+    return await dockerManager.getRemoteInstanceCredentials(id);
+  } catch {
+    return null;
+  }
+}
+
 async function loginInstanceWebUiSession(target, webContents) {
-  const containerId = typeof target?.containerId === 'string' ? target.containerId : '';
-  if (!containerId || !webContents?.session || typeof webContents.session.fetch !== 'function') {
+  if (!webContents?.session || typeof webContents.session.fetch !== 'function') {
     return { attempted: false };
   }
 
   let credentials = null;
   try {
-    credentials = await localInstanceCredentialsForCli(containerId);
+    if (target?.kind === 'local') {
+      credentials = await localInstanceCredentialsForCli(target.containerId);
+    } else if (target?.kind === 'remote') {
+      credentials = await remoteInstanceCredentialsForWebUi(target.instanceId);
+    }
   } catch {
     return { attempted: false };
   }
@@ -3014,6 +3027,13 @@ function sanitizeDockerManagerState(state) {
     if (color) out.color = color;
     if (typeof r.createdAt === 'string') out.createdAt = r.createdAt;
     if (typeof r.updatedAt === 'string') out.updatedAt = r.updatedAt;
+    if (isPlainObject(r.launcherCredentials) && r.launcherCredentials.saved === true) {
+      out.launcherCredentials = {
+        saved: true,
+        username: typeof r.launcherCredentials.username === 'string' ? r.launcherCredentials.username : '',
+        updatedAt: typeof r.launcherCredentials.updatedAt === 'string' ? r.launcherCredentials.updatedAt : ''
+      };
+    }
     if (isPlainObject(r.health)) {
       const status = typeof r.health.status === 'string' ? r.health.status : '';
       if (allowedRemoteHealthStatuses.has(status)) {
@@ -3586,6 +3606,30 @@ ipcMain.handle('docker-manager:clearLocalInstanceCredentials', async (_event, bo
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const containerId = typeof body.containerId === 'string' ? body.containerId : '';
     return await dockerManager.clearLocalInstanceCredentials(containerId);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:setRemoteInstanceCredentials', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const id = typeof body.id === 'string' ? body.id : '';
+    const credentials = isPlainObject(body.credentials) ? body.credentials : body;
+    return await dockerManager.setRemoteInstanceCredentials(id, {
+      username: typeof credentials.username === 'string' ? credentials.username : '',
+      password: typeof credentials.password === 'string' ? credentials.password : ''
+    });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:clearRemoteInstanceCredentials', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const id = typeof body.id === 'string' ? body.id : '';
+    return await dockerManager.clearRemoteInstanceCredentials(id);
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }

@@ -80,10 +80,16 @@ function makeTabKey(target) {
 function webUiLoginRequestForTarget(target, credentials) {
   const safeTarget = target && typeof target === 'object' ? target : {};
   const safeCredentials = credentials && typeof credentials === 'object' ? credentials : {};
-  if (safeTarget.kind !== 'local' || !safeTarget.containerId) return null;
+  const kind = typeof safeTarget.kind === 'string' ? safeTarget.kind : '';
+  const hasTargetId =
+    (kind === 'local' && !!safeTarget.containerId) ||
+    (kind === 'remote' && !!safeTarget.instanceId);
+  if (!hasTargetId) return null;
 
   const url = parseHttpUrl(safeTarget.url);
-  if (!url || !isAllowedLocalInstanceUrl(url.href)) return null;
+  if (!url) return null;
+  const canPostLogin = isAllowedLocalInstanceUrl(url.href) || (kind === 'remote' && url.protocol === 'https:');
+  if (!canPostLogin) return null;
 
   const username = typeof safeCredentials.username === 'string' ? safeCredentials.username.trim() : '';
   const password = typeof safeCredentials.password === 'string' ? safeCredentials.password : '';

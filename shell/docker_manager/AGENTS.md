@@ -81,11 +81,11 @@ This scope owns:
   `state_store.js` because Docker labels on existing containers cannot be
   mutated safely. Local colors are stored as a container-id keyed
   `localInstanceColors` map with bounded palette IDs.
-- Optional local instance login credentials are persisted through
-  `state_store.js` as container-id keyed, Electron-safe-storage encrypted
-  password records. The renderer may receive only saved-credential metadata
-  such as saved state and username; decrypted passwords must stay in the shell
-  process and be used only for explicit CLI launch, Web UI login, or save/clear
+- Optional local and saved remote Instance login credentials are persisted
+  through `state_store.js` as id-keyed, Electron-safe-storage encrypted password
+  records. The renderer may receive only saved-credential metadata such as saved
+  state and username; decrypted passwords must stay in the shell process and be
+  used only for explicit local CLI launch, Web UI login, or save/clear
   operations.
 - Port preferences are stored as UI and SSH host-port preferences.
 - Host-port requests using `0` must be settled to explicit host ports before
@@ -115,7 +115,8 @@ This scope owns:
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence. Their
   optional saved `color` field uses the same bounded palette IDs as local
-  Instance color overrides.
+  Instance color overrides. Optional saved remote Instance credentials are keyed
+  by remote Instance id and removed when that remote Instance is deleted.
   Remote instance online/offline status is transient renderer state from a
   bounded `/api/health` probe and must not be persisted into saved remote
   instance records.

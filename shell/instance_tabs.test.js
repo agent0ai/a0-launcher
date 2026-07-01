@@ -75,10 +75,24 @@ test('web UI login request posts local credentials to same-origin login route', 
   assert.equal(request.body, 'username=jan&password=secret+pass&next=%2Fplugins%2Ftool%3Fnext%3Dnope');
 });
 
-test('web UI login request ignores remote or incomplete credential targets', () => {
+test('web UI login request posts secure remote credentials to same-origin login route', () => {
+  const request = webUiLoginRequestForTarget(
+    {
+      kind: 'remote',
+      instanceId: 'remote-1',
+      url: 'https://agent-zero.example.com/plugins/tool?next=nope#section'
+    },
+    { username: ' jan ', password: 'secret pass' }
+  );
+
+  assert.equal(request.url, 'https://agent-zero.example.com/login');
+  assert.equal(request.body, 'username=jan&password=secret+pass&next=%2Fplugins%2Ftool%3Fnext%3Dnope');
+});
+
+test('web UI login request ignores unsafe remote or incomplete credential targets', () => {
   assert.equal(
     webUiLoginRequestForTarget(
-      { kind: 'remote', instanceId: 'remote-1', url: 'https://example.com/' },
+      { kind: 'remote', instanceId: 'remote-1', url: 'http://agent-zero.example.test/' },
       { username: 'jan', password: 'secret' }
     ),
     null

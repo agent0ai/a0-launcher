@@ -86,6 +86,7 @@ const MAX_REMOTE_INSTANCES = 64;
 const MAX_LOCAL_INSTANCE_NAMES = 256;
 const MAX_LOCAL_INSTANCE_COLORS = 256;
 const MAX_LOCAL_INSTANCE_CREDENTIALS = 256;
+const MAX_REMOTE_INSTANCE_CREDENTIALS = 256;
 const INSTANCE_COLOR_IDS = Object.freeze(['blue', 'green', 'rose', 'amber', 'violet', 'cyan', 'coral']);
 const INSTANCE_COLOR_SET = new Set(INSTANCE_COLOR_IDS);
 const LOCAL_CREDENTIALS_VERSION = 1;
@@ -474,9 +475,31 @@ function normalizeLocalInstanceCredentials(value) {
   return out;
 }
 
+function normalizeRemoteInstanceCredentials(value) {
+  const out = {};
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  for (const [idRaw, recordRaw] of Object.entries(source)) {
+    const id = normalizeRemoteInstanceId(idRaw);
+    const record = normalizeLocalInstanceCredentialRecord(recordRaw);
+    if (!id || !record) continue;
+    out[id] = record;
+    if (Object.keys(out).length >= MAX_REMOTE_INSTANCE_CREDENTIALS) break;
+  }
+  return out;
+}
+
 function localInstanceCredentialMetadata(containerId, record) {
   return {
     containerId,
+    saved: !!record,
+    username: record?.username || '',
+    updatedAt: record?.updatedAt || ''
+  };
+}
+
+function remoteInstanceCredentialMetadata(instanceId, record) {
+  return {
+    instanceId,
     saved: !!record,
     username: record?.username || '',
     updatedAt: record?.updatedAt || ''
@@ -548,6 +571,29 @@ async function readLocalInstanceCredentials(containerId) {
   if (!record) return null;
   return {
     containerId: id,
+    username: record.username,
+    password: decryptLocalInstancePassword(record.encryptedPassword),
+    updatedAt: record.updatedAt || ''
+  };
+}
+
+async function readRemoteInstanceCredentialsMetadata() {
+  const state = await readJson(stateFile(), {});
+  const current = normalizeRemoteInstanceCredentials(state?.remoteInstanceCredentials);
+  return Object.fromEntries(
+    Object.entries(current).map(([instanceId, record]) => [instanceId, remoteInstanceCredentialMetadata(instanceId, record)])
+  );
+}
+
+async function readRemoteInstanceCredentials(instanceId) {
+  const id = normalizeRemoteInstanceId(instanceId);
+  if (!id) throw localInstanceCredentialError('Invalid remote instance');
+  const state = await readJson(stateFile(), {});
+  const current = normalizeRemoteInstanceCredentials(state?.remoteInstanceCredentials);
+  const record = current[id] || null;
+  if (!record) return null;
+  return {
+    instanceId: id,
     username: record.username,
     password: decryptLocalInstancePassword(record.encryptedPassword),
     updatedAt: record.updatedAt || ''
@@ -629,6 +675,39 @@ async function deleteLocalInstanceCredentials(containerId) {
   if (!Object.prototype.hasOwnProperty.call(current, id)) return false;
   delete current[id];
   await writeJson(stateFile(), { ...state, localInstanceCredentials: current, updatedAt: new Date().toISOString() });
+  return true;
+}
+
+async function writeRemoteInstanceCredentials(instanceId, credentials = {}) {
+  const id = normalizeRemoteInstanceId(instanceId);
+  if (!id) throw localInstanceCredentialError('Invalid remote instance');
+  const username = normalizeCredentialText(credentials?.username, 256);
+  const password = normalizeCredentialText(credentials?.password, 4096, { collapseWhitespace: false, trim: false });
+  if (!username || !password) {
+    throw localInstanceCredentialError('Username and password are required.');
+  }
+
+  const record = {
+    version: LOCAL_CREDENTIALS_VERSION,
+    username,
+    encryptedPassword: encryptLocalInstancePassword(password),
+    updatedAt: new Date().toISOString()
+  };
+  const state = await readJson(stateFile(), {});
+  const current = normalizeRemoteInstanceCredentials(state?.remoteInstanceCredentials);
+  current[id] = record;
+  await writeJson(stateFile(), { ...state, remoteInstanceCredentials: current, updatedAt: new Date().toISOString() });
+  return remoteInstanceCredentialMetadata(id, record);
+}
+
+async function deleteRemoteInstanceCredentials(instanceId) {
+  const id = normalizeRemoteInstanceId(instanceId);
+  if (!id) return false;
+  const state = await readJson(stateFile(), {});
+  const current = normalizeRemoteInstanceCredentials(state?.remoteInstanceCredentials);
+  if (!Object.prototype.hasOwnProperty.call(current, id)) return false;
+  delete current[id];
+  await writeJson(stateFile(), { ...state, remoteInstanceCredentials: current, updatedAt: new Date().toISOString() });
   return true;
 }
 
@@ -716,7 +795,9 @@ async function deleteRemoteInstance(id) {
     throw err;
   }
 
-  await writeJson(stateFile(), { ...state, remoteInstances: next, updatedAt: new Date().toISOString() });
+  const remoteInstanceCredentials = normalizeRemoteInstanceCredentials(state?.remoteInstanceCredentials);
+  delete remoteInstanceCredentials[cleanId];
+  await writeJson(stateFile(), { ...state, remoteInstances: next, remoteInstanceCredentials, updatedAt: new Date().toISOString() });
   return { deleted: true };
 }
 
@@ -766,6 +847,10 @@ module.exports = {
   readLocalInstanceCredentials,
   writeLocalInstanceCredentials,
   deleteLocalInstanceCredentials,
+  readRemoteInstanceCredentialsMetadata,
+  readRemoteInstanceCredentials,
+  writeRemoteInstanceCredentials,
+  deleteRemoteInstanceCredentials,
   assertLocalInstanceCredentialStorageAvailable,
 
   // Runtime setup resume

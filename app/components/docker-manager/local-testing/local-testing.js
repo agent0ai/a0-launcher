@@ -1442,10 +1442,12 @@ function renderDockerInstance(list, c, state) {
 function renderRemoteInstance(list, remote, state) {
   const operationRunning = isBlockingOperationRunning(state);
   const cloneTarget = localCloneTargetForRemote(remote, state?.containers);
+  const displayName = remote?.name || "Remote instance";
+  const launcherCredentials = remote?.launcherCredentials && typeof remote.launcherCredentials === "object" ? remote.launcherCredentials : null;
   const card = document.createElement("div");
   card.className = "dm-card";
 
-  const visual = createInstanceVisual(remote?.name || "Remote instance", {
+  const visual = createInstanceVisual(displayName, {
     seed: remoteInstanceVisualSeed(remote),
     color: remote?.color || ""
   });
@@ -1454,7 +1456,7 @@ function renderRemoteInstance(list, remote, state) {
   body.className = "dm-card-body";
   const title = document.createElement("div");
   title.className = "dm-card-title";
-  title.textContent = remote?.name || "Remote instance";
+  title.textContent = displayName;
   body.appendChild(title);
 
   const meta = document.createElement("div");
@@ -1479,7 +1481,7 @@ function renderRemoteInstance(list, remote, state) {
   };
   bindOpenableCardHeader(visual, openRemoteInstanceUi, {
     title: "Open this remote instance",
-    ariaLabel: `Open ${remote?.name || "remote instance"}`
+    ariaLabel: `Open ${displayName}`
   });
 
   const openBtn = document.createElement("button");
@@ -1493,7 +1495,7 @@ function renderRemoteInstance(list, remote, state) {
   menuItems.push(menuButton("edit", "Rename", () => {
     openRenameInstanceDialog({
       title: "Rename remote instance",
-      currentName: remote?.name || "Remote instance",
+      currentName: displayName,
       onRename: (name) => window.dockerManagerActions?.renameRemoteInstance?.(remote?.id || "", name)
     });
   }, {
@@ -1510,12 +1512,25 @@ function renderRemoteInstance(list, remote, state) {
     disabled: !remote?.id,
     title: "Choose this instance color"
   }));
+  menuItems.push(menuButton("key", "Save credentials", () => {
+    openInstanceCredentialsDialog({
+      displayName,
+      credentials: launcherCredentials,
+      onSave: (credentials) => window.dockerManagerActions?.setRemoteInstanceCredentials?.(remote?.id || "", credentials),
+      onClear: () => window.dockerManagerActions?.clearRemoteInstanceCredentials?.(remote?.id || "")
+    });
+  }, {
+    disabled: !remote?.id,
+    title: launcherCredentials?.saved
+      ? "Update or clear saved credentials"
+      : "Save credentials"
+  }));
 
   if (cloneTarget?.containerId) {
     menuItems.push(menuButton("content_copy", "Clone locally", () => {
       openCloneInstanceDialog({
         ...cloneTarget,
-        instanceName: remote?.name || cloneTarget.instanceName || cloneTarget.containerName || "Remote instance"
+        instanceName: remote?.name || cloneTarget.instanceName || cloneTarget.containerName || displayName
       });
     }, {
       disabled: operationRunning,
@@ -1524,7 +1539,7 @@ function renderRemoteInstance(list, remote, state) {
   }
 
   menuItems.push(menuButton("delete", "Delete", async () => {
-    if (!window.confirm(`Delete ${remote?.name || "this remote instance"}?`)) return;
+    if (!window.confirm(`Delete ${displayName}?`)) return;
     await window.dockerManagerActions?.deleteRemoteInstance?.(remote?.id || "");
   }, {
     danger: true,
