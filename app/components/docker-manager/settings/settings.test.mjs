@@ -32,9 +32,10 @@ test('Settings save persists every sub-tab payload at once', async () => {
     ['workspaceHostRoot', fakeElement('/tmp/agent-zero')],
     ['workspaceHostPathMode', fakeElement('exact')],
     ['workspaceVolumePrefix', fakeElement('custom-a0')],
+    ['launcherLanguagePreference', fakeElement('auto')],
     ['saveSettingsBtn', fakeElement()]
   ]);
-  for (const id of ['uiPortInput', 'workspaceStorageMode', 'workspaceHostRoot']) {
+  for (const id of ['uiPortInput', 'workspaceStorageMode', 'workspaceHostRoot', 'launcherLanguagePreference']) {
     elements.get(id).dataset.dirty = '1';
   }
 
@@ -93,4 +94,5 @@ test('Settings save persists every sub-tab payload at once', async () => {
   assert.equal(elements.get('uiPortInput').dataset.dirty, undefined);
   assert.equal(elements.get('workspaceStorageMode').dataset.dirty, undefined);
   assert.equal(elements.get('workspaceHostRoot').dataset.dirty, undefined);
+  assert.equal(elements.get('launcherLanguagePreference').dataset.dirty, undefined);
 });

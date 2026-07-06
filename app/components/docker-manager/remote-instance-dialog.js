@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 function closeDialog(dialog) {
   if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
 }
@@ -43,8 +45,8 @@ function openAddRemoteInstanceDialog(options = {}) {
   if (existing) existing.remove();
 
   let completed = false;
-  const title = optionText(options.title, "Add remote Instance");
-  const submitLabel = optionText(options.submitLabel, "Add Instance");
+  const title = optionText(options.title, t("remote.add.title"));
+  const submitLabel = optionText(options.submitLabel, t("remote.add.submit"));
   const dialog = document.createElement("div");
   dialog.id = "remoteInstanceDialog";
   dialog.className = `dm-dialog-backdrop${options.backdropClass ? ` ${options.backdropClass}` : ""}`;
@@ -53,23 +55,23 @@ function openAddRemoteInstanceDialog(options = {}) {
     <form class="dm-dialog" role="dialog" aria-modal="true" aria-labelledby="remoteInstanceTitle">
       <div class="dm-dialog-header">
         <h2 id="remoteInstanceTitle" class="dm-dialog-title">${escapeHtml(title)}</h2>
-        <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">&times;</button>
+        <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="${escapeHtml(t("common.close"))}">&times;</button>
       </div>
       <div class="dm-dialog-body">
         ${dialogIntroHtml(options.intro)}
         <div class="dm-field">
-          <label for="remoteInstanceUrl">Instance URL</label>
-          <input id="remoteInstanceUrl" class="dm-text-input" type="text" inputmode="url" autocomplete="url" placeholder="https://agent-zero.example.com">
-          <div class="dm-field-hint">Use the URL where this Agent Zero Instance is already running. If no protocol is entered, the launcher will use http://.</div>
+          <label for="remoteInstanceUrl">${escapeHtml(t("remote.url.label"))}</label>
+          <input id="remoteInstanceUrl" class="dm-text-input" type="text" inputmode="url" autocomplete="url" placeholder="${escapeHtml(t("remote.url.placeholder"))}">
+          <div class="dm-field-hint">${escapeHtml(t("remote.url.hint"))}</div>
         </div>
         <div class="dm-field">
-          <label for="remoteInstanceName">Display name</label>
-          <input id="remoteInstanceName" class="dm-text-input" type="text" maxlength="80" autocomplete="off" placeholder="Remote Instance">
-          <div class="dm-field-hint">Optional. This is only the friendly name shown in Instances.</div>
+          <label for="remoteInstanceName">${escapeHtml(t("remote.name.label"))}</label>
+          <input id="remoteInstanceName" class="dm-text-input" type="text" maxlength="80" autocomplete="off" placeholder="${escapeHtml(t("remote.name.placeholder"))}">
+          <div class="dm-field-hint">${escapeHtml(t("remote.name.hint"))}</div>
         </div>
       </div>
       <div class="dm-dialog-footer">
-        <button class="button" type="button" data-dialog-close>Cancel</button>
+        <button class="button" type="button" data-dialog-close>${escapeHtml(t("common.cancel"))}</button>
         <button class="button confirm" type="submit">${escapeHtml(submitLabel)}</button>
       </div>
     </form>
@@ -102,7 +104,7 @@ function openAddRemoteInstanceDialog(options = {}) {
     event.preventDefault();
     const url = urlInput?.value || "";
     if (!normalizeUrlInput(url)) {
-      window.toastFrontendError?.("Enter a valid Instance URL.", "Agent Zero");
+      window.toastFrontendError?.(t("remote.url.invalid"), "Agent Zero");
       return;
     }
     const result = await window.dockerManagerActions?.addRemoteInstance?.({

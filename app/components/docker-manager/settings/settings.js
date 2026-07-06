@@ -10,6 +10,12 @@ import {
   normalizeInstanceDefaults,
   readInstanceDefaultsFromForm
 } from "../instance-defaults.js";
+import {
+  AUTO_LOCALE,
+  getLauncherLocalePreference,
+  setLauncherLocalePreference,
+  t
+} from "../i18n.js";
 
 const SETTINGS_TAB_KEY = "dm-settings-active-tab";
 const SETTINGS_TABS = ["ports", "workspace", "defaults"];
@@ -133,6 +139,10 @@ function storageInputs() {
   ].filter(Boolean);
 }
 
+function languageInput() {
+  return byId("launcherLanguagePreference");
+}
+
 function readPortPreferences() {
   return {
     ui: parseOptionalInt(byId("uiPortInput")?.value),
@@ -149,6 +159,11 @@ function readStoragePreferences() {
   };
 }
 
+function readLanguagePreference() {
+  const value = languageInput()?.value || AUTO_LOCALE;
+  return value === "en" || value === "ko" ? value : AUTO_LOCALE;
+}
+
 function clearPortDirty() {
   delete byId("uiPortInput")?.dataset.dirty;
   delete byId("sshPortInput")?.dataset.dirty;
@@ -163,12 +178,16 @@ async function saveAllSettings() {
   if (settingsSaveInProgress) return;
   const actions = window.dockerManagerActions || {};
   const storageFields = storageInputs();
+  const language = languageInput();
+  const requestedLanguage = readLanguagePreference();
   const instanceDefaults = readInstanceDefaultsFromForm(document, "settings");
   const envResult = buildInstanceEnvText(instanceDefaults);
 
   settingsSaveInProgress = true;
   setSaveSettingsDisabled(true);
   try {
+    const languagePreference = setLauncherLocalePreference(requestedLanguage);
+    const languageOk = languagePreference === requestedLanguage;
     const portsOk = (await actions.setPortPreferences?.(readPortPreferences(), { quiet: true })) === true;
     const storageOk = Boolean(await actions.setStoragePreferences?.(readStoragePreferences(), { quiet: true }));
     let defaultsOk = false;
@@ -179,14 +198,15 @@ async function saveAllSettings() {
       window.toastFrontendError?.(envResult.message, "Agent Zero");
     }
 
+    if (languageOk && language) delete language.dataset.dirty;
     if (portsOk) clearPortDirty();
     if (storageOk) storageFields.forEach((input) => { delete input.dataset.dirty; });
     if (defaultsOk) clearInstanceDefaultDirty(document, "settings");
 
-    if (portsOk && storageOk && defaultsOk) {
-      window.toastFrontendSuccess?.("Settings saved.", "Agent Zero");
+    if (languageOk && portsOk && storageOk && defaultsOk) {
+      window.toastFrontendSuccess?.(t("settings.saved"), "Agent Zero");
     } else {
-      window.toastFrontendWarning?.("Some settings could not be saved.", "Agent Zero");
+      window.toastFrontendWarning?.(t("settings.savePartial"), "Agent Zero");
     }
   } finally {
     settingsSaveInProgress = false;
@@ -206,6 +226,7 @@ function populateFromState(state) {
   const hostRoot = byId("workspaceHostRoot");
   const hostPathMode = byId("workspaceHostPathMode");
   const volumePrefix = byId("workspaceVolumePrefix");
+  const language = languageInput();
   const saveSettingsBtn = byId("saveSettingsBtn");
 
   if (uiInput && prefs?.ui != null && !uiInput.dataset.dirty) {
@@ -218,6 +239,7 @@ function populateFromState(state) {
   if (hostRoot && !hostRoot.dataset.dirty) hostRoot.value = storagePrefs.hostRoot;
   if (hostPathMode && !hostPathMode.dataset.dirty) hostPathMode.value = storagePrefs.hostPathMode;
   if (volumePrefix && !volumePrefix.dataset.dirty) volumePrefix.value = storagePrefs.volumePrefix;
+  if (language && !language.dataset.dirty) language.value = getLauncherLocalePreference();
   if (saveSettingsBtn) saveSettingsBtn.disabled = settingsSaveInProgress || state?.progress?.status === "running";
   syncStoragePreferenceFields();
   applyInstanceDefaultsToForm(document, "settings", instanceDefaults, { respectDirty: true });
@@ -229,6 +251,7 @@ function bindActions() {
   const saveSettingsBtn = byId("saveSettingsBtn");
   const uiInput = byId("uiPortInput");
   const sshInput = byId("sshPortInput");
+  const language = languageInput();
   const storageFields = storageInputs();
 
   if (uiInput && !uiInput.dataset.bound) {
@@ -238,6 +261,10 @@ function bindActions() {
   if (sshInput && !sshInput.dataset.bound) {
     sshInput.dataset.bound = "1";
     sshInput.addEventListener("input", () => { sshInput.dataset.dirty = "1"; });
+  }
+  if (language && !language.dataset.bound) {
+    language.dataset.bound = "1";
+    language.addEventListener("change", () => { language.dataset.dirty = "1"; });
   }
   bindInstanceDefaultDirtyTracking(document, "settings");
 

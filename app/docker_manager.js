@@ -1,4 +1,5 @@
 import { dockerManagerStore as store } from "./components/docker-manager/docker-manager-store.js";
+import { initLauncherI18n, t } from "./components/docker-manager/i18n.js";
 import {
   buildInstanceEnvText,
   defaultInstanceName,
@@ -7,6 +8,8 @@ import {
 import { renderOperationDialog } from "./components/docker-manager/operation-modal/operation-modal.js";
 import { progressMetaText } from "./components/docker-manager/progress-eta.js";
 import { renderRuntimeGate } from "./components/docker-manager/runtime-gate/runtime-gate.js";
+
+initLauncherI18n();
 
 function isErrorResponse(obj) {
   return !!obj && typeof obj === "object" && typeof obj.message === "string";
@@ -67,8 +70,8 @@ function showToast(type, message, title = "", displayTime = 4, group = "") {
   const dismiss = document.createElement("button");
   dismiss.className = "dm-toast-dismiss dm-close-button";
   dismiss.type = "button";
-  dismiss.title = "Dismiss";
-  dismiss.setAttribute("aria-label", "Dismiss");
+  dismiss.title = t("common.dismiss");
+  dismiss.setAttribute("aria-label", t("common.dismiss"));
   dismiss.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">close</span>';
   dismiss.addEventListener("click", () => toast.remove());
 

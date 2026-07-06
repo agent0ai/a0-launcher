@@ -1,3 +1,5 @@
+import { LOCALE_CHANGED_EVENT, t } from "../i18n.js";
+
 function byId(id) {
   return document.getElementById(id);
 }
@@ -46,8 +48,8 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   const home = document.createElement("button");
   home.type = "button";
   home.className = `dm-instance-tab dm-instance-home-tab${homeActive ? " active" : ""}`;
-  home.title = "Launcher";
-  home.setAttribute("aria-label", "Show launcher");
+  home.title = t("common.launcher");
+  home.setAttribute("aria-label", t("instanceTabs.showLauncher"));
   home.addEventListener("click", () => window.dockerManagerActions?.selectInstanceHome?.());
 
   const homeIcon = document.createElement("span");
@@ -57,7 +59,7 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
 
   const homeLabel = document.createElement("span");
   homeLabel.className = "dm-instance-tab-title";
-  homeLabel.textContent = "Launcher";
+  homeLabel.textContent = t("common.launcher");
 
   home.appendChild(homeIcon);
   home.appendChild(homeLabel);
@@ -106,8 +108,8 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   const reload = document.createElement("button");
   reload.type = "button";
   reload.className = "button icon-button dm-icon-button";
-  reload.title = "Reload";
-  reload.setAttribute("aria-label", "Reload active instance UI");
+  reload.title = t("common.reload");
+  reload.setAttribute("aria-label", t("instanceTabs.reloadActive"));
   reload.disabled = !selected;
   reload.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">refresh</span>';
   reload.addEventListener("click", () => window.dockerManagerActions?.reloadInstanceTab?.(selected?.id || ""));
@@ -115,8 +117,8 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   const detach = document.createElement("button");
   detach.type = "button";
   detach.className = "button icon-button dm-icon-button";
-  detach.title = "Detach";
-  detach.setAttribute("aria-label", "Detach active instance UI");
+  detach.title = t("common.detach");
+  detach.setAttribute("aria-label", t("instanceTabs.detachActive"));
   detach.disabled = !selected;
   detach.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>';
   detach.addEventListener("click", () => window.dockerManagerActions?.detachInstanceTab?.(selected?.id || ""));
@@ -128,6 +130,7 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
 }
 
 window.addEventListener("dm:state", (event) => render(event.detail));
+window.addEventListener(LOCALE_CHANGED_EVENT, () => render());
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => render());

@@ -2,23 +2,37 @@
   <section class="section sv-card dm-settings-page">
     <div class="sv-card-head sv-card-head-row">
       <div>
-        <h2 class="section-title sv-section-heading">Settings</h2>
-        <div class="sv-subtitle">Launcher defaults for new Instances</div>
+        <h2 class="section-title sv-section-heading" data-i18n="settings.title">Settings</h2>
+        <div class="sv-subtitle" data-i18n="settings.subtitle">Launcher defaults for new Instances</div>
       </div>
     </div>
 
-    <div class="dm-settings-tabs" role="tablist" aria-label="Settings">
+    <div class="sv-settings-grid dm-settings-language">
+      <div class="sv-settings-row">
+        <label class="sv-settings-label" for="launcherLanguagePreference" data-i18n="settings.language.label">Language</label>
+        <div class="sv-settings-field">
+          <select id="launcherLanguagePreference" class="sv-select">
+            <option value="auto" data-i18n="settings.language.auto">System default</option>
+            <option value="en" data-i18n="settings.language.en">English</option>
+            <option value="ko" data-i18n="settings.language.ko">한국어</option>
+          </select>
+          <span class="sv-settings-hint" data-i18n="settings.language.hint">Used by the Launcher UI on this computer.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="dm-settings-tabs" role="tablist" aria-label="Settings" data-i18n-aria-label="settings.tabs.aria">
       <button id="settingsTabPorts" class="dm-settings-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsPanelPorts" data-settings-tab="ports">
         <span class="material-symbols-outlined" aria-hidden="true">lan</span>
-        <span>Ports</span>
+        <span data-i18n="settings.tabs.ports">Ports</span>
       </button>
       <button id="settingsTabWorkspace" class="dm-settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPanelWorkspace" data-settings-tab="workspace">
         <span class="material-symbols-outlined" aria-hidden="true">folder</span>
-        <span>Workspace</span>
+        <span data-i18n="settings.tabs.workspace">Workspace</span>
       </button>
       <button id="settingsTabDefaults" class="dm-settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPanelDefaults" data-settings-tab="defaults">
         <span class="material-symbols-outlined" aria-hidden="true">tune</span>
-        <span>Instance defaults</span>
+        <span data-i18n="settings.tabs.defaults">Instance defaults</span>
       </button>
     </div>
 
@@ -26,23 +40,23 @@
       <section id="settingsPanelPorts" class="dm-settings-tab-panel is-active" role="tabpanel" aria-labelledby="settingsTabPorts" data-settings-panel="ports">
         <div class="dm-settings-panel-head">
           <div>
-            <h3 class="dm-settings-title">Port Defaults</h3>
-            <div class="sv-subtitle">Starting host ports for new local Instances</div>
+            <h3 class="dm-settings-title" data-i18n="settings.ports.title">Port Defaults</h3>
+            <div class="sv-subtitle" data-i18n="settings.ports.subtitle">Starting host ports for new local Instances</div>
           </div>
         </div>
         <div class="sv-settings-grid">
           <div class="sv-settings-row">
-            <label class="sv-settings-label" for="uiPortInput">UI Port</label>
+            <label class="sv-settings-label" for="uiPortInput" data-i18n="settings.ports.ui">UI Port</label>
             <div class="sv-settings-field">
               <input id="uiPortInput" class="sv-input" type="number" min="1024" max="65535" placeholder="e.g. 8080">
-              <span class="sv-settings-hint">Preferred starting host port for the web UI. Existing Instances keep their assigned port.</span>
+              <span class="sv-settings-hint" data-i18n="settings.ports.uiHint">Preferred starting host port for the web UI. Existing Instances keep their assigned port.</span>
             </div>
           </div>
           <div class="sv-settings-row">
-            <label class="sv-settings-label" for="sshPortInput">SSH Port</label>
+            <label class="sv-settings-label" for="sshPortInput" data-i18n="settings.ports.ssh">SSH Port</label>
             <div class="sv-settings-field">
               <input id="sshPortInput" class="sv-input" type="number" min="1024" max="65535" placeholder="e.g. 2222">
-              <span class="sv-settings-hint">Preferred starting host port when the image exposes SSH. Not every container does.</span>
+              <span class="sv-settings-hint" data-i18n="settings.ports.sshHint">Preferred starting host port when the image exposes SSH. Not every container does.</span>
             </div>
           </div>
         </div>
@@ -51,42 +65,42 @@
       <section id="settingsPanelWorkspace" class="dm-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabWorkspace" data-settings-panel="workspace" hidden>
         <div class="dm-settings-panel-head">
           <div>
-            <h3 class="dm-settings-title">Workspace Storage</h3>
-            <div class="sv-subtitle">Default workspace location for new local Instances</div>
+            <h3 class="dm-settings-title" data-i18n="settings.workspace.title">Workspace Storage</h3>
+            <div class="sv-subtitle" data-i18n="settings.workspace.subtitle">Default workspace location for new local Instances</div>
           </div>
         </div>
         <div class="sv-settings-grid">
           <div class="sv-settings-row">
-            <label class="sv-settings-label" for="workspaceStorageMode">Workspace mode</label>
+            <label class="sv-settings-label" for="workspaceStorageMode" data-i18n="settings.workspace.mode">Workspace mode</label>
             <div class="sv-settings-field">
               <select id="workspaceStorageMode" class="sv-select">
-                <option value="host_directory">Host directory</option>
-                <option value="named_volume">Named Docker volume</option>
+                <option value="host_directory" data-i18n="settings.workspace.hostDirectory">Host directory</option>
+                <option value="named_volume" data-i18n="settings.workspace.namedVolume">Named Docker volume</option>
               </select>
             </div>
           </div>
           <div id="workspaceHostRootRow" class="sv-settings-row">
-            <label class="sv-settings-label" for="workspaceHostRoot">Host folder</label>
+            <label class="sv-settings-label" for="workspaceHostRoot" data-i18n="settings.workspace.hostFolder">Host folder</label>
             <div class="sv-settings-field">
               <input id="workspaceHostRoot" class="sv-input" type="text" autocomplete="off" placeholder="~/agent-zero">
-              <span class="sv-settings-hint">Parent folder for per-Instance workspaces.</span>
+              <span class="sv-settings-hint" data-i18n="settings.workspace.hostFolderHint">Parent folder for per-Instance workspaces.</span>
             </div>
           </div>
           <div id="workspaceHostPathModeRow" class="sv-settings-row">
-            <label class="sv-settings-label" for="workspaceHostPathMode">Folder mapping</label>
+            <label class="sv-settings-label" for="workspaceHostPathMode" data-i18n="settings.workspace.folderMapping">Folder mapping</label>
             <div class="sv-settings-field">
               <select id="workspaceHostPathMode" class="sv-select">
-                <option value="per_instance">Separate folder per Instance</option>
-                <option value="exact">Use this folder directly</option>
+                <option value="per_instance" data-i18n="settings.workspace.perInstance">Separate folder per Instance</option>
+                <option value="exact" data-i18n="settings.workspace.exact">Use this folder directly</option>
               </select>
-              <span class="sv-settings-hint">Direct mapping mounts the chosen folder itself at /a0/usr.</span>
+              <span class="sv-settings-hint" data-i18n="settings.workspace.mappingHint">Direct mapping mounts the chosen folder itself at /a0/usr.</span>
             </div>
           </div>
           <div id="workspaceVolumePrefixRow" class="sv-settings-row" hidden>
-            <label class="sv-settings-label" for="workspaceVolumePrefix">Volume prefix</label>
+            <label class="sv-settings-label" for="workspaceVolumePrefix" data-i18n="settings.workspace.volumePrefix">Volume prefix</label>
             <div class="sv-settings-field">
               <input id="workspaceVolumePrefix" class="sv-input" type="text" autocomplete="off" placeholder="a0-launcher">
-              <span class="sv-settings-hint">Prefix for new named Docker volumes.</span>
+              <span class="sv-settings-hint" data-i18n="settings.workspace.volumePrefixHint">Prefix for new named Docker volumes.</span>
             </div>
           </div>
         </div>
@@ -95,20 +109,20 @@
       <section id="settingsPanelDefaults" class="dm-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabDefaults" data-settings-panel="defaults" hidden>
         <div class="dm-settings-panel-head">
           <div>
-            <h3 class="dm-settings-title">Instance Defaults</h3>
-            <div class="sv-subtitle">Preferred providers and models for new Instances</div>
+            <h3 class="dm-settings-title" data-i18n="settings.defaults.title">Instance Defaults</h3>
+            <div class="sv-subtitle" data-i18n="settings.defaults.subtitle">Preferred providers and models for new Instances</div>
           </div>
         </div>
         <div class="dm-field dm-model-defaults dm-settings-model-defaults">
-          <div class="dm-field-label">Main and Utility</div>
+          <div class="dm-field-label" data-i18n="settings.defaults.mainUtility">Main and Utility</div>
           <div id="settingsPrimaryModels" class="dm-model-grid"></div>
-          <div class="dm-field-hint">Saved on this computer and applied when you run a new Agent Zero Instance.</div>
+          <div class="dm-field-hint" data-i18n="settings.defaults.savedHint">Saved on this computer and applied when you run a new Agent Zero Instance.</div>
         </div>
         <details class="dm-advanced dm-settings-advanced">
-          <summary>Advanced</summary>
+          <summary data-i18n="settings.defaults.advanced">Advanced</summary>
           <div class="dm-advanced-body">
             <div class="dm-field dm-model-defaults">
-              <div class="dm-field-label">Embedding model</div>
+              <div class="dm-field-label" data-i18n="settings.defaults.embedding">Embedding model</div>
               <div id="settingsAdvancedModels" class="dm-model-grid"></div>
             </div>
           </div>
@@ -119,7 +133,7 @@
     <div class="dm-settings-actions dm-settings-save">
       <button id="saveSettingsBtn" class="button confirm" type="button">
         <span class="material-symbols-outlined" aria-hidden="true">save</span>
-        <span>Save settings</span>
+        <span data-i18n="settings.save">Save settings</span>
       </button>
     </div>
   </section>
