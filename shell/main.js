@@ -32,6 +32,7 @@ const {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  instanceTabShortcutTarget,
   embeddedInstanceContentBounds,
   detachedInstanceContentBounds
 } = require('./instance_tabs');
@@ -5700,10 +5701,23 @@ protocol.registerSchemesAsPrivileged([{
 
 app.on('web-contents-created', (_event, webContents) => {
   webContents.on('before-input-event', (event, input) => {
-    if (!isInstanceTabReloadShortcut(input)) return;
     const tab = webContents === mainWindow?.webContents
       ? instanceTabs.get(activeInstanceTabId)
       : findInstanceTabByWebContents(instanceTabs, webContents);
+    const attachedSurface = webContents === mainWindow?.webContents
+      || (tab && !tab.detached && tab.id === activeInstanceTabId);
+    if (attachedSurface && (!activeInstanceTabId || instanceTabBounds)) {
+      const target = instanceTabShortcutTarget(input, instanceTabs, activeInstanceTabId);
+      if (target !== null) {
+        event.preventDefault();
+        if (target) setActiveInstanceTab(target);
+        else selectInstanceHome();
+        const selectedContents = target ? instanceTabs.get(target).view.webContents : mainWindow.webContents;
+        selectedContents.focus();
+        return;
+      }
+    }
+    if (!isInstanceTabReloadShortcut(input)) return;
     if (!tab) return;
     event.preventDefault();
     reloadInstanceWebContents(tab.view?.webContents);

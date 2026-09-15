@@ -147,6 +147,14 @@ This scope owns:
   detached Instance surface must refresh that Instance page through the same
   cache-bypassing path as its Reload button, so an Agent Zero restart cannot
   strand aborted UI assets in the embedded view.
+- Tab selection shortcuts use shell-owned `before-input-event` handling on the
+  main renderer and the active attached Instance page, then reuse the existing
+  selection paths and focus the selected surface. Cmd+1..9 on macOS and
+  Ctrl+1..9 on Windows/Linux select the corresponding visible position, counting
+  Launcher as 1. Ctrl+Tab and Ctrl+Shift+Tab cycle through Launcher and attached
+  Instances in their current drag order, wrapping at either end. Detached
+  surfaces and temporarily hidden active views do not switch the main window's
+  tabs. Unmatched shortcuts remain available to the focused page.
 - Each eligible Launcher-owned Instance surface may own exactly one outbound
   `a0 gateway` child. Start it only after an embedded tab opens, keep it alive
   across Launcher-home selection and in-tab reloads, and transfer that same

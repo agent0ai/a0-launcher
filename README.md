@@ -21,6 +21,17 @@ container, release, storage-volume, and remote-instance orchestration.
 - Offers opt-in, tab-leased Host access for local files, browser, and computer
   control without making CLI installation part of Instance setup.
 
+## Tab Shortcuts
+
+- **Ctrl+1..9** (Windows/Linux) or **Cmd+1..9** (macOS): select that tab
+  position, counting Launcher as tab 1.
+- **Ctrl+Tab** / **Ctrl+Shift+Tab**: select the next / previous tab, wrapping
+  at either end.
+- **F5**: reload the active Instance.
+
+Tab switching follows the current order in the main window and excludes
+detached Instances.
+
 ## Runtime Model
 
 The launcher has two layers:

@@ -23,6 +23,7 @@ const {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  instanceTabShortcutTarget,
   embeddedInstanceContentBounds,
   detachedInstanceContentBounds
 } = require('./instance_tabs');
@@ -499,4 +500,37 @@ test('Instance F5 shortcut accepts only key down', () => {
   assert.equal(isInstanceTabReloadShortcut({ type: 'keyDown', key: 'F5' }), true);
   assert.equal(isInstanceTabReloadShortcut({ type: 'keyUp', key: 'F5' }), false);
   assert.equal(isInstanceTabReloadShortcut({ type: 'keyDown', key: 'r' }), false);
+});
+
+test('tab shortcuts follow visible order, wrap, and respect platform modifiers', () => {
+  const tabs = new Map([
+    ['first', { id: 'first' }],
+    ['detached', { id: 'detached', detached: true }],
+    ['second', { id: 'second' }]
+  ]);
+  const key = (key, modifiers = {}) => ({ type: 'keyDown', key, ...modifiers });
+  for (const platform of ['linux', 'win32', 'darwin']) {
+    const modifier = platform === 'darwin' ? { meta: true } : { control: true };
+    const target = (input, active = '') => instanceTabShortcutTarget(input, tabs, active, platform);
+    assert.equal(target(key('1', modifier), 'second'), '');
+    assert.equal(target(key('2', modifier)), 'first');
+    assert.equal(target(key('3', modifier)), 'second');
+    assert.equal(target(key('9', modifier)), null);
+    assert.equal(target(key('&', { ...modifier, code: 'Digit1' })), '');
+    assert.equal(target(key('Tab', { control: true })), 'first');
+    assert.equal(target(key('Tab', { control: true }), 'second'), '');
+    assert.equal(target(key('Tab', { control: true, shift: true })), 'second');
+    assert.equal(target(key('Tab', { control: true, shift: true }), 'second'), 'first');
+    for (const input of [
+      key('2'), key('2', { ...modifier, alt: true }),
+      key('2', { ...modifier, shift: true }), key('2', { control: true, meta: true }),
+      key('2', platform === 'darwin' ? { control: true } : { meta: true }),
+      key('Tab', { meta: true }), { ...key('2', modifier), type: 'keyUp' }
+    ]) assert.equal(target(input), null);
+  }
+  const reordered = reorderAttachedInstanceTabs(tabs, ['second', 'first']);
+  assert.equal(instanceTabShortcutTarget(key('2', { control: true }), reordered, '', 'linux'), 'second');
+  assert.equal(instanceTabShortcutTarget(key('Tab', { control: true }), new Map(), '', 'linux'), null);
+  const many = new Map(Array.from({ length: 10 }, (_, i) => [`tab-${i}`, { id: `tab-${i}` }]));
+  assert.equal(instanceTabShortcutTarget(key('9', { control: true }), many, '', 'linux'), 'tab-7');
 });

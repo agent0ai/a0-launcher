@@ -96,6 +96,9 @@ Architecture contracts:
   attached or detached Instance page through the shell-owned reload path.
   Attached views fill the native content area below the measured tab strip;
   the shell converts its CSS position using Launcher-page zoom, not display scale.
+  Tab shortcuts follow visible attached-tab order with Launcher in position 1:
+  Cmd+1..9 on macOS or Ctrl+1..9 elsewhere selects that position; Ctrl+Tab and
+  Ctrl+Shift+Tab cycle with wraparound. Detached windows keep their own focus.
 - A running local Instance menu exposes `Restart`. It uses Docker's native
   immediate container restart through the per-Instance background queue and
   waits for the Agent Zero UI to become reachable again.

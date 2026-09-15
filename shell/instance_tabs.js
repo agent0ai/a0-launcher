@@ -366,6 +366,25 @@ function isInstanceTabReloadShortcut(input) {
   return input?.type === 'keyDown' && input.key === 'F5';
 }
 
+function instanceTabShortcutTarget(input, tabs, activeTabId, platform = process.platform) {
+  if (input?.type !== 'keyDown' || input.alt) return null;
+  const cycle = input.key === 'Tab' && input.control && !input.meta;
+  const numberModifier = platform === 'darwin'
+    ? input.meta && !input.control
+    : input.control && !input.meta;
+  const digit = input.code?.match(/^Digit([1-9])$/)?.[1] || input.key;
+  const numbered = numberModifier && !input.shift && /^[1-9]$/.test(digit);
+  if (!cycle && !numbered) return null;
+
+  const ids = ['', ...Array.from(tabs.values()).filter((tab) => !tab.detached).map((tab) => tab.id)];
+  if (ids.length === 1) return null;
+  if (cycle) {
+    const index = Math.max(0, ids.indexOf(activeTabId));
+    return ids[(index + (input.shift ? -1 : 1) + ids.length) % ids.length];
+  }
+  return ids[Number(digit) - 1] ?? null;
+}
+
 function embeddedInstanceContentBounds(bounds, viewport, zoomFactor) {
   const width = Math.max(0, Math.floor(bounds.width));
   const height = Math.max(0, Math.floor(bounds.height));
@@ -405,6 +424,7 @@ module.exports = {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  instanceTabShortcutTarget,
   embeddedInstanceContentBounds,
   detachedInstanceContentBounds
 };
