@@ -1,4 +1,7 @@
 const childProcess = require('node:child_process');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const semver = require('semver');
 
 const A0_CLI_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/agent0ai/a0-connector/main/install.sh';
@@ -17,17 +20,19 @@ function shouldInstallA0Cli({ installed = false, supportsGateway = false, curren
   return !!latest && (!current || semver.gt(latest, current));
 }
 
-function a0CliInstallCommand(platform = process.platform) {
+function a0CliInstallCommand(platform = process.platform, scriptPath = '') {
   if (platform === 'win32') {
+    if (!scriptPath) throw new Error('A downloaded A0 CLI installer is required.');
     return {
       command: 'powershell.exe',
       args: [
         '-NoLogo',
         '-NoProfile',
         '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        `$ProgressPreference = 'SilentlyContinue'; irm '${A0_CLI_INSTALL_SCRIPT_URL_WINDOWS}' | iex`
+        'RemoteSigned',
+        '-NonInteractive',
+        '-File',
+        scriptPath
       ]
     };
   }
@@ -47,8 +52,26 @@ function a0CliInstallCommand(platform = process.platform) {
   throw error;
 }
 
-function runA0CliInstaller({ platform = process.platform, spawn = childProcess.spawn, env = process.env } = {}) {
-  const spec = a0CliInstallCommand(platform);
+async function runA0CliInstaller({ platform = process.platform, spawn = childProcess.spawn, env = process.env, fetch = globalThis.fetch } = {}) {
+  let tempDir;
+  try {
+    let scriptPath = '';
+    if (platform === 'win32') {
+      const response = await fetch(A0_CLI_INSTALL_SCRIPT_URL_WINDOWS, { signal: AbortSignal.timeout(30000) });
+      if (!response.ok) throw new Error(`A0 CLI installer download failed (HTTP ${response.status}).`);
+      const script = await response.text();
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'a0-cli-install-'));
+      scriptPath = path.join(tempDir, 'install.ps1');
+      await fs.writeFile(scriptPath, script, { encoding: 'utf8', flag: 'wx' });
+    }
+    const spec = a0CliInstallCommand(platform, scriptPath);
+    return await runInstallerCommand(spec, { spawn, env });
+  } finally {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function runInstallerCommand(spec, { spawn, env }) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error) => {
@@ -61,7 +84,6 @@ function runA0CliInstaller({ platform = process.platform, spawn = childProcess.s
     let child;
     try {
       child = spawn(spec.command, spec.args, {
-        detached: true,
         stdio: 'ignore',
         windowsHide: true,
         env
@@ -81,7 +103,6 @@ function runA0CliInstaller({ platform = process.platform, spawn = childProcess.s
       error.code = 'CLI_INSTALL_FAILED';
       finish(error);
     });
-    child.unref?.();
   });
 }
 
@@ -94,10 +115,11 @@ function runA0CliUpdate(cli, { spawn = childProcess.spawn, env = process.env } =
   }
 
   return new Promise((resolve, reject) => {
+    let output = '';
     let child;
     try {
       child = spawn(binary, ['update'], {
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
         env
       });
@@ -107,12 +129,15 @@ function runA0CliUpdate(cli, { spawn = childProcess.spawn, env = process.env } =
     }
 
     child.once('error', reject);
-    child.once('exit', (code, signal) => {
-      if (code === 0) {
+    child.stdout.on('data', (chunk) => { output = (output + chunk.toString()).slice(-8192); });
+    child.stderr.resume();
+    // The CLI exits before its updater. Inherited pipes close after the handoff finishes.
+    child.once('close', (code, signal) => {
+      if (code === 0 && /(?:^|\r?\n)Update complete\. Run a0\.(?:\r?\n|$)/.test(output)) {
         resolve({ updated: true });
         return;
       }
-      const error = new Error(`A0 CLI update exited (${code ?? signal ?? 'unknown'}).`);
+      const error = new Error(`A0 CLI update did not complete (${code ?? signal ?? 'unknown'}).`);
       error.code = 'CLI_UPDATE_FAILED';
       reject(error);
     });

@@ -3282,7 +3282,11 @@ function ensureA0CliInstalled({ force = false } = {}) {
 
     setA0CliEnsureState('installing');
     try {
-      await runA0CliInstaller();
+      if (installedCli && supportsGateway) {
+        await runA0CliUpdate(installedCli);
+      } else {
+        await runA0CliInstaller({ fetch: net.fetch.bind(net) });
+      }
       const installed = findA0CliCommandBinary();
       if (!installed || !a0CliSupportsGateway(installed)) {
         const error = new Error('The installed A0 CLI does not provide Launcher Host access.');

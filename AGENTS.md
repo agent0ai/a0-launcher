@@ -99,7 +99,9 @@ Architecture contracts:
   waits for the Agent Zero UI to become reachable again.
 - Launcher startup asynchronously installs the official A0 CLI when it is
   missing or lacks the Launcher gateway contract, and updates it when a newer
-  release is available. Installing the CLI grants no host capability by itself:
+  release is available. Compatible installations use `a0 update`, while Windows
+  fresh installs run a downloaded temporary PowerShell file without inline
+  execution or `Bypass`. Installing the CLI grants no host capability by itself:
   only an explicitly enabled Host access choice on an open Instance tab may
   start a gateway lease. An Instance menu shows `Install A0 CLI` while the
   system CLI is missing and replaces it with `Open A0 CLI` once installed.

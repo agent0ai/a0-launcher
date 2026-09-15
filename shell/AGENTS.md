@@ -84,6 +84,15 @@ This scope owns:
   consent; gateway startup still requires an enabled saved choice and an open
   eligible Instance tab. Preserve user-requested gateway disconnection while
   stopping and restarting other leases around CLI maintenance.
+- Compatible installed CLIs update through `a0 update`; missing or gateway-incompatible
+  CLIs use the official installer. Windows downloads that installer to a unique
+  temporary `.ps1` file and runs PowerShell `-File` with `RemoteSigned`, then
+  removes it on success or failure. Keep the installer child supervised rather
+  than detached/unreferenced. Do not use inline download-and-execute or
+  `ExecutionPolicy Bypass`. Update completion requires the inherited output pipes
+  to close and the CLI updater's `Update complete. Run a0.` success line; the
+  initial CLI process exiting only confirms handoff. Update failure must not
+  trigger an automatic installer fallback.
 - A0 CLI v2.5 is the first release expected to advertise the Launcher gateway
   contract. Keep actual gateway startup capability-gated so compatible
   development checkouts and future versions work without version-specific
