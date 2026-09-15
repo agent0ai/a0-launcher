@@ -366,6 +366,15 @@ function isInstanceTabReloadShortcut(input) {
   return input?.type === 'keyDown' && input.key === 'F5';
 }
 
+function embeddedInstanceContentBounds(bounds, viewport, zoomFactor) {
+  const width = Math.max(0, Math.floor(bounds.width));
+  const height = Math.max(0, Math.floor(bounds.height));
+  // DOM coordinates are CSS pixels; native view bounds use device-independent pixels.
+  const x = Math.min(width, Math.max(0, Math.round(viewport.x * zoomFactor)));
+  const y = Math.min(height, Math.max(0, Math.round(viewport.y * zoomFactor)));
+  return { x, y, width: width - x, height: height - y };
+}
+
 function detachedInstanceContentBounds(bounds, visible = true) {
   if (!visible) return { x: 0, y: 0, width: 0, height: 0 };
   const width = Math.max(0, Math.floor(Number(bounds?.width) || 0));
@@ -396,5 +405,6 @@ module.exports = {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  embeddedInstanceContentBounds,
   detachedInstanceContentBounds
 };

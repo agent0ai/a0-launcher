@@ -170,8 +170,9 @@ This scope owns:
 - Instance tab chrome, including the Launcher tab that returns to the launcher,
   is renderer-owned, including attached-tab drag ordering and drag-out detach
   intent, but embedded Agent Zero pages are not. The renderer
-  computes the tab viewport bounds and sends them through preload; the shell
-  owns the `WebContentsView` attached to that rectangle. Register window resize
+  reports unrounded CSS tab viewport bounds through preload; the shell converts
+  their origin using Launcher-page zoom and fills the native content area to
+  the right and bottom edges. Register window resize
   handling independently of the asynchronously loaded tab component so native
   Instance views keep their bounds when the Launcher is maximized or restored.
   Host access controls remain in attached or detached Launcher chrome: a

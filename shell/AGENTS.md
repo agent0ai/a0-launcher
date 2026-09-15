@@ -112,7 +112,12 @@ This scope owns:
 - Instance UI tabs are shell-owned `WebContentsView`s. Renderer code may request
   open/select/select launcher home/close/reload/reorder/detach/reattach and report viewport
   bounds, but URL resolution, URL validation, web contents lifecycle, and
-  detached windows stay in `shell/main.js`. Detach reparents the existing view
+  detached windows stay in `shell/main.js`. Preserve fractional CSS viewport
+  coordinates until converting their origin with the Launcher renderer's zoom
+  factor. Attached views fill the current native content bounds from that origin,
+  including on main-window resize; do not multiply by display pixel density or
+  use the embedded page's zoom. Null bounds still hide the view for Launcher
+  modals and tab dragging. Detach reparents the existing view
   below a Launcher-owned header; reattach moves that same view back without a
   page reload. Main-window layout passes must leave detached views untouched
   because their detached windows own those bounds. Local `Open UI` requests

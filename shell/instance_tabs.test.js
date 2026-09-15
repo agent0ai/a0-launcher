@@ -23,6 +23,7 @@ const {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  embeddedInstanceContentBounds,
   detachedInstanceContentBounds
 } = require('./instance_tabs');
 
@@ -412,6 +413,23 @@ test('Agent Zero pages expose no Launcher Host access controls', () => {
   assert.match(mainSource, /detachedWindow\.setTitle\(tab\.title\)/);
   assert.match(mainSource, /detachedWindow\.contentView\.addChildView\(tab\.view\)/);
   assert.match(mainSource, /mainWindow\.contentView\.addChildView\(tab\.view\)/);
+});
+
+test('embedded Instance bounds convert page zoom and fill the current window', () => {
+  const viewport = { x: 0, y: 47.2, width: 1163.64, height: 770.98 };
+  for (const [zoom, y] of [[0.9, 42], [1, 47], [1.1, 52], [1.25, 59], [2, 94]]) {
+    for (const bounds of [{ width: 1280, height: 900 }, { width: 1920, height: 1080 }]) {
+      assert.deepEqual(embeddedInstanceContentBounds(bounds, viewport, zoom), {
+        x: 0, y, width: bounds.width, height: bounds.height - y
+      });
+    }
+  }
+  assert.deepEqual(embeddedInstanceContentBounds(
+    { width: 1280, height: 900 }, { x: 10.4, y: 47.2 }, 1.25
+  ), { x: 13, y: 59, width: 1267, height: 841 });
+  assert.deepEqual(embeddedInstanceContentBounds(
+    { width: 20, height: 30 }, { x: 100, y: 47.2 }, 2
+  ), { x: 20, y: 30, width: 0, height: 0 });
 });
 
 test('detached Instance content stays below the Launcher header and can hide for modals', () => {

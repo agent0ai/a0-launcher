@@ -32,6 +32,7 @@ const {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  embeddedInstanceContentBounds,
   detachedInstanceContentBounds
 } = require('./instance_tabs');
 const { formatLauncherVersion } = require('./launcher_update');
@@ -1418,6 +1419,7 @@ function createWindow(mode = 'splash') {
   mainWindowMode = mode;
   mainWindowCreatedAt = Date.now();
   attachWindowDiagnostics(windowRef);
+  if (!isSplash) windowRef.on('resize', applyActiveInstanceTabBounds);
 
   const loadPromise = isSplash
     ? windowRef.loadFile(path.join(__dirname, 'loading.html')).catch((error) => {
@@ -2449,16 +2451,16 @@ function sanitizeInstanceTabBounds(body) {
   const source = isPlainObject(body?.bounds) ? body.bounds : body;
   if (!isPlainObject(source)) return null;
 
-  const readInt = (key) => {
+  const readNumber = (key) => {
     const value = Number(source[key]);
     if (!Number.isFinite(value)) return null;
-    return Math.floor(value);
+    return value;
   };
 
-  const x = readInt('x');
-  const y = readInt('y');
-  const width = readInt('width');
-  const height = readInt('height');
+  const x = readNumber('x');
+  const y = readNumber('y');
+  const width = readNumber('width');
+  const height = readNumber('height');
 
   if (x === null || y === null || width === null || height === null) return null;
   if (x < 0 || y < 0 || width < 80 || height < 80) return null;
@@ -2474,6 +2476,7 @@ function hideInstanceTabView(tab) {
 }
 
 function applyActiveInstanceTabBounds() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   for (const tab of instanceTabs.values()) {
     if (tab.detached) continue;
     if (tab.id !== activeInstanceTabId || !instanceTabBounds) {
@@ -2481,7 +2484,11 @@ function applyActiveInstanceTabBounds() {
       continue;
     }
     try {
-      tab.view.setBounds(instanceTabBounds);
+      tab.view.setBounds(embeddedInstanceContentBounds(
+        mainWindow.getContentBounds(),
+        instanceTabBounds,
+        mainWindow.webContents.getZoomFactor()
+      ));
     } catch {
       hideInstanceTabView(tab);
     }

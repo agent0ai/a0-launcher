@@ -1978,10 +1978,10 @@ function readInstanceTabViewportBounds() {
   if (!el) return null;
   const rect = el.getBoundingClientRect();
   return {
-    x: Math.round(rect.left),
-    y: Math.round(rect.top),
-    width: Math.round(rect.width),
-    height: Math.round(rect.height)
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height
   };
 }
 

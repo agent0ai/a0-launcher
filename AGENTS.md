@@ -94,6 +94,8 @@ Architecture contracts:
   dragged tab outside the tab strip detaches it through the same shell-owned
   reparenting path as the dedicated Detach button. F5 refreshes the active
   attached or detached Instance page through the shell-owned reload path.
+  Attached views fill the native content area below the measured tab strip;
+  the shell converts its CSS position using Launcher-page zoom, not display scale.
 - A running local Instance menu exposes `Restart`. It uses Docker's native
   immediate container restart through the per-Instance background queue and
   waits for the Agent Zero UI to become reachable again.
