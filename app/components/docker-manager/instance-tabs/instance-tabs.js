@@ -1,4 +1,4 @@
-import { instanceColorTone, instanceIconName } from "../card-visuals.js";
+import { instanceColorTone, createInstanceIcon } from "../card-visuals.js";
 import { openHostAccessDialog } from "../host-access-dialog.js";
 import { openInstanceAppearanceDialog } from "../instance-appearance-dialog.js";
 
@@ -157,6 +157,7 @@ function openTabAppearance(tab, title) {
     title: `${title} Colour/Icon`,
     currentColor: tab?.color || "",
     currentIcon: tab?.icon || "",
+    favicon: tab?.favicon,
     onSave: (appearance) => saveTabAppearance(tab, appearance)
   });
 }
@@ -228,9 +229,12 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
     icon.className = "dm-instance-tab-icon";
     icon.title = isActive ? `Change ${tabTitle} Colour/Icon` : `Show ${tabTitle}`;
     icon.setAttribute("aria-label", icon.title);
-    icon.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">${tab?.loading ? "progress_activity" : instanceIconName(tab?.icon)}</span>`;
+    icon.appendChild(createInstanceIcon(tab));
     const tone = instanceColorTone(tab?.color);
-    if (tone && !tab?.loading) icon.style.color = tone.fg;
+    if (tone && !tab?.loading) {
+      icon.style.color = tone.fg;
+      if (icon.querySelector("img")) icon.style.backgroundColor = tone.bg;
+    }
     icon.addEventListener("click", () => {
       if (isActive) openTabAppearance(tab, tabTitle);
       else window.dockerManagerActions?.selectInstanceTab?.(tab.id);

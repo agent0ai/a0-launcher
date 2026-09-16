@@ -2,6 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
 const { app, safeStorage } = require('electron');
+const { normalizeInstanceColor, normalizeInstanceIcon } = require('../instance_tabs');
 const {
   hostAccessInstanceKey,
   normalizeHostAccessDefaults,
@@ -160,13 +161,6 @@ const MAX_LOCAL_INSTANCE_COLORS = 256;
 const MAX_LOCAL_INSTANCE_ICONS = 256;
 const MAX_LOCAL_INSTANCE_CREDENTIALS = 256;
 const MAX_REMOTE_INSTANCE_CREDENTIALS = 256;
-const INSTANCE_COLOR_IDS = Object.freeze(['blue', 'green', 'rose', 'amber', 'violet', 'cyan', 'coral']);
-const INSTANCE_COLOR_SET = new Set(INSTANCE_COLOR_IDS);
-const INSTANCE_ICON_IDS = Object.freeze([
-  'smart_toy', 'psychology', 'terminal', 'rocket_launch', 'hub',
-  'science', 'code', 'memory', 'explore', 'bolt', 'shield'
-]);
-const INSTANCE_ICON_SET = new Set(INSTANCE_ICON_IDS);
 const LOCAL_CREDENTIALS_VERSION = 1;
 
 const INSTANCE_DEFAULT_SLOT_IDS = Object.freeze(['Main', 'Utility', 'Embedding']);
@@ -606,16 +600,6 @@ function localInstanceCredentialError(message, code = 'INVALID_INSTANCE_CREDENTI
   const err = new Error(message);
   err.code = code;
   return err;
-}
-
-function normalizeInstanceColor(value) {
-  const color = String(value || '').trim().toLowerCase();
-  return INSTANCE_COLOR_SET.has(color) ? color : '';
-}
-
-function normalizeInstanceIcon(value) {
-  const icon = String(value || '').trim().toLowerCase();
-  return INSTANCE_ICON_SET.has(icon) ? icon : '';
 }
 
 function normalizeLocalInstanceId(value) {

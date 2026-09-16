@@ -1973,7 +1973,7 @@ async function openRemoteInstance(id) {
 let instanceTabBoundsTimer = 0;
 
 function readInstanceTabViewportBounds() {
-  if (document.getElementById("hostAccessDialog")) return null;
+  if (document.getElementById("hostAccessDialog") || document.getElementById("instanceAppearanceDialog")) return null;
   const el = document.getElementById("dmInstanceTabViewport");
   if (!el) return null;
   const rect = el.getBoundingClientRect();
@@ -2034,6 +2034,7 @@ window.dockerManagerActions = {
   migrateLocalInstanceStorage,
   renameLocalInstance,
   setLocalInstanceAppearance,
+  chooseInstanceIcon: () => window.dockerManagerAPI?.chooseInstanceIcon?.(),
   setLocalInstanceCredentials,
   clearLocalInstanceCredentials,
   setRemoteInstanceCredentials,

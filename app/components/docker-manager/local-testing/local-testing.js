@@ -1551,6 +1551,7 @@ function renderDockerInstance(list, c, state) {
         title: "Instance Colour/Icon",
         currentColor: c?.instanceColor || "",
         currentIcon: c?.instanceIcon || "",
+        favicon: window.__dmLastState?.instanceTabs?.tabs?.find((tab) => tab.containerId === containerId)?.favicon,
         onSave: (appearance) => window.dockerManagerActions?.setLocalInstanceAppearance?.(containerId, appearance)
       });
     }, {
@@ -1738,6 +1739,7 @@ function renderRemoteInstance(list, remote, state) {
       title: "Instance Colour/Icon",
       currentColor: remote?.color || "",
       currentIcon: remote?.icon || "",
+      favicon: window.__dmLastState?.instanceTabs?.tabs?.find((tab) => tab.instanceId === remote?.id)?.favicon,
       onSave: (appearance) => window.dockerManagerActions?.setRemoteInstanceAppearance?.(remote?.id || "", appearance)
     });
   }, {

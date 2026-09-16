@@ -32,6 +32,12 @@ container, release, storage-volume, and remote-instance orchestration.
 Tab switching follows the current order in the main window and excludes
 detached Instances.
 
+Tabs use the Instance's favicon by default. Colour/Icon offers Favicon alongside
+the custom icons, including Globe; your saved custom choice takes precedence.
+Use **Upload image** to choose your own image or SVG, then **Save** to keep it
+as the Instance icon. The Launcher saves a copy, so you can move the source file.
+The first colour option, **Custom**, opens a colour picker alongside the presets.
+
 ## Runtime Model
 
 The launcher has two layers:

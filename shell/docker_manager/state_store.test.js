@@ -166,3 +166,21 @@ test('A0 Tag defaults off and an incomplete enabled section does not block other
   assert.equal(saved.storagePreferences.hostRoot, '/tmp/third');
   assert.equal(saved.a0Tag.defaultProfile, 'developer');
 });
+
+test('local and remote appearance retain uploaded images and explicit Globe, or reset to Favicon', async () => {
+  const image = 'data:image/png;base64,iVBORw0KGgo=';
+  const id = 'abcdef123456';
+  const remote = await stateStore.writeRemoteInstance({ name: 'Icons', url: 'https://icons.example.com/' });
+  for (const icon of ['language', image, '']) {
+    await stateStore.writeLocalInstanceAppearance(id, { icon });
+    await stateStore.writeRemoteInstance({ ...remote, icon });
+    assert.equal((await stateStore.readLocalInstanceIcons())[id] || '', icon);
+    assert.equal((await stateStore.readRemoteInstances()).find((item) => item.id === remote.id).icon || '', icon);
+  }
+  for (const color of ['#A1B2C3', 'green', '']) {
+    await stateStore.writeLocalInstanceAppearance(id, { color });
+    await stateStore.writeRemoteInstance({ ...remote, color });
+    assert.equal((await stateStore.readLocalInstanceColors())[id] || '', color.toLowerCase());
+    assert.equal((await stateStore.readRemoteInstances()).find((item) => item.id === remote.id).color || '', color.toLowerCase());
+  }
+});

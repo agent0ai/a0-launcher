@@ -13,6 +13,7 @@ const developerProjects = require('./developer_projects');
 const {
   normalizeInstanceColor,
   normalizeInstanceIcon,
+  loadInstanceFavicon,
   normalizeHttpUrl,
   instanceUiSectionUrl,
   instanceUiSectionScript,
@@ -2695,6 +2696,21 @@ function attachInstanceTabEvents(tab) {
     if (instanceTabs.has(tab.id)) sendInstanceTabsEvent();
   };
 
+  let faviconRequest = 0;
+  wc.on('did-start-navigation', (event) => {
+    if (!event.isMainFrame || event.isSameDocument) return;
+    faviconRequest += 1;
+    tab.favicon = '';
+  });
+  wc.on('page-favicon-updated', async (_event, favicons) => {
+    const request = ++faviconRequest;
+    const favicon = await loadInstanceFavicon(favicons[0], wc.getURL(), wc.session.fetch.bind(wc.session));
+    if (request !== faviconRequest || wc.isDestroyed() || !instanceTabs.has(tab.id)) return;
+    if (tab.favicon === favicon) return;
+    tab.favicon = favicon;
+    update();
+  });
+
   const blockNavigation = (event, url) => {
     if (isNavigationAllowedForTab(tab, url)) return;
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
@@ -5112,6 +5128,32 @@ ipcMain.handle('docker-manager:renameRemoteInstance', async (_event, body) => {
     return sanitized || dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
   } catch (error) {
     return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:chooseInstanceIcon', async (event) => {
+  try {
+    const types = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon' };
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: 'Choose Instance icon',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: Object.keys(types) }]
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const filePath = result.filePaths[0];
+    const type = types[path.extname(filePath).slice(1).toLowerCase()];
+    const info = await fs.stat(filePath);
+    if (!type || !info.isFile() || info.size > 5 * 1024 * 1024) {
+      return dockerManager.toErrorResponse({ code: 'INVALID_ICON', message: 'Choose an image or SVG smaller than 5 MB.' });
+    }
+    const image = await fs.readFile(filePath);
+    if (image.length > 5 * 1024 * 1024) {
+      return dockerManager.toErrorResponse({ code: 'INVALID_ICON', message: 'Choose an image smaller than 5 MB.' });
+    }
+    return { dataUrl: `data:${type};base64,${image.toString('base64')}` };
+  } catch {
+    return dockerManager.toErrorResponse({ code: 'INVALID_ICON', message: 'Unable to open the selected image.' });
   }
 });
 

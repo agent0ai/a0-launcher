@@ -1,4 +1,4 @@
-import { instanceColorTone, instanceIconName } from "../card-visuals.js";
+import { instanceColorTone, createInstanceIcon } from "../card-visuals.js";
 import { openHostAccessDialog } from "../host-access-dialog.js";
 import { openInstanceAppearanceDialog } from "../instance-appearance-dialog.js";
 
@@ -29,10 +29,14 @@ function render(snapshot) {
   if (icon) {
     icon.title = `Change ${title} Colour/Icon`;
     icon.setAttribute("aria-label", icon.title);
-    icon.querySelector(".material-symbols-outlined").textContent = tab.loading ? "progress_activity" : instanceIconName(tab.icon);
+    icon.replaceChildren(createInstanceIcon(tab));
     icon.style.removeProperty("color");
+    icon.style.removeProperty("background-color");
     const tone = instanceColorTone(tab.color);
-    if (tone && !tab.loading) icon.style.color = tone.fg;
+    if (tone && !tab.loading) {
+      icon.style.color = tone.fg;
+      if (icon.querySelector("img")) icon.style.backgroundColor = tone.bg;
+    }
   }
   if (host) {
     host.classList.toggle("connected", state === "connected");
@@ -42,6 +46,7 @@ function render(snapshot) {
 }
 
 window.dockerManagerActions = {
+  chooseInstanceIcon: () => api?.chooseInstanceIcon?.(),
   chooseHostAccessFolder: (defaultPath) => api?.chooseHostAccessFolder?.(defaultPath),
   async setInstanceHostAccess(target, config) {
     const id = target?.kind === "remote" ? target?.instanceId : target?.containerId;
@@ -79,6 +84,7 @@ document.getElementById("detachedInstanceIcon")?.addEventListener("click", () =>
     title: `${title} Colour/Icon`,
     currentColor: tab.color || "",
     currentIcon: tab.icon || "",
+    favicon: tab.favicon,
     onSave: (appearance) => tab.kind === "remote"
       ? window.dockerManagerActions.setRemoteInstanceAppearance(tab.instanceId || "", appearance)
       : window.dockerManagerActions.setLocalInstanceAppearance(tab.containerId || "", appearance)

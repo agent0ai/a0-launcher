@@ -135,7 +135,13 @@ This scope owns:
 - Local instance display-name and Colour/Icon overrides are persisted through
   `state_store.js` because Docker labels on existing containers cannot be
   mutated safely. Local colours and icons are stored as container-id keyed
-  `localInstanceColors` and `localInstanceIcons` maps with bounded IDs.
+  `localInstanceColors` and `localInstanceIcons` maps. Colours accept preset IDs
+  or normalized six-digit RGB hex; icons accept known IDs or bounded image data
+  URLs. Use the shared shell normalizers and save image copies into the existing
+  state file, never source file paths.
+  Empty icon IDs select the live page favicon; `language` explicitly selects
+  Globe. Existing nonempty custom icon choices remain authoritative. Live favicon
+  image data belongs only to shell tab state and must not enter persistence.
 - Optional local and saved remote Instance login credentials are persisted
   through `state_store.js` as id-keyed, Electron-safe-storage encrypted password
   records. The renderer may receive only saved-credential metadata such as saved
@@ -177,7 +183,7 @@ This scope owns:
   intact.
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence. Their
-  optional saved `color` and `icon` fields use the same bounded IDs as local
+  optional saved `color` and `icon` fields use the same bounded choices as local
   Instance appearance overrides. Optional saved remote Instance credentials are keyed
   by remote Instance id and removed when that remote Instance is deleted.
   Remote instance online/offline status is transient renderer state from a

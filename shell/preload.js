@@ -242,6 +242,7 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   deleteRemoteInstance: (id) => ipcRenderer.invoke('docker-manager:deleteRemoteInstance', { id }),
   renameRemoteInstance: (id, name) => ipcRenderer.invoke('docker-manager:renameRemoteInstance', { id, name }),
   renameLocalInstance: (containerId, name) => ipcRenderer.invoke('docker-manager:renameLocalInstance', { containerId, name }),
+  chooseInstanceIcon: () => ipcRenderer.invoke('docker-manager:chooseInstanceIcon'),
   setRemoteInstanceAppearance: (id, appearance) => {
     const value = appearance && typeof appearance === 'object' ? appearance : {};
     return ipcRenderer.invoke('docker-manager:setRemoteInstanceAppearance', {

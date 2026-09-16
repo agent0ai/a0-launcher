@@ -121,9 +121,18 @@ This scope owns:
   They must call named renderer actions that delegate host path selection and
   container archive work to the shell and Docker Manager.
 - Per-Instance Colour/Icon selection is launcher identity metadata for local and
-  saved remote Instances. It should use bounded palette and icon IDs from Docker
+  saved remote Instances. It should use validated preset/custom colours and icons from Docker
   Manager state, tint only launcher identity visuals, and never imply Docker or
   Agent Zero runtime state.
+  An empty icon ID selects the page favicon, falling back to the bundled Agent
+  Zero symbol; `language` explicitly selects Globe. Attached tabs, detached
+  headers, and the appearance picker share the same icon rendering. Keep native
+  views hidden while either Host access or Colour/Icon dialogs are open.
+  Upload image calls the named shell chooser, decodes images/SVG only as images,
+  and prepares a 96-pixel PNG preview. Cancel leaves the saved choice unchanged;
+  Save uses the existing appearance action. Never accept or persist host paths.
+  Custom is the first colour choice and uses a native colour input. Keep custom
+  RGB hex colours consistent across card accents and attached/detached tab icons.
 - Local and saved remote Instance cards should render the same health-derived
   runtime identity, including branch and commits since the nearest release;
   image tags remain fallback provenance when no runtime identity has been seen.

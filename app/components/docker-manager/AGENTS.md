@@ -294,10 +294,28 @@ This scope owns:
   not rely on mutating existing Docker labels, because Docker labels are
   immutable after container creation.
 - Selecting an Instance Colour/Icon changes only launcher metadata and should
-  use the same bounded palette and 12-icon set for local and saved remote
-  Instances. The active tab icon opens the same picker as the card menu; compact
+  use the same bounded palette, default Favicon choice, and 14 custom icons for
+  local and saved remote Instances. Empty icon IDs follow the current favicon;
+  explicit `language` retains Globe. Preview the open Instance's shell-provided
+  favicon in the picker, falling back to the bundled Agent Zero symbol.
+  Upload image adds a previewed custom choice using the shell's native chooser.
+  Keep a uniform four-column icon grid: Upload image and Favicon occupy the
+  first two cells, followed by the built-in icons. An uploaded image stays in
+  that same cell with a separate accessible Replace control; never widen the
+  Favicon or upload tiles or move upload below the grid.
+  Decode image/SVG data as an image and rasterize to a 96-pixel PNG; never insert
+  uploaded SVG markup into the document. Save persists that bounded image copy
+  through the existing appearance action; cancel or invalid files preserve the
+  previous saved icon. The picker can replace an uploaded image or return to
+  Favicon or a built-in icon.
+  Custom comes first in the colour grid and opens a native colour input. Persist
+  only normalized six-digit RGB hex values alongside the existing preset IDs;
+  choosing a preset or Automatic replaces the custom colour through normal Save.
+  Saved custom icons take precedence over favicon updates; image colours stay
+  intact while the selected Launcher colour accents their tab button background.
+  The active tab icon opens the same picker as the card menu; compact
   mode hides both Instance names and the Launcher label. Do not persist raw CSS,
-  arbitrary color strings, icon markup, or Docker labels for this preference.
+  other CSS colour expressions, raw icon markup, host paths, or Docker labels for this preference.
 - Saved remote URL-only instance cards must not expose Docker mutation actions.
   Their footer status should display the Docker Manager-provided remote health
   state as `Online`, `Offline`, or `Checking`, not a generic `Remote` tag.
@@ -362,7 +380,7 @@ This scope owns:
 - Each Instance tab shows a separately accessible computer button immediately
   after its name. The icon is green only while Connected and grey otherwise;
   clicking it opens the Launcher-owned settings modal. A header control may
-  collapse Instance names to the globe and computer icons. Opening settings
+  collapse Instance names to their selected icon and computer icons. Opening settings
   must keep that Instance
   selected, temporarily hiding only the shell-owned view while the Launcher
   modal is open and restoring it when the modal closes. Agent Zero pages expose

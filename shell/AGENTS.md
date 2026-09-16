@@ -155,6 +155,18 @@ This scope owns:
   Instances in their current drag order, wrapping at either end. Detached
   surfaces and temporarily hidden active views do not switch the main window's
   tabs. Unmatched shortcuts remain available to the focused page.
+- Instance favicon updates come from the page's native `page-favicon-updated`
+  event. Fetch same-origin HTTP(S) through that Instance's Electron session and
+  decode inline image data locally, with a five-second timeout, no redirects,
+  and a 64 KiB image limit. Publish only bounded image data URLs in tab snapshots;
+  ignore stale navigation/update results. Favicons remain transient and never
+  overwrite saved custom icon IDs or expose remote URLs to the Launcher renderer.
+  The named `chooseInstanceIcon` IPC uses a native image/SVG chooser, returns
+  at most 5 MiB of selected image data, and keeps file paths shell-owned. The
+  renderer prepares a compact image; existing appearance saves validate and
+  persist only bounded image data URLs or known icon IDs.
+  Appearance colours accept only known preset IDs or normalized `#rrggbb`
+  values; reject other CSS expressions at the shared state/snapshot boundary.
 - Each eligible Launcher-owned Instance surface may own exactly one outbound
   `a0 gateway` child. Start it only after an embedded tab opens, keep it alive
   across Launcher-home selection and in-tab reloads, and transfer that same

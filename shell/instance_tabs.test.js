@@ -4,6 +4,10 @@ const path = require('node:path');
 const { test } = require('node:test');
 
 const {
+  normalizeInstanceColor,
+  normalizeInstanceFavicon,
+  loadInstanceFavicon,
+  normalizeInstanceIcon,
   normalizeHttpUrl,
   instanceUiSectionUrl,
   instanceUiSectionScript,
@@ -27,6 +31,49 @@ const {
   embeddedInstanceContentBounds,
   detachedInstanceContentBounds
 } = require('./instance_tabs');
+
+test('Instance colours allow presets and six-digit RGB hex only', () => {
+  assert.equal(normalizeInstanceColor(' Green '), 'green');
+  assert.equal(normalizeInstanceColor(' #A1B2C3 '), '#a1b2c3');
+  for (const value of ['#fff', '#12345678', '#zzzzzz', 'url(file:///tmp/image)', 'rgb(1,2,3)']) {
+    assert.equal(normalizeInstanceColor(value), '');
+  }
+});
+
+test('favicons accept bounded images from the Instance session and inline SVG', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>\u{1f680}</text></svg>';
+  const inline = await loadInstanceFavicon(`data:image/svg+xml,${encodeURIComponent(svg)}`, 'https://example.com', fetch);
+  assert.equal(inline, `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+  const image = Buffer.from('image');
+  const fetchImage = async (_url, options) => {
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.credentials, 'include');
+    return new Response(image, { headers: { 'content-type': 'image/png' } });
+  };
+  assert.equal(await loadInstanceFavicon('https://example.com/icon.png', 'https://example.com/a0/', fetchImage),
+    `data:image/png;base64,${image.toString('base64')}`);
+  let forbiddenRequests = 0;
+  const forbiddenFetch = () => { forbiddenRequests += 1; throw Error('Unexpected fetch'); };
+  for (const url of ['file:///etc/passwd', 'https://other.example/icon.png',
+    'https://user:pass@example.com/icon.png', 'data:text/html,<script>alert(1)</script>']) {
+    assert.equal(await loadInstanceFavicon(url, 'https://example.com', forbiddenFetch), '');
+  }
+  assert.equal(forbiddenRequests, 0);
+  for (const response of [
+    new Response('<html>', { headers: { 'content-type': 'text/html' } }),
+    new Response(new Uint8Array(65537), { headers: { 'content-type': 'image/png' } }),
+    new Response('missing', { status: 404, headers: { 'content-type': 'image/png' } })
+  ]) assert.equal(await loadInstanceFavicon('https://example.com/icon', 'https://example.com', async () => response), '');
+  assert.equal(await loadInstanceFavicon('https://example.com/icon', 'https://example.com', async () => { throw Error('Offline'); }), '');
+  assert.equal(normalizeInstanceFavicon('data:text/html;base64,YQ=='), '');
+  assert.equal(normalizeInstanceFavicon('https://example.com/icon.png'), '');
+  assert.equal(normalizeInstanceIcon('language'), 'language');
+  assert.equal(normalizeInstanceIcon('auto_awesome'), 'auto_awesome');
+  assert.equal(normalizeInstanceIcon('favorite'), 'favorite');
+  const tabs = new Map([['tab', { id: 'tab', icon: 'terminal', favicon: inline }]]);
+  assert.equal(makeTabsSnapshot(tabs, 'tab').tabs[0].favicon, inline);
+  assert.equal(makeTabsSnapshot(tabs, 'tab').tabs[0].icon, 'terminal');
+});
 
 test('local URLs allow only localhost-style HTTP URLs without credentials', () => {
   assert.equal(isAllowedLocalInstanceUrl('http://127.0.0.1:32080/'), true);

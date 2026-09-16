@@ -20,7 +20,8 @@ const INSTANCE_COLOR_OPTIONS = Object.freeze([
 ]);
 
 const INSTANCE_ICON_OPTIONS = Object.freeze([
-  { id: "", icon: "language", label: "Globe" },
+  { id: "", label: "Favicon" },
+  { id: "language", label: "Globe" },
   { id: "smart_toy", label: "Agent" },
   { id: "psychology", label: "Mind" },
   { id: "terminal", label: "Terminal" },
@@ -31,7 +32,9 @@ const INSTANCE_ICON_OPTIONS = Object.freeze([
   { id: "memory", label: "Memory" },
   { id: "explore", label: "Compass" },
   { id: "bolt", label: "Energy" },
-  { id: "shield", label: "Shield" }
+  { id: "shield", label: "Shield" },
+  { id: "auto_awesome", label: "Spark" },
+  { id: "favorite", label: "Heart" }
 ]);
 
 const INSTANCE_ICON_IDS = new Set(INSTANCE_ICON_OPTIONS.filter((item) => item.id).map((item) => item.id));
@@ -54,10 +57,16 @@ function hashText(value) {
 
 function normalizedInstanceColorId(value) {
   const id = String(value || "").trim().toLowerCase();
-  return INSTANCE_COLOR_TONES.has(id) ? id : "";
+  return INSTANCE_COLOR_TONES.has(id) || /^#[0-9a-f]{6}$/.test(id) ? id : "";
+}
+
+function isInstanceImageIcon(value) {
+  return typeof value === "string" && value.length <= 96 * 1024
+    && /^data:image\/(?:png|jpeg|gif|webp|svg\+xml|x-icon|vnd.microsoft.icon);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 }
 
 function normalizedInstanceIconId(value) {
+  if (isInstanceImageIcon(value)) return "custom";
   const id = String(value || "").trim().toLowerCase();
   return INSTANCE_ICON_IDS.has(id) ? id : "";
 }
@@ -67,12 +76,32 @@ function instanceIconName(value) {
   return INSTANCE_ICON_OPTIONS.find((item) => item.id === id)?.icon || id || "language";
 }
 
+function createInstanceIcon({ icon, favicon, loading } = {}) {
+  const id = normalizedInstanceIconId(icon);
+  if (loading || (id && id !== "custom")) {
+    const symbol = document.createElement("span");
+    symbol.className = "material-symbols-outlined";
+    symbol.setAttribute("aria-hidden", "true");
+    symbol.textContent = loading ? "progress_activity" : instanceIconName(id);
+    return symbol;
+  }
+  const image = document.createElement("img");
+  const fallback = new URL("../../assets/darkSymbol.svg", import.meta.url).href;
+  image.className = "dm-instance-favicon";
+  image.alt = "";
+  image.src = id === "custom" ? icon : favicon || fallback;
+  image.addEventListener("error", () => { image.src = fallback; }, { once: true });
+  return image;
+}
+
 function instanceColorTone(value) {
-  return INSTANCE_COLOR_TONES.get(normalizedInstanceColorId(value)) || null;
+  const id = normalizedInstanceColorId(value);
+  if (id.startsWith("#")) return { fg: id, bg: `${id}24`, border: `${id}3d` };
+  return INSTANCE_COLOR_TONES.get(id) || null;
 }
 
 function toneForSeed(seed, color = "") {
-  const selected = INSTANCE_COLOR_TONES.get(normalizedInstanceColorId(color));
+  const selected = instanceColorTone(color);
   if (selected) return selected;
   return VERSION_TONES[hashText(seed) % VERSION_TONES.length];
 }
@@ -138,6 +167,8 @@ export {
   createVersionVisual,
   instanceColorTone,
   instanceIconName,
+  createInstanceIcon,
+  isInstanceImageIcon,
   normalizedInstanceColorId,
   normalizedInstanceIconId,
   versionVisualLabel

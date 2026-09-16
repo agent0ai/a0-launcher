@@ -268,6 +268,12 @@ Product language:
 - Per-Instance Colour/Icon choices are launcher identity metadata. The bounded
   colour tints the card and tab icon, while the bounded icon identifies attached
   and detached tabs without mutating Docker labels or runtime behavior.
+  Colours accept preset IDs or six-digit RGB hex values from the Custom picker.
+  The default icon follows the Instance favicon, with the Agent Zero symbol as
+  fallback. Explicit custom icons take precedence; Favicon and Globe are both
+  available in the picker. Favicon image data is transient, shell-owned tab state.
+  Upload image uses a native chooser and saves a bounded image copy in the same
+  appearance metadata only on Save, independent of the original host file.
 - Keep Docker mechanics behind purposeful controls.
 - Put `Open UI` where the instance lives, not in the global header.
 - Keep the surface quiet and precise: avoid excessive borders, nested cards, and

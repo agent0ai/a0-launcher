@@ -1,5 +1,6 @@
 const INSTANCE_COLOR_IDS = new Set(['blue', 'green', 'rose', 'amber', 'violet', 'cyan', 'coral']);
 const INSTANCE_ICON_IDS = new Set([
+  'language',
   'smart_toy',
   'psychology',
   'terminal',
@@ -10,17 +11,65 @@ const INSTANCE_ICON_IDS = new Set([
   'memory',
   'explore',
   'bolt',
-  'shield'
+  'shield',
+  'auto_awesome',
+  'favorite'
 ]);
 
 function normalizeInstanceColor(value) {
   const id = String(value || '').trim().toLowerCase();
-  return INSTANCE_COLOR_IDS.has(id) ? id : '';
+  return INSTANCE_COLOR_IDS.has(id) || /^#[0-9a-f]{6}$/.test(id) ? id : '';
 }
 
 function normalizeInstanceIcon(value) {
+  const image = normalizeInstanceFavicon(value);
+  if (image) return image;
   const id = String(value || '').trim().toLowerCase();
   return INSTANCE_ICON_IDS.has(id) ? id : '';
+}
+
+const INSTANCE_FAVICON_TYPES = new Set([
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+  'image/x-icon', 'image/vnd.microsoft.icon'
+]);
+const MAX_INSTANCE_FAVICON_BYTES = 64 * 1024;
+
+function normalizeInstanceFavicon(value) {
+  if (typeof value !== 'string' || value.length > 96 * 1024) return '';
+  const match = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/);
+  return match && INSTANCE_FAVICON_TYPES.has(match[1])
+    && Buffer.byteLength(match[2], 'base64') <= MAX_INSTANCE_FAVICON_BYTES ? value : '';
+}
+
+async function loadInstanceFavicon(value, pageUrl, fetchImage) {
+  try {
+    if (typeof value !== 'string' || value.length > 96 * 1024) return '';
+    const url = new URL(value);
+    if (url.protocol === 'data:') {
+      if (!/^data:image\//i.test(value)) return '';
+    } else if (!parseHttpUrl(value) || url.origin !== new URL(pageUrl).origin) {
+      return '';
+    }
+    // Electron's session fetch rejects data URLs; Node can decode them locally.
+    const response = await (url.protocol === 'data:' ? fetch : fetchImage)(value, {
+      credentials: 'include', redirect: 'error', signal: AbortSignal.timeout(5000)
+    });
+    const type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+    if (!response.ok || !INSTANCE_FAVICON_TYPES.has(type)) {
+      await response.body?.cancel();
+      return '';
+    }
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > MAX_INSTANCE_FAVICON_BYTES) return '';
+      chunks.push(chunk);
+    }
+    return normalizeInstanceFavicon(`data:${type};base64,${Buffer.concat(chunks).toString('base64')}`);
+  } catch {
+    return '';
+  }
 }
 
 function parseHttpUrl(value) {
@@ -288,6 +337,7 @@ function makeTabsSnapshot(tabs, activeTabId) {
         canReload: Boolean(safeTab.canReload),
         color: normalizeInstanceColor(safeTab.color),
         icon: normalizeInstanceIcon(safeTab.icon),
+        ...(normalizeInstanceFavicon(safeTab.favicon) ? { favicon: safeTab.favicon } : {}),
         ...(safeTab.detached === true ? { detached: true } : {}),
         hostAccess: safeTab.hostAccess && typeof safeTab.hostAccess === 'object'
           ? safeTab.hostAccess
@@ -405,6 +455,8 @@ function detachedInstanceContentBounds(bounds, visible = true) {
 module.exports = {
   normalizeInstanceColor,
   normalizeInstanceIcon,
+  normalizeInstanceFavicon,
+  loadInstanceFavicon,
   normalizeHttpUrl,
   instanceUiSectionUrl,
   instanceUiSectionScript,
