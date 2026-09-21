@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
-import { mkdir as mkdirp, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir as mkdirp, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
 import { DockerInterface } from './DockerInterface.mjs';
-import { RuntimeProvisioner } from './RuntimeProvisioner.mjs';
+import { RuntimeProvisioner, run } from './RuntimeProvisioner.mjs';
 import { ColimaRuntime, selectLatestDockerCliAsset } from './impl/ColimaRuntime.mjs';
 import { LinuxEngineRuntime } from './impl/LinuxEngineRuntime.mjs';
 import { ensureWindowsWslKeepAlive, stopWindowsWslKeepAlive } from './impl/WindowsWslDockerProxy.mjs';
@@ -202,6 +202,70 @@ test('WindowsWslRuntime can detect stopped Docker Desktop beside a WSL runtime',
     assert.equal((await runtime.assessDockerDesktop()).mode, 'docker_desktop');
   } finally {
     await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime discovers per-user Docker Desktop with Windows PowerShell', { skip: process.platform !== 'win32' }, async () => {
+  const managedDir = await mkdtemp(path.join(os.tmpdir(), 'a0-runtime-'));
+  try {
+    const localAppData = path.join(managedDir, "User's AppData");
+    const desktopPath = path.join(localAppData, 'Programs', 'DockerDesktop', 'Docker Desktop.exe');
+    await mkdirp(path.dirname(desktopPath), { recursive: true });
+    await writeFile(desktopPath, '');
+    const runtime = new WindowsWslRuntime({
+      managedDir,
+      isWindowsServer: false,
+      runCommand: (cmd, args, options) => run(cmd, args, {
+        ...options,
+        env: { ...process.env, ProgramFiles: managedDir, 'ProgramFiles(x86)': managedDir, LOCALAPPDATA: localAppData }
+      })
+    });
+    const assessment = await runtime.assessDockerDesktop();
+    assert.equal(assessment?.state, 'engine_stopped');
+    assert.equal(assessment?.mode, 'docker_desktop');
+  } finally {
+    await rm(managedDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowsWslRuntime excludes Docker private distros while preserving Ubuntu selection', async () => {
+  for (const ubuntu of [false, true]) {
+    const calls = [];
+    const runtime = new WindowsWslRuntime({
+      managedDir: os.tmpdir(),
+      isWindowsServer: false,
+      runCommand: fakeWindowsCommandRunner({
+        calls,
+        binaries: ['wsl.exe'],
+        wslList: '  NAME STATE VERSION\n* docker-desktop Stopped 2\n  docker-desktop-data Stopped 2\n'
+          + (ubuntu ? '  Ubuntu Stopped 2\n' : '')
+      })
+    });
+    const assessment = await runtime.assess();
+    assert.equal(assessment.mode, ubuntu ? 'wsl_engine' : 'wsl_distribution');
+    assert.equal(assessment.distro, ubuntu ? 'Ubuntu' : undefined);
+    assert.ok(calls.every(({ cmd, args }) => cmd !== 'wsl.exe' || !args.includes('--exec') || args[1] === 'Ubuntu'));
+  }
+});
+
+test('WindowsWslRuntime reports Desktop launch failures without waiting for its pipe', async () => {
+  for (const desktopPath of ["C:\\Users\\O'Brien\\Docker Desktop.exe", '']) {
+    const progress = [];
+    const controller = new AbortController();
+    controller.abort();
+    const runtime = new WindowsWslRuntime({
+      managedDir: os.tmpdir(),
+      runCommand: async (_cmd, args) => {
+        const script = args.at(-1);
+        if (!script.startsWith('Start-Process')) return { code: 0, stdout: desktopPath, stderr: '' };
+        assert.equal(script, `Start-Process -FilePath '${(desktopPath || 'docker-desktop:').replace(/'/g, "''")}' -WindowStyle Hidden -ErrorAction Stop`);
+        return { code: 1, stdout: '', stderr: 'Launch denied' };
+      }
+    });
+    await assert.rejects(runtime.start({
+      mode: 'docker_desktop', signal: controller.signal, onProgress: (message) => progress.push(message)
+    }), (error) => error.code === 'RUNTIME_START_FAILED' && error.details.stderr === 'Launch denied');
+    assert.deepEqual(progress, []);
   }
 });
 

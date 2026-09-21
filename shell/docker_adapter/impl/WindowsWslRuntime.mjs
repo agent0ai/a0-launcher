@@ -301,7 +301,7 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
   }
 
   #selectWslDistro(distros) {
-    const wsl2 = (distros || []).filter((d) => d.version === 2);
+    const wsl2 = (distros || []).filter((d) => d.version === 2 && !/^docker-desktop(?:-data)?$/i.test(d.name));
     return (
       wsl2.find((d) => d.default) ||
       wsl2.find((d) => /^Ubuntu$/i.test(d.name)) ||
@@ -501,6 +501,7 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
       '  (Join-Path $env:ProgramFiles "Docker\\Docker\\Docker Desktop.exe")',
       ')',
       'if (${env:ProgramFiles(x86)}) { $paths += (Join-Path ${env:ProgramFiles(x86)} "Docker\\Docker\\Docker Desktop.exe") }',
+      'if ($env:LOCALAPPDATA) { $paths += (Join-Path $env:LOCALAPPDATA "Programs\\DockerDesktop\\Docker Desktop.exe") }',
       '$found = $paths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1',
       'if ($found) { $found }'
     ].join('; ');
@@ -511,9 +512,16 @@ export class WindowsWslRuntime extends RuntimeProvisioner {
   async #startDockerDesktop(options = {}) {
     const desktopPath = await this.#dockerDesktopPath();
     const command = desktopPath
-      ? `Start-Process -LiteralPath '${desktopPath.replace(/'/g, "''")}'`
-      : "Start-Process 'docker-desktop:'";
-    await this.#powershell(command);
+      ? `Start-Process -FilePath '${desktopPath.replace(/'/g, "''")}' -WindowStyle Hidden -ErrorAction Stop`
+      : "Start-Process -FilePath 'docker-desktop:' -WindowStyle Hidden -ErrorAction Stop";
+    const result = await this.#powershell(command, { signal: options.signal });
+    if (result.code !== 0) {
+      throw makeError('RUNTIME_START_FAILED', 'Could not start Docker Desktop.', {
+        exitCode: result.code,
+        stdout: cleanCommandText(result.stdout),
+        stderr: cleanCommandText(result.stderr)
+      });
+    }
     options.onProgress?.('Waiting for Docker Desktop');
     const ready = await this.#waitForDockerDesktopPipe(options.signal);
     if (!ready) {

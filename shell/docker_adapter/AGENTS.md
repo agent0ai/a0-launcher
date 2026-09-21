@@ -130,6 +130,11 @@ This scope owns:
 - Windows clients with Docker Desktop installed but stopped must report a
   `docker_desktop` `engine_stopped` state with start guidance, not a Docker
   Desktop download or reinstall link.
+  Discover both Program Files and per-user
+  `%LOCALAPPDATA%/Programs/DockerDesktop` installations. Start Desktop with
+  PowerShell's `Start-Process -FilePath` and report launch errors before waiting
+  for its pipe. Never select Docker's private `docker-desktop` or
+  `docker-desktop-data` WSL distributions for Engine setup or startup.
 - Windows client WSL feature installation may use a user-approved UAC prompt via
   `wsl.exe --install --no-distribution`; it must report restart/follow-up states
   instead of claiming Docker is ready immediately.
