@@ -46,9 +46,9 @@ npm install --prefix packaging
   directory, including saved preferences, remote Instances, credentials, and
   cached content.
 - Use `A0_LAUNCHER_APP_VERSION` and `A0_LAUNCHER_RELEASE_TAG` for CI-provided
-  release versions. Two-segment tags such as `v1.7` are the public release
-  shape; build them as semver `1.7.0` where tooling requires it, but stage
-  public assets with release version `1.7`.
+  release versions. Two-segment tags such as `v1.8` are the public release
+  shape; build them as semver `1.8.0` where tooling requires it, but stage
+  public assets with release version `1.8`.
 - Canonical public/updater asset names are:
 
 ```text
