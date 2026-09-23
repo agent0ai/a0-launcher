@@ -81,6 +81,7 @@ function createInstanceIcon({ icon, favicon, loading } = {}) {
   if (loading || (id && id !== "custom")) {
     const symbol = document.createElement("span");
     symbol.className = "material-symbols-outlined";
+    if (loading) symbol.classList.add("spin");
     symbol.setAttribute("aria-hidden", "true");
     symbol.textContent = loading ? "progress_activity" : instanceIconName(id);
     return symbol;

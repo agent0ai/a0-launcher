@@ -167,6 +167,7 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   const section = document.querySelector(".dm-instance-tabs");
   const strip = byId("dmInstanceTabStrip");
   const empty = byId("dmInstanceTabEmpty");
+  const loading = byId("dmInstanceTabLoading");
   const viewport = byId("dmInstanceTabViewport");
   if (!strip || !viewport) return;
 
@@ -184,6 +185,7 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
     document.body.classList.remove("dm-instance-home-active");
     viewport.classList.remove("has-tab");
     if (empty) empty.classList.remove("hidden");
+    if (loading) loading.classList.add("hidden");
     window.dockerManagerActions?.syncInstanceTabBounds?.();
     return;
   }
@@ -194,6 +196,7 @@ function render(state = window.__dmLastState || { instanceTabs: { tabs: [], acti
   document.body.classList.toggle("dm-instance-home-active", homeActive);
   viewport.classList.toggle("has-tab", !homeActive);
   if (empty) empty.classList.add("hidden");
+  if (loading) loading.classList.toggle("hidden", !selected?.loading || selected?.canReload);
 
   const home = document.createElement("button");
   home.type = "button";

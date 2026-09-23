@@ -367,6 +367,9 @@ This scope owns:
   page view below the same Launcher header in a standalone secure Electron
   window without stopping the instance or its live Host access lease; reattach
   moves it back without reload, and closing that window ends the lease.
+- A newly opened attached or detached Instance tab shows centered loading
+  feedback until its first page load finishes; its loading icon rotates while
+  the tab is loading.
 - Instance tab chrome keeps a Launcher tab as the first tab whenever any
   instance UI tab is open. Selecting Launcher clears the active shell-owned
   view and leaves the launcher surface usable below the tab strip.

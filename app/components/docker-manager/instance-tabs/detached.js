@@ -26,6 +26,7 @@ function render(snapshot) {
   const icon = document.getElementById("detachedInstanceIcon");
   const host = document.getElementById("detachedHostAccess");
   if (name) name.textContent = title;
+  document.getElementById("detachedInstanceLoading")?.classList.toggle("hidden", !tab.loading || tab.canReload);
   if (icon) {
     icon.title = `Change ${title} Colour/Icon`;
     icon.setAttribute("aria-label", icon.title);

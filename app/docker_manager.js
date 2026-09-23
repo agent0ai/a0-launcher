@@ -701,15 +701,24 @@ async function openInstanceUi(target = {}) {
     }
     return;
   }
+  let openingToastId = "";
+  let openingFinished = false;
+  const openingToastTimer = window.setTimeout(() => {
+    void showToast("info", "Connecting to the Instance UI…", "Agent Zero", 30, "dm-open-ui").then((id) => {
+      if (openingFinished) document.getElementById(id)?.remove();
+      else openingToastId = id;
+    });
+  }, 300);
   try {
     const payload = target && typeof target === "object" ? target : {};
     const res = await api.openInstanceUi(payload);
     if (isErrorResponse(res)) setBanner("error", res.message);
-    else if (res?.opened && !res?.focusedExisting) {
-      window.toastFrontendInfo?.("Instance UI opened.", "Agent Zero", 2, "dm-open-ui");
-    }
   } catch (e) {
     setBanner("error", e?.message || "Unable to open UI");
+  } finally {
+    openingFinished = true;
+    window.clearTimeout(openingToastTimer);
+    if (openingToastId) document.getElementById(openingToastId)?.remove();
   }
 }
 

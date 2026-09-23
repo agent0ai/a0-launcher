@@ -122,8 +122,10 @@ This scope owns:
   page reload. Main-window layout passes must leave detached views untouched
   because their detached windows own those bounds. Local `Open UI` requests
   should wait briefly for a freshly running container's HTTP UI before returning an
-  unavailable error. Renderer open requests may pass a bounded Agent Zero
-  section selector such as `self-update`; the shell validates the Instance URL,
+  unavailable error. Hide a new attached or detached view until its first load
+  completes so the renderer's loading state remains visible. Renderer open
+  requests may pass a bounded Agent Zero section selector such as
+  `self-update`; the shell validates the Instance URL,
   then opens only the matching known in-page Agent Zero modal or same-origin
   anchor. If a local Instance or saved remote Instance has
   launcher-saved credentials, `Open UI` may POST them to the same-origin Agent

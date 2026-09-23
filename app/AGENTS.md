@@ -162,6 +162,8 @@ This scope owns:
 - Toast feedback for modal actions must remain visible above blocking modal
   backdrops, especially recoverable failures such as Docker Hub sign-in.
 - Keep `Open UI` colocated with the Instance or Version it opens.
+- Show bounded opening feedback while an `Open UI` request waits for the shell,
+  and clear it when the request finishes or fails.
 - Keep compact controls stable in width and avoid text overflow on small
   windows.
 - Keep the launcher workspace responsive across large displays. Do not

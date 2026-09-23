@@ -2156,7 +2156,7 @@ function applyDetachedInstanceBounds(tab) {
   try {
     tab.view.setBounds(detachedInstanceContentBounds(
       detachedWindow.getContentBounds(),
-      tab.detachedContentVisible !== false
+      tab.detachedContentVisible !== false && !(tab.loading && !tab.canReload)
     ));
   } catch {
     // The window or view may be closing.
@@ -2481,7 +2481,7 @@ function applyActiveInstanceTabBounds() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   for (const tab of instanceTabs.values()) {
     if (tab.detached) continue;
-    if (tab.id !== activeInstanceTabId || !instanceTabBounds) {
+    if (tab.id !== activeInstanceTabId || !instanceTabBounds || (tab.loading && !tab.canReload)) {
       hideInstanceTabView(tab);
       continue;
     }
@@ -2767,11 +2767,15 @@ function attachInstanceTabEvents(tab) {
   wc.on('did-stop-loading', () => {
     tab.loading = false;
     tab.canReload = true;
+    applyActiveInstanceTabBounds();
+    applyDetachedInstanceBounds(tab);
     update();
   });
   wc.on('did-fail-load', () => {
     tab.loading = false;
     tab.canReload = true;
+    applyActiveInstanceTabBounds();
+    applyDetachedInstanceBounds(tab);
     update();
   });
   wc.on('page-title-updated', (_event, title) => {
@@ -2890,7 +2894,7 @@ async function openInstanceTab(target) {
     icon: normalizeInstanceIcon(target.icon),
     gatewayHost: gatewayHostUrl(target.url),
     loading: true,
-    canReload: true,
+    canReload: false,
     hostAccess: hostAccessStatus('connecting', { message: 'Preparing Launcher Host access…' }),
     hostAccessConfig: null,
     view
