@@ -31,6 +31,14 @@ function normalizeUrlInput(value) {
   }
 }
 
+function isHttpsUrlInput(value) {
+  return normalizeUrlInput(value)?.protocol === "https:";
+}
+
+function certificateTrustForUrl(url, checked) {
+  return isHttpsUrlInput(url) && checked === true;
+}
+
 function defaultRemoteName(value) {
   const parsed = normalizeUrlInput(value);
   return parsed?.hostname || "";
@@ -66,6 +74,50 @@ function remoteCredentialPayload({ username, password, remember } = {}) {
   };
 }
 
+function openRestartToApplyDialog() {
+  const existing = document.getElementById("restartToApplyDialog");
+  if (existing) existing.remove();
+
+  const dialog = document.createElement("div");
+  dialog.id = "restartToApplyDialog";
+  dialog.className = "dm-dialog-backdrop";
+  dialog.setAttribute("role", "presentation");
+  dialog.innerHTML = `
+    <form class="dm-dialog" role="dialog" aria-modal="true" aria-labelledby="restartToApplyTitle">
+      <div class="dm-dialog-header">
+        <h2 id="restartToApplyTitle" class="dm-dialog-title">Restart to apply</h2>
+        <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">&times;</button>
+      </div>
+      <div class="dm-dialog-body">
+        <p class="dm-dialog-copy">The certificate setting takes effect after the Launcher restarts.</p>
+      </div>
+      <div class="dm-dialog-footer">
+        <button class="button" type="button" data-dialog-close>Later</button>
+        <button class="button confirm" type="submit">Restart now</button>
+      </div>
+    </form>
+  `;
+  dialog.querySelectorAll("[data-dialog-close]").forEach((button) => {
+    button.addEventListener("click", () => closeDialog(dialog));
+  });
+  dialog.addEventListener("mousedown", (event) => {
+    if (event.target === dialog) closeDialog(dialog);
+  });
+  dialog.querySelector("form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    closeDialog(dialog);
+    window.dockerManagerActions?.restartLauncher?.();
+  });
+  document.body.appendChild(dialog);
+}
+
+// Chromium keeps the certificate verdict it has already cached for a host, so
+// a changed opt-in may apply only after a restart. Ask only when that is so.
+async function offerRestartToApply(instanceUrl) {
+  const required = await window.dockerManagerActions?.certificateTrustRestartRequired?.(instanceUrl || "");
+  if (required === true) openRestartToApplyDialog();
+}
+
 function openAddRemoteInstanceDialog(options = {}) {
   const existing = document.getElementById("remoteInstanceDialog");
   if (existing) existing.remove();
@@ -91,6 +143,11 @@ function openAddRemoteInstanceDialog(options = {}) {
           <label for="remoteInstanceUrl">Instance URL</label>
           <input id="remoteInstanceUrl" class="dm-text-input" type="text" inputmode="url" autocomplete="url" placeholder="https://agent-zero.example.com">
           <div class="dm-field-hint">Use the URL where this Agent Zero Instance is already running. If no protocol is entered, the launcher will use http://.</div>
+          <label class="dm-checkbox-line">
+            <input id="remoteAllowUntrustedCertificate" type="checkbox" disabled>
+            <span>Trust this Instance's certificate</span>
+          </label>
+          <div class="dm-field-hint">For a self-signed certificate, or one from your own CA. Works only with https. The certificate must still match this address.</div>
         </div>
         <div class="dm-field">
           <label for="remoteInstanceName">Instance name</label>
@@ -145,6 +202,7 @@ function openAddRemoteInstanceDialog(options = {}) {
   const usernameInput = dialog.querySelector("#remoteAuthLogin");
   const passwordInput = dialog.querySelector("#remoteAuthPassword");
   const rememberInput = dialog.querySelector("#remoteRememberCredentials");
+  const certificateTrustInput = dialog.querySelector("#remoteAllowUntrustedCertificate");
   const hostAccessInput = dialog.querySelector("#remoteHostAccessConfigured");
   const hostOptions = dialog.querySelector("[data-launcher-host-options]");
   const hostFolder = dialog.querySelector("#remoteHostAccessFolder");
@@ -154,10 +212,18 @@ function openAddRemoteInstanceDialog(options = {}) {
     if (!completed) options.onCancel?.();
   };
 
+  const syncCertificateTrust = () => {
+    const https = isHttpsUrlInput(urlInput?.value || "");
+    if (!certificateTrustInput) return;
+    certificateTrustInput.disabled = !https;
+    if (!https) certificateTrustInput.checked = false;
+  };
   urlInput?.addEventListener("input", () => {
+    syncCertificateTrust();
     if (!nameInput || nameInput.dataset.dirty) return;
     nameInput.value = defaultRemoteName(urlInput.value);
   });
+  syncCertificateTrust();
   nameInput?.addEventListener("input", () => {
     nameInput.dataset.dirty = "1";
   });
@@ -202,7 +268,8 @@ function openAddRemoteInstanceDialog(options = {}) {
     }
     const result = await window.dockerManagerActions?.addRemoteInstance?.({
       url,
-      name: nameInput?.value || ""
+      name: nameInput?.value || "",
+      allowUntrustedCertificate: certificateTrustForUrl(url, certificateTrustInput?.checked)
     });
     if (!result) return;
     if (credentialResult.credentials) {
@@ -227,6 +294,7 @@ function openAddRemoteInstanceDialog(options = {}) {
     completed = true;
     closeDialog(dialog);
     await options.onAdded?.(result);
+    await offerRestartToApply(result.url);
   });
 
   document.body.appendChild(dialog);
@@ -234,6 +302,7 @@ function openAddRemoteInstanceDialog(options = {}) {
 }
 
 export {
+  certificateTrustForUrl,
   remoteCredentialPayload,
   openAddRemoteInstanceDialog
 };

@@ -236,11 +236,16 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
     const r = remote && typeof remote === 'object' ? remote : {};
     return ipcRenderer.invoke('docker-manager:addRemoteInstance', {
       name: typeof r.name === 'string' ? r.name : '',
-      url: typeof r.url === 'string' ? r.url : ''
+      url: typeof r.url === 'string' ? r.url : '',
+      allowUntrustedCertificate: r.allowUntrustedCertificate === true
     });
   },
   deleteRemoteInstance: (id) => ipcRenderer.invoke('docker-manager:deleteRemoteInstance', { id }),
   renameRemoteInstance: (id, name) => ipcRenderer.invoke('docker-manager:renameRemoteInstance', { id, name }),
+  certificateTrustRestartRequired: (url) => ipcRenderer.invoke('docker-manager:certificateTrustRestartRequired', {
+    url: typeof url === 'string' ? url : ''
+  }),
+  restartLauncher: () => ipcRenderer.invoke('docker-manager:restartLauncher'),
   renameLocalInstance: (containerId, name) => ipcRenderer.invoke('docker-manager:renameLocalInstance', { containerId, name }),
   chooseInstanceIcon: () => ipcRenderer.invoke('docker-manager:chooseInstanceIcon'),
   setRemoteInstanceAppearance: (id, appearance) => {

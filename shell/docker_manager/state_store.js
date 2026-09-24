@@ -979,6 +979,10 @@ function normalizeRemoteInstance(value, existing = null, options = {}) {
   const color = normalizeInstanceColor(hasColorInput ? input.color : existing?.color);
   const hasIconInput = Object.prototype.hasOwnProperty.call(input, 'icon');
   const icon = normalizeInstanceIcon(hasIconInput ? input.icon : existing?.icon);
+  const hasCertificateTrustInput = Object.prototype.hasOwnProperty.call(input, 'allowUntrustedCertificate');
+  const allowUntrustedCertificate = (hasCertificateTrustInput
+    ? input.allowUntrustedCertificate
+    : existing?.allowUntrustedCertificate) === true;
 
   const out = {
     id,
@@ -989,6 +993,7 @@ function normalizeRemoteInstance(value, existing = null, options = {}) {
   };
   if (color) out.color = color;
   if (icon) out.icon = icon;
+  if (allowUntrustedCertificate) out.allowUntrustedCertificate = true;
   return out;
 }
 

@@ -1957,6 +1957,28 @@ async function renameRemoteInstance(id, name) {
   }
 }
 
+async function certificateTrustRestartRequired(url) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.certificateTrustRestartRequired !== "function") return false;
+  try {
+    return (await api.certificateTrustRestartRequired(url || "")) === true;
+  } catch {
+    return false;
+  }
+}
+
+async function restartLauncher() {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.restartLauncher !== "function") return false;
+  try {
+    await api.restartLauncher();
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to restart the Launcher");
+    return false;
+  }
+}
+
 async function setRemoteInstanceAppearance(id, appearance = {}) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.setRemoteInstanceAppearance !== "function") return false;
@@ -2072,6 +2094,8 @@ window.dockerManagerActions = {
   addRemoteInstance,
   deleteRemoteInstance,
   renameRemoteInstance,
+  certificateTrustRestartRequired,
+  restartLauncher,
   setRemoteInstanceAppearance,
   openRemoteInstance,
   openInstanceUi,

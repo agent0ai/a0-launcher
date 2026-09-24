@@ -16,6 +16,7 @@ const yauzl = require('yauzl');
 const { getDocker, resetDocker } = require('../docker_adapter/getDocker');
 const releasesClient = require('./releases_client');
 const stateStore = require('./state_store');
+const { tlsSocketAcceptable } = require('../remote_certificate_trust');
 const retention = require('./retention');
 const { toErrorResponse, mapDockerInterfaceErrorToUiMessage } = require('./errors');
 const { isSemverReleaseTag, compareReleaseTagsDescending } = require('./release_tags');
@@ -1504,7 +1505,9 @@ function healthSnapshot(entry = null, fallbackStatus = 'checking') {
   return out;
 }
 
-function requestInstanceHealth(url, timeoutMs = REMOTE_HEALTH_TIMEOUT_MS) {
+// An Instance that opted in to an untrusted certificate is checked by the
+// certificate rule instead of Node's CA list; the probe sends no credentials.
+function requestInstanceHealth(url, timeoutMs = REMOTE_HEALTH_TIMEOUT_MS, { trustCertificate = false } = {}) {
   let parsed;
   try {
     parsed = url instanceof URL ? url : new URL(String(url || ''));
@@ -1514,6 +1517,7 @@ function requestInstanceHealth(url, timeoutMs = REMOTE_HEALTH_TIMEOUT_MS) {
 
   const transport = parsed.protocol === 'https:' ? https : parsed.protocol === 'http:' ? http : null;
   if (!transport) return Promise.resolve({ online: false, error: 'Unsupported remote health URL' });
+  const judgeCertificate = trustCertificate === true && transport === https;
 
   return new Promise((resolve) => {
     let settled = false;
@@ -1529,9 +1533,17 @@ function requestInstanceHealth(url, timeoutMs = REMOTE_HEALTH_TIMEOUT_MS) {
         headers: {
           'User-Agent': 'A0-Launcher',
           'Accept': 'application/json,*/*'
-        }
+        },
+        // A reused connection no longer exposes the peer certificate, so a probe
+        // that judges the certificate opens its own connection every time.
+        ...(judgeCertificate ? { rejectUnauthorized: false, agent: false } : {})
       },
       (res) => {
+        if (judgeCertificate && !tlsSocketAcceptable(res.socket, parsed.hostname)) {
+          res.destroy();
+          finish({ online: false, error: 'Certificate not accepted' });
+          return;
+        }
         const status = Number(res.statusCode);
         const chunks = [];
         let bytes = 0;
@@ -1590,7 +1602,8 @@ function instanceHealthTarget(kind, instance = {}) {
   } catch {
     // Invalid URLs are reported by the existing Instance state paths.
   }
-  return { key: `${kind}:${id}`, kind, url };
+  const trustCertificate = kind === 'remote' && instance?.allowUntrustedCertificate === true;
+  return { key: `${kind}:${id}`, kind, url, trustCertificate };
 }
 
 async function ensureRuntimeIdentityCacheLoaded() {
@@ -1636,7 +1649,9 @@ async function probeInstanceHealth(target) {
   const stored = instanceHealthCache.get(target.key) || null;
   const previous = stored && (target.kind === 'local' || stored.url === target.url) ? stored : null;
   try {
-    const result = await requestInstanceHealth(target.url, REMOTE_HEALTH_TIMEOUT_MS);
+    const result = await requestInstanceHealth(target.url, REMOTE_HEALTH_TIMEOUT_MS, {
+      trustCertificate: target.trustCertificate
+    });
     const runtimeSource = result?.runtimeSource || previous?.runtimeSource || null;
     const changed = !!result?.runtimeSource && JSON.stringify(result.runtimeSource) !== JSON.stringify(previous?.runtimeSource || null);
     const entry = {
@@ -4557,6 +4572,12 @@ async function setRemoteInstanceAppearance(id, appearance = {}) {
   return saved;
 }
 
+// Saved Remote Instances straight from the state file, without the Docker
+// inventory refresh that getDockerManagerState() performs on a cold start.
+async function listRemoteInstances() {
+  return await stateStore.readRemoteInstances();
+}
+
 async function getRemoteInstance(id) {
   const cleanId = String(id || '').trim();
   const remoteInstances = await stateStore.readRemoteInstances();
@@ -6458,6 +6479,7 @@ module.exports = {
   deleteRemoteInstance,
   renameRemoteInstance,
   setRemoteInstanceAppearance,
+  listRemoteInstances,
   setRemoteInstanceCredentials,
   clearRemoteInstanceCredentials,
   getRemoteInstanceCredentials,

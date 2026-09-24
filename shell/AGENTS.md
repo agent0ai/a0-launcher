@@ -23,6 +23,9 @@ This scope owns:
   values.
 - `shell/host_access.js`: normalized Launcher Host access defaults, per-Instance
   configuration, scope dependencies, and stable Instance keys.
+- `shell/remote_certificate_trust.js`: the certificate rule for Remote
+  Instances that opted in, with its two adapters: the session verifier and the
+  `node:https` socket check.
 - `shell/host_gateway.js`: supervised, newline-delimited JSON bridge to the
   installed `a0 gateway` child process.
 - `shell/a0_tag.js` and `shell/a0_tag_overlay.*`: A0 Tag lease/controller,
@@ -55,6 +58,20 @@ This scope owns:
   `shell/docker_manager`.
 - New windows that open Agent Zero UIs or remote instances must sanitize URLs and
   allow only `http:` or `https:`.
+- Certificate trust for Remote Instances is one rule with two adapters: a
+  `setCertificateVerifyProc` verifier set on every session (tabs,
+  `session.fetch`), and a socket check for the `node:https` health probe. The
+  rule forgives only an unknown issuer on the host of an Instance that opted in,
+  and still requires the certificate to name that host by a subject alternative
+  name and be valid now. Every other case keeps the default verdict. Do not add
+  a `certificate-error` handler, an app-wide switch, or a second rule.
+- Chromium caches verifier results for 30 minutes, and Electron offers no way to
+  clear that cache. A trust change for a host the verifier has already judged in
+  this run applies only after the Launcher restarts. `createCertificateTrust`
+  records which opt-in each cached verdict used;
+  `certificateTrustRestartRequired` answers from that record, and
+  `restartLauncher` relaunches the app the same way the Computer Use restart
+  does.
 - The A0 CLI terminal IPC may accept a local `http:` or `https:` URL without
   credentials, or a saved remote Instance ID. Remote CLI launches must resolve
   the saved URL in `shell/main.js`; the renderer must not pass arbitrary remote
@@ -451,6 +468,7 @@ node --test shell/launcher_update.test.js
 node --test shell/launcher_updater_debug_release.test.js
 node --test shell/instance_tabs.test.js
 node --test shell/host_access.test.js shell/host_gateway.test.js
+node --test shell/remote_certificate_trust.test.js
 git diff --check
 ```
 

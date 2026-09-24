@@ -1355,6 +1355,10 @@ body {
   accent-color: var(--color-highlight);
 }
 
+.dm-checkbox-line:has(input:disabled) {
+  opacity: 0.55;
+}
+
 .dm-advanced-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

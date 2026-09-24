@@ -23,7 +23,13 @@ This scope owns:
 - `runtime-gate/`: first-run local/remote choice, local runtime setup progress,
   and explicitly opened runtime recovery for returning users.
 - `remote-instance-dialog.js`: shared remote Instance URL and optional saved
-  credential dialog used by the startup runtime gate and the Instances tab.
+  credential dialog used by the startup runtime gate and the Instances tab. The
+  certificate trust toggle sits under the Instance URL field it applies to. It
+  is always visible and is enabled only while the typed URL is https. After
+  adding, if the certificate opt-in can only apply after a restart, the dialog
+  offers Restart now / Later. Every action the dialog calls must exist in
+  `shell/preload.js` and in `window.dockerManagerActions` in
+  `app/docker_manager.js`; a test asserts both.
 - `host-access-dialog.js`: existing-Instance Host access settings, scope
   dependency UI, folder selection, browser-profile selection, permission setup,
   diagnostics, Retry, Disconnect, Reconnect, and disconnected state.
