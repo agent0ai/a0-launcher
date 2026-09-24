@@ -1359,14 +1359,24 @@ async function collectRuntimeDiagnostics(docker, env = null) {
 
 async function buildUnavailableState(runtime) {
   await ensureRuntimeIdentityCacheLoaded();
-  const [retentionPolicy, portPreferences, storagePreferences, instanceDefaults, a0Tag, hostAccess, remoteInstances] = await Promise.all([
+  const [
+    retentionPolicy,
+    portPreferences,
+    storagePreferences,
+    instanceDefaults,
+    a0Tag,
+    hostAccess,
+    remoteInstances,
+    remoteInstanceCredentials
+  ] = await Promise.all([
     stateStore.readRetentionPolicy().catch(() => ({ keepCount: 1 })),
     stateStore.readPortPreferences().catch(() => ({ ui: 8880, ssh: 55022 })),
     stateStore.readStoragePreferences().catch(() => ({ ...stateStore.DEFAULT_STORAGE_PREFERENCES })),
     stateStore.readInstanceDefaults().catch(() => null),
     stateStore.readA0TagSettings().catch(() => ({ ...stateStore.DEFAULT_A0_TAG_SETTINGS })),
     stateStore.readHostAccessSettings().catch(() => null),
-    stateStore.readRemoteInstances().catch(() => [])
+    stateStore.readRemoteInstances().catch(() => []),
+    stateStore.readRemoteInstanceCredentialsMetadata().catch(() => ({}))
   ]);
   const empty = emptyDerivedState(runtime);
   return {
@@ -1378,7 +1388,11 @@ async function buildUnavailableState(runtime) {
     instanceDefaults: instanceDefaults || empty.instanceDefaults,
     a0Tag,
     hostAccess,
-    remoteInstances: enrichRemoteInstancesWithHealth(remoteInstances)
+    // Without Docker the Launcher still serves Remote Instances, so their saved
+    // credential metadata must be here too, as in the Docker-backed state.
+    remoteInstances: enrichRemoteInstancesWithHealth(
+      applyRemoteInstanceCredentials(remoteInstances, remoteInstanceCredentials)
+    )
   };
 }
 

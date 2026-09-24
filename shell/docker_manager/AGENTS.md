@@ -186,6 +186,9 @@ This scope owns:
   optional saved `color` and `icon` fields use the same bounded choices as local
   Instance appearance overrides. Optional saved remote Instance credentials are keyed
   by remote Instance id and removed when that remote Instance is deleted.
+  Every published state, including the one built while the Docker runtime is
+  unavailable, carries the saved remote Instance credential metadata (saved
+  flag, username, time; never the password).
   Remote instance online/offline status is transient renderer state from a
   bounded `/api/health` probe and must not be persisted into saved remote
   instance records. Only the sanitized last-seen runtime identity is cached.
