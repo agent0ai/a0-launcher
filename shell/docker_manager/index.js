@@ -4578,6 +4578,26 @@ async function listRemoteInstances() {
   return await stateStore.readRemoteInstances();
 }
 
+async function updateRemoteInstance(id, patch = {}) {
+  const found = await getRemoteInstance(id);
+  const next = {
+    id: found.id,
+    name: found.name,
+    url: found.url
+  };
+  if (Object.prototype.hasOwnProperty.call(patch, 'name')) next.name = patch.name;
+  if (Object.prototype.hasOwnProperty.call(patch, 'url')) next.url = patch.url;
+  if (Object.prototype.hasOwnProperty.call(patch, 'allowUntrustedCertificate')) {
+    next.allowUntrustedCertificate = patch.allowUntrustedCertificate === true;
+  }
+  const saved = await stateStore.writeRemoteInstance(next);
+  if (saved.url !== found.url || saved.allowUntrustedCertificate !== found.allowUntrustedCertificate) {
+    instanceHealthCache.delete(`remote:${saved.id}`);
+  }
+  patchCachedRemoteInstance(saved.id, saved);
+  return saved;
+}
+
 async function getRemoteInstance(id) {
   const cleanId = String(id || '').trim();
   const remoteInstances = await stateStore.readRemoteInstances();
@@ -6479,6 +6499,7 @@ module.exports = {
   deleteRemoteInstance,
   renameRemoteInstance,
   setRemoteInstanceAppearance,
+  updateRemoteInstance,
   listRemoteInstances,
   setRemoteInstanceCredentials,
   clearRemoteInstanceCredentials,

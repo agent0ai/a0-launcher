@@ -336,10 +336,11 @@ node --check shell/preload.js
 node --check shell/docker_manager/index.js
 node --check app/docker_manager.js
 node --test shell/a0_cli_install.test.js shell/host_gateway.test.js
-node --test shell/remote_certificate_trust.test.js
+node --test shell/remote_certificate_trust.test.js shell/preload_remote_instance.test.js
 node --test shell/docker_manager/instance_health_certificate_trust.test.js
 node --test shell/docker_manager/state_store_remote_instance_edit.test.js
 node --test app/components/docker-manager/remote-instance-certificate-trust.test.mjs
+node --test app/components/docker-manager/remote-instance-configure.test.mjs
 node --test shell/launcher_updater_debug_release.test.js
 git diff --check
 ```

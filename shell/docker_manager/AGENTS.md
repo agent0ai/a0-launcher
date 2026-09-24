@@ -198,6 +198,8 @@ This scope owns:
   its own connection each time (`agent: false`): a reused keep-alive socket no
   longer exposes the peer certificate. Every other probe keeps Node's default
   verification.
+  Saved remote Instance URLs are unique: an edit onto another Instance's URL is
+  rejected, while adding a known URL still updates the Instance that has it.
   Remote instance online/offline status is transient renderer state from a
   bounded `/api/health` probe and must not be persisted into saved remote
   instance records. Only the sanitized last-seen runtime identity is cached.

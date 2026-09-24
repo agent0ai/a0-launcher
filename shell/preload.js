@@ -242,6 +242,16 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   },
   deleteRemoteInstance: (id) => ipcRenderer.invoke('docker-manager:deleteRemoteInstance', { id }),
   renameRemoteInstance: (id, name) => ipcRenderer.invoke('docker-manager:renameRemoteInstance', { id, name }),
+  updateRemoteInstance: (id, patch) => {
+    const value = patch && typeof patch === 'object' ? patch : {};
+    const body = { id };
+    if (typeof value.name === 'string') body.name = value.name;
+    if (typeof value.url === 'string') body.url = value.url;
+    if (typeof value.allowUntrustedCertificate === 'boolean') {
+      body.allowUntrustedCertificate = value.allowUntrustedCertificate;
+    }
+    return ipcRenderer.invoke('docker-manager:updateRemoteInstance', body);
+  },
   certificateTrustRestartRequired: (url) => ipcRenderer.invoke('docker-manager:certificateTrustRestartRequired', {
     url: typeof url === 'string' ? url : ''
   }),

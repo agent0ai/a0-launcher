@@ -63,3 +63,19 @@ test('certificate trust survives edits that do not mention it, and can be turned
   await stateStore.writeRemoteInstance({ id: remote.id, url: remote.url, allowUntrustedCertificate: false });
   assert.equal(Object.hasOwn(await saved(remote.id), 'allowUntrustedCertificate'), false);
 });
+
+test('an edit cannot move an Instance onto the URL of another one', async () => {
+  const first = await stateStore.writeRemoteInstance({ url: 'https://first.example.com/' });
+  const second = await stateStore.writeRemoteInstance({ url: 'https://second.example.com/' });
+
+  await assert.rejects(
+    stateStore.writeRemoteInstance({ id: second.id, url: 'https://first.example.com/' }),
+    /already uses this URL/
+  );
+  assert.equal((await saved(second.id)).url, 'https://second.example.com/');
+
+  // Adding the same URL again still updates the Instance that has it.
+  const again = await stateStore.writeRemoteInstance({ url: 'https://first.example.com/', name: 'First again' });
+  assert.equal(again.id, first.id);
+  assert.equal((await saved(first.id)).name, 'First again');
+});

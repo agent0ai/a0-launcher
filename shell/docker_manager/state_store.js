@@ -1023,6 +1023,9 @@ async function writeRemoteInstance(remoteInstance) {
   const normalizedUrl = normalizeRemoteInstanceUrl(input.url);
   let existingIndex = requestedId ? list.findIndex((item) => item.id === requestedId) : -1;
   if (existingIndex < 0) existingIndex = list.findIndex((item) => item.url === normalizedUrl);
+  if (list.some((item, index) => index !== existingIndex && item.url === normalizedUrl)) {
+    throw remoteInstanceError('Another remote Instance already uses this URL');
+  }
 
   const existing = existingIndex >= 0 ? list[existingIndex] : null;
   const next = normalizeRemoteInstance({ ...input, url: normalizedUrl }, existing);

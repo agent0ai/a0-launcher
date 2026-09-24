@@ -1359,6 +1359,40 @@ body {
   opacity: 0.55;
 }
 
+.dm-saved-credentials {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--dm-radius-max);
+}
+
+.dm-saved-credentials strong,
+.dm-saved-credentials small {
+  display: block;
+}
+
+.dm-saved-credentials small {
+  color: var(--color-text-muted);
+  margin-top: 0.1rem;
+}
+
+.dm-saved-credentials-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.dm-saved-credentials-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-top: 0.4rem;
+}
+
 .dm-advanced-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -5156,6 +5156,24 @@ ipcMain.handle('docker-manager:renameRemoteInstance', async (_event, body) => {
   }
 });
 
+ipcMain.handle('docker-manager:updateRemoteInstance', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const id = typeof body.id === 'string' ? body.id : '';
+    const patch = {};
+    if (typeof body.name === 'string') patch.name = body.name;
+    if (typeof body.url === 'string') patch.url = body.url;
+    if (typeof body.allowUntrustedCertificate === 'boolean') {
+      patch.allowUntrustedCertificate = body.allowUntrustedCertificate;
+    }
+    const saved = await dockerManager.updateRemoteInstance(id, patch);
+    const sanitized = sanitizeDockerManagerState({ remoteInstances: [saved] }).remoteInstances?.[0];
+    return sanitized || dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
 ipcMain.handle('docker-manager:certificateTrustRestartRequired', async (_event, body) => {
   const url = isPlainObject(body) && typeof body.url === 'string' ? body.url : '';
   // Read the saved opt-ins: the change that prompts this question may not have

@@ -468,7 +468,7 @@ node --test shell/launcher_update.test.js
 node --test shell/launcher_updater_debug_release.test.js
 node --test shell/instance_tabs.test.js
 node --test shell/host_access.test.js shell/host_gateway.test.js
-node --test shell/remote_certificate_trust.test.js
+node --test shell/remote_certificate_trust.test.js shell/preload_remote_instance.test.js
 git diff --check
 ```
 
