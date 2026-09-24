@@ -979,6 +979,10 @@ function normalizeRemoteInstance(value, existing = null, options = {}) {
   const color = normalizeInstanceColor(hasColorInput ? input.color : existing?.color);
   const hasIconInput = Object.prototype.hasOwnProperty.call(input, 'icon');
   const icon = normalizeInstanceIcon(hasIconInput ? input.icon : existing?.icon);
+  const hasCertificateTrustInput = Object.prototype.hasOwnProperty.call(input, 'allowUntrustedCertificate');
+  const allowUntrustedCertificate = (hasCertificateTrustInput
+    ? input.allowUntrustedCertificate
+    : existing?.allowUntrustedCertificate) === true;
 
   const out = {
     id,
@@ -989,6 +993,7 @@ function normalizeRemoteInstance(value, existing = null, options = {}) {
   };
   if (color) out.color = color;
   if (icon) out.icon = icon;
+  if (allowUntrustedCertificate) out.allowUntrustedCertificate = true;
   return out;
 }
 
@@ -1018,6 +1023,9 @@ async function writeRemoteInstance(remoteInstance) {
   const normalizedUrl = normalizeRemoteInstanceUrl(input.url);
   let existingIndex = requestedId ? list.findIndex((item) => item.id === requestedId) : -1;
   if (existingIndex < 0) existingIndex = list.findIndex((item) => item.url === normalizedUrl);
+  if (list.some((item, index) => index !== existingIndex && item.url === normalizedUrl)) {
+    throw remoteInstanceError('Another remote Instance already uses this URL');
+  }
 
   const existing = existingIndex >= 0 ? list[existingIndex] : null;
   const next = normalizeRemoteInstance({ ...input, url: normalizedUrl }, existing);

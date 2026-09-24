@@ -1957,6 +1957,46 @@ async function renameRemoteInstance(id, name) {
   }
 }
 
+async function updateRemoteInstance(id, patch = {}) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.updateRemoteInstance !== "function") return false;
+  try {
+    const res = await api.updateRemoteInstance(id || "", patch);
+    if (isErrorResponse(res)) {
+      setBanner("error", res.message);
+      return false;
+    }
+    upsertRemoteInstance(res);
+    setBanner("info", "Remote Instance saved.");
+    return res || true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to save remote Instance");
+    return false;
+  }
+}
+
+async function certificateTrustRestartRequired(url) {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.certificateTrustRestartRequired !== "function") return false;
+  try {
+    return (await api.certificateTrustRestartRequired(url || "")) === true;
+  } catch {
+    return false;
+  }
+}
+
+async function restartLauncher() {
+  const api = window.dockerManagerAPI;
+  if (!api || typeof api.restartLauncher !== "function") return false;
+  try {
+    await api.restartLauncher();
+    return true;
+  } catch (e) {
+    setBanner("error", e?.message || "Unable to restart the Launcher");
+    return false;
+  }
+}
+
 async function setRemoteInstanceAppearance(id, appearance = {}) {
   const api = window.dockerManagerAPI;
   if (!api || typeof api.setRemoteInstanceAppearance !== "function") return false;
@@ -2072,6 +2112,9 @@ window.dockerManagerActions = {
   addRemoteInstance,
   deleteRemoteInstance,
   renameRemoteInstance,
+  updateRemoteInstance,
+  certificateTrustRestartRequired,
+  restartLauncher,
   setRemoteInstanceAppearance,
   openRemoteInstance,
   openInstanceUi,

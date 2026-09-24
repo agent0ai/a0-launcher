@@ -1,6 +1,6 @@
 import { createInstanceVisual } from "../card-visuals.js";
 import { openInstanceAppearanceDialog } from "../instance-appearance-dialog.js";
-import { openAddRemoteInstanceDialog } from "../remote-instance-dialog.js";
+import { openAddRemoteInstanceDialog, openConfigureRemoteInstanceDialog } from "../remote-instance-dialog.js";
 import {
   createLocalInstanceButtonModel,
   openCreateLocalInstanceDialog
@@ -1758,6 +1758,13 @@ function renderRemoteInstance(list, remote, state) {
     title: launcherCredentials?.saved
       ? "Update or clear saved credentials"
       : "Save credentials"
+  }));
+
+  menuItems.push(menuButton("tune", "Configure", () => {
+    openConfigureRemoteInstanceDialog(remote);
+  }, {
+    disabled: !remote?.id,
+    title: "Edit this Instance"
   }));
 
   const cliMenu = remoteCliMenuConfig(remote, state);

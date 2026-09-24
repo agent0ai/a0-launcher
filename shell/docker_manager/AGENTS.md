@@ -184,8 +184,22 @@ This scope owns:
 - Retention policy is stored as a retained-instance count.
 - Remote instances must normalize and validate URLs before persistence. Their
   optional saved `color` and `icon` fields use the same bounded choices as local
-  Instance appearance overrides. Optional saved remote Instance credentials are keyed
-  by remote Instance id and removed when that remote Instance is deleted.
+  Instance appearance overrides. The optional saved `allowUntrustedCertificate`
+  flag is stored only when it is exactly `true`, survives rename and appearance
+  edits, and is removed with the remote Instance record. Optional saved remote
+  Instance credentials are keyed by remote Instance id and removed when that
+  remote Instance is deleted.
+  Every published state, including the one built while the Docker runtime is
+  unavailable, carries the saved remote Instance credential metadata (saved
+  flag, username, time; never the password).
+  The health probe of a remote Instance that opted in to an untrusted
+  certificate runs with `rejectUnauthorized: false` and judges the socket with
+  the certificate rule in `shell/remote_certificate_trust.js` instead. It opens
+  its own connection each time (`agent: false`): a reused keep-alive socket no
+  longer exposes the peer certificate. Every other probe keeps Node's default
+  verification.
+  Saved remote Instance URLs are unique: an edit onto another Instance's URL is
+  rejected, while adding a known URL still updates the Instance that has it.
   Remote instance online/offline status is transient renderer state from a
   bounded `/api/health` probe and must not be persisted into saved remote
   instance records. Only the sanitized last-seen runtime identity is cached.

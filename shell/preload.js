@@ -236,11 +236,26 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
     const r = remote && typeof remote === 'object' ? remote : {};
     return ipcRenderer.invoke('docker-manager:addRemoteInstance', {
       name: typeof r.name === 'string' ? r.name : '',
-      url: typeof r.url === 'string' ? r.url : ''
+      url: typeof r.url === 'string' ? r.url : '',
+      allowUntrustedCertificate: r.allowUntrustedCertificate === true
     });
   },
   deleteRemoteInstance: (id) => ipcRenderer.invoke('docker-manager:deleteRemoteInstance', { id }),
   renameRemoteInstance: (id, name) => ipcRenderer.invoke('docker-manager:renameRemoteInstance', { id, name }),
+  updateRemoteInstance: (id, patch) => {
+    const value = patch && typeof patch === 'object' ? patch : {};
+    const body = { id };
+    if (typeof value.name === 'string') body.name = value.name;
+    if (typeof value.url === 'string') body.url = value.url;
+    if (typeof value.allowUntrustedCertificate === 'boolean') {
+      body.allowUntrustedCertificate = value.allowUntrustedCertificate;
+    }
+    return ipcRenderer.invoke('docker-manager:updateRemoteInstance', body);
+  },
+  certificateTrustRestartRequired: (url) => ipcRenderer.invoke('docker-manager:certificateTrustRestartRequired', {
+    url: typeof url === 'string' ? url : ''
+  }),
+  restartLauncher: () => ipcRenderer.invoke('docker-manager:restartLauncher'),
   renameLocalInstance: (containerId, name) => ipcRenderer.invoke('docker-manager:renameLocalInstance', { containerId, name }),
   chooseInstanceIcon: () => ipcRenderer.invoke('docker-manager:chooseInstanceIcon'),
   setRemoteInstanceAppearance: (id, appearance) => {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, Menu, net, ipcMain, shell, nativeImage, protocol, dialog, systemPreferences, globalShortcut, screen, clipboard, Notification } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, net, ipcMain, shell, nativeImage, protocol, dialog, systemPreferences, globalShortcut, screen, clipboard, Notification, session: electronSession } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const os = require('node:os');
@@ -10,6 +10,7 @@ const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const dockerManager = require('./docker_manager');
 const developerProjects = require('./developer_projects');
+const { createCertificateTrust } = require('./remote_certificate_trust');
 const {
   normalizeInstanceColor,
   normalizeInstanceIcon,
@@ -4276,6 +4277,7 @@ function sanitizeDockerManagerState(state) {
     if (color) out.color = color;
     const icon = normalizeInstanceIcon(r.icon);
     if (icon) out.icon = icon;
+    if (r.allowUntrustedCertificate === true) out.allowUntrustedCertificate = true;
     if (typeof r.createdAt === 'string') out.createdAt = r.createdAt;
     if (typeof r.updatedAt === 'string') out.updatedAt = r.updatedAt;
     if (isPlainObject(r.launcherCredentials) && r.launcherCredentials.saved === true) {
@@ -4580,7 +4582,25 @@ function scheduleComputerUseSetupResume() {
   }, 1500).unref?.();
 }
 
+// Opted-in Remote Instance hosts, and the session verifier built from them.
+const certificateTrust = createCertificateTrust();
+
+// Set on every session, so Instance tabs and session.fetch (saved login,
+// favicon) follow the same certificate rule.
+function trustInstanceCertificates(targetSession) {
+  targetSession.setCertificateVerifyProc(certificateTrust.verify);
+}
+
+async function loadCertificateTrust() {
+  try {
+    certificateTrust.update(await dockerManager.listRemoteInstances());
+  } catch {
+    // ignore
+  }
+}
+
 dockerManager.events.on('state', (state) => {
+  certificateTrust.update(state?.remoteInstances);
   try {
     sendDockerManagerEvent('docker-manager:state', sanitizeDockerManagerState(state));
   } catch {
@@ -5104,7 +5124,8 @@ ipcMain.handle('docker-manager:addRemoteInstance', async (_event, body) => {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const name = typeof body.name === 'string' ? body.name : '';
     const url = typeof body.url === 'string' ? body.url : '';
-    const saved = await dockerManager.addRemoteInstance({ name, url });
+    const allowUntrustedCertificate = body.allowUntrustedCertificate === true;
+    const saved = await dockerManager.addRemoteInstance({ name, url, allowUntrustedCertificate });
     const sanitized = sanitizeDockerManagerState({ remoteInstances: [saved] }).remoteInstances?.[0];
     return sanitized || dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
   } catch (error) {
@@ -5133,6 +5154,38 @@ ipcMain.handle('docker-manager:renameRemoteInstance', async (_event, body) => {
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
+});
+
+ipcMain.handle('docker-manager:updateRemoteInstance', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const id = typeof body.id === 'string' ? body.id : '';
+    const patch = {};
+    if (typeof body.name === 'string') patch.name = body.name;
+    if (typeof body.url === 'string') patch.url = body.url;
+    if (typeof body.allowUntrustedCertificate === 'boolean') {
+      patch.allowUntrustedCertificate = body.allowUntrustedCertificate;
+    }
+    const saved = await dockerManager.updateRemoteInstance(id, patch);
+    const sanitized = sanitizeDockerManagerState({ remoteInstances: [saved] }).remoteInstances?.[0];
+    return sanitized || dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:certificateTrustRestartRequired', async (_event, body) => {
+  const url = isPlainObject(body) && typeof body.url === 'string' ? body.url : '';
+  // Read the saved opt-ins: the change that prompts this question may not have
+  // reached the published state yet.
+  await loadCertificateTrust();
+  return certificateTrust.restartRequired(url);
+});
+
+ipcMain.handle('docker-manager:restartLauncher', () => {
+  app.relaunch();
+  setTimeout(() => app.quit(), 100);
+  return { accepted: true, restarting: true };
 });
 
 ipcMain.handle('docker-manager:chooseInstanceIcon', async (event) => {
@@ -5745,6 +5798,8 @@ protocol.registerSchemesAsPrivileged([{
   privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
 }]);
 
+app.on('session-created', trustInstanceCertificates);
+
 app.on('web-contents-created', (_event, webContents) => {
   webContents.on('before-input-event', (event, input) => {
     const tab = webContents === mainWindow?.webContents
@@ -5772,6 +5827,9 @@ app.on('web-contents-created', (_event, webContents) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  trustInstanceCertificates(electronSession.defaultSession);
+  // Awaited: a restored Instance tab may start loading right after this.
+  await loadCertificateTrust();
   // Register the a0app:// protocol handler (must be inside whenReady).
   protocol.handle('a0app', (request) => {
     const url = new URL(request.url);
