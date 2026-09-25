@@ -1,5 +1,4 @@
-function byId(id) { return document.getElementById(id); }
-
+import { byId } from "../component-utils.js";
 function runtimeMessage(runtime, fallback) {
   const detail = typeof runtime?.detail === "string" ? runtime.detail.trim() : "";
   if (runtime?.state === "manual_install" && Array.isArray(runtime.manualPackages) && runtime.manualPackages.length) {

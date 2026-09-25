@@ -435,6 +435,7 @@ export {
   clearInstanceDefaultDirty,
   defaultInstanceDefaults,
   defaultInstanceName,
+  envKeyFromLine,
   instanceModelRowsHtml,
   normalizeInstanceDefaults,
   providerApiKeyPlaceholder,

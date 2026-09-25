@@ -1,3 +1,4 @@
+import { asText, clearChildren } from "../component-utils.js";
 const SHOWCASE_ASSET_BASE = "assets/setup-showcase";
 
 const SETUP_SHOWCASE_SLIDES = Object.freeze([
@@ -52,16 +53,6 @@ const SETUP_SHOWCASE_SLIDES = Object.freeze([
 ]);
 
 let activeShowcaseIndex = 0;
-
-function asText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function clearChildren(element) {
-  if (!element) return;
-  while (element.firstChild) element.removeChild(element.firstChild);
-  while (element.children && element.children.length) element.removeChild(element.children[0]);
-}
 
 function normalizeIndex(index) {
   const count = SETUP_SHOWCASE_SLIDES.length;

@@ -7,7 +7,7 @@
  */
 
 import os from 'node:os';
-import { RuntimeProvisioner, makeError, pathExists, run } from '../RuntimeProvisioner.mjs';
+import { RuntimeProvisioner, makeError, pathExists, run, sleep, tail } from '../RuntimeProvisioner.mjs';
 
 const DOCKER_DESKTOP_INSTALL_DIR = '/opt/docker-desktop';
 const DOCKER_DESKTOP_SOCKET = `${os.homedir()}/.docker/desktop/docker.sock`;
@@ -459,12 +459,4 @@ export class LinuxEngineRuntime extends RuntimeProvisioner {
     }
     return user;
   }
-}
-
-function tail(value, limit = 1200) {
-  return String(value || '').slice(-limit);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -9,23 +9,13 @@ import {
   shouldShowSetupShowcase,
   unmountSetupShowcase
 } from "../setup-showcase/setup-showcase.js";
-import { progressMetaText } from "../progress-eta.js";
+import { percentValue, progressMetaText } from "../progress-eta.js";
+import { asText, clearChildren, focusableWithin, makeButton, setPageBlocked } from "../component-utils.js";
 
 const OPERATION_DIALOG_ID = "operationProgressDialog";
 
 let blockingKeyHandlerDocument = null;
 let dismissedOperationKey = "";
-
-function asText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function percentValue(progress) {
-  if (progress === null || progress === undefined || progress === "") return null;
-  const value = Number(progress);
-  if (!Number.isFinite(value)) return null;
-  return Math.max(0, Math.min(100, value));
-}
 
 function operationKey(progress = null) {
   const opId = asText(progress?.opId);
@@ -167,21 +157,6 @@ function normalizedOperationDialog(state = {}) {
     primary: actions.primary,
     secondary: actions.secondary
   };
-}
-
-function makeButton(label, className, disabled = false) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = className;
-  button.textContent = label;
-  button.disabled = !!disabled;
-  return button;
-}
-
-function clearChildren(element) {
-  if (!element) return;
-  while (element.firstChild) element.removeChild(element.firstChild);
-  while (element.children && element.children.length) element.removeChild(element.children[0]);
 }
 
 function createProgressBlock() {
@@ -353,21 +328,8 @@ function updateOperationDialog(backdrop, model, state, actions) {
   syncActionButton(backdrop.querySelector(".dm-operation-primary"), model.primary, primaryClass, state, actions);
 }
 
-function setPageBlocked(blocked) {
-  const page = document.querySelector(".dm-page");
-  if (!page) return;
-  if ("inert" in page) page.inert = !!blocked;
-  if (blocked) page.setAttribute("aria-hidden", "true");
-  else page.removeAttribute("aria-hidden");
-}
-
 function hasOtherBlockingDialog() {
   return !!document.getElementById("runtimeSetupDialog");
-}
-
-function focusableWithin(root) {
-  return Array.from(root.querySelectorAll("button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
-    .filter((el) => !el.hidden);
 }
 
 function focusFirstControl(root) {

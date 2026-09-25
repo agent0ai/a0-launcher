@@ -8,7 +8,7 @@
  * need administrator rights.
  */
 
-import { RuntimeProvisioner, makeError, run } from '../RuntimeProvisioner.mjs';
+import { RuntimeProvisioner, makeError, run, sleep, tail } from '../RuntimeProvisioner.mjs';
 import { ensureWindowsWslDockerProxy } from './WindowsWslDockerProxy.mjs';
 
 const WSL_GUIDE_URL = 'https://learn.microsoft.com/windows/wsl/install-on-server';
@@ -616,8 +616,4 @@ export const WINDOWS_DOCKER_DESKTOP_URL = DOCKER_DESKTOP_URL;
 
 function cleanCommandText(value) {
   return String(value || '').replace(/\0/g, '');
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

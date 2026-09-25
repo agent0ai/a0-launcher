@@ -1,4 +1,5 @@
-import { estimatedProgressFromSteps, progressMetaText } from "../progress-eta.js";
+import { estimatedProgressFromSteps, percentValue, progressMetaText } from "../progress-eta.js";
+import { asText, focusableWithin, makeButton, setPageBlocked } from "../component-utils.js";
 import { openAddRemoteInstanceDialog } from "../remote-instance-dialog.js";
 import { openCreateLocalInstanceDialog } from "../run-instance-dialog.js";
 
@@ -51,17 +52,6 @@ let blockingKeyHandlerDocument = null;
 let acknowledgedRuntimeSetupKey = "";
 let requestedSetupDocument = null;
 let setupHandedOffDocument = null;
-
-function asText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function percentValue(progress) {
-  if (progress === null || progress === undefined || progress === "") return null;
-  const value = Number(progress);
-  if (!Number.isFinite(value)) return null;
-  return Math.max(0, Math.min(100, value));
-}
 
 function isDockerDesktopRuntime(runtime) {
   return runtime?.mode === "docker_desktop" || runtime?.dockerFlavor === "docker_desktop";
@@ -413,15 +403,6 @@ function appendText(parent, className, text) {
   return el;
 }
 
-function makeButton(label, className, disabled = false) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = className;
-  button.textContent = label;
-  button.disabled = !!disabled;
-  return button;
-}
-
 function renderProgress(model, parent) {
   const block = document.createElement("div");
   block.className = "sv-progress-block dm-runtime-progress";
@@ -637,14 +618,6 @@ function renderSetupOption(parent, { titleText, detailText, action, iconText, la
   return button;
 }
 
-function setPageBlocked(blocked) {
-  const page = document.querySelector(".dm-page");
-  if (!page) return;
-  if ("inert" in page) page.inert = !!blocked;
-  if (blocked) page.setAttribute("aria-hidden", "true");
-  else page.removeAttribute("aria-hidden");
-}
-
 function hasOtherBlockingDialog() {
   return !!document.getElementById("operationProgressDialog");
 }
@@ -653,11 +626,6 @@ function focusFirstControl(root) {
   const control = root.querySelector("button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
   const target = control || root.querySelector(".dm-runtime-gate");
   target?.focus?.();
-}
-
-function focusableWithin(root) {
-  return Array.from(root.querySelectorAll("button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
-    .filter((el) => !el.hidden);
 }
 
 function blockModalKeyboard(event) {

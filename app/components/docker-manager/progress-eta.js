@@ -1,6 +1,4 @@
-function asText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
+import { asText } from "./component-utils.js";
 
 function percentValue(progress) {
   if (progress === null || progress === undefined || progress === "") return null;
@@ -78,8 +76,14 @@ function progressMetaText({
   return [percentText, etaText].filter(Boolean).join(" · ");
 }
 
+function progressPresentedAsToast(progress = null) {
+  return typeof progress?.presentation === "string" && progress.presentation.trim() === "toast";
+}
+
 export {
   estimateEtaText,
   estimatedProgressFromSteps,
-  progressMetaText
+  percentValue,
+  progressMetaText,
+  progressPresentedAsToast
 };

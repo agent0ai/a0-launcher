@@ -4,6 +4,7 @@ import {
   bindInstanceDefaultProviderPlaceholderSync,
   buildInstanceEnvText,
   defaultInstanceName,
+  envKeyFromLine,
   instanceModelRowsHtml,
   normalizeInstanceDefaults,
   readInstanceDefaultsFromForm
@@ -16,19 +17,9 @@ import {
   scopeFieldsHtml as hostAccessScopeFieldsHtml,
   switchLineHtml as hostAccessSwitchLineHtml
 } from "./host-access-dialog.js";
-
-function closeDialog(dialog) {
-  if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+import { closeDialog, escapeHtml } from "./component-utils.js";
+import { progressPresentedAsToast } from "./progress-eta.js";
+import { compareReleaseTags, isLatestEntry, isReadyEntry, isTestingEntry, normalizeDate } from "./release-entries.js";
 
 function escapeAttribute(value) {
   return escapeHtml(value);
@@ -39,13 +30,6 @@ function cleanEnvValue(value, maxLength = 4096) {
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, maxLength);
-}
-
-function envKeyFromLine(line) {
-  const trimmed = String(line || "").trim();
-  if (!trimmed || trimmed.startsWith("#")) return "";
-  const idx = trimmed.indexOf("=");
-  return idx > 0 ? trimmed.slice(0, idx).trim() : "";
 }
 
 function mergeGeneratedEnvText(generatedLines, userText) {
@@ -105,48 +89,8 @@ function directWorkspaceFolder(root, instanceName) {
   return `${base}/${cleanFolderSegment(instanceName)}`;
 }
 
-function parseReleaseTagParts(tag) {
-  const normalized = String(tag || "").trim().replace(/^v/, "");
-  const match = normalized.match(/^(\d+)\.(\d+)(?:\.(\d+))?$/);
-  if (!match) return null;
-  return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3] || 0)
-  };
-}
-
-function compareReleaseTags(a, b) {
-  const aParts = parseReleaseTagParts(a);
-  const bParts = parseReleaseTagParts(b);
-  if (!aParts && !bParts) return 0;
-  if (!aParts) return 1;
-  if (!bParts) return -1;
-  if (aParts.major !== bParts.major) return bParts.major - aParts.major;
-  if (aParts.minor !== bParts.minor) return bParts.minor - aParts.minor;
-  if (aParts.patch !== bParts.patch) return bParts.patch - aParts.patch;
-  return 0;
-}
-
-function normalizeDate(value) {
-  const t = Date.parse(value || "");
-  return Number.isFinite(t) ? t : null;
-}
-
-function isLatestEntry(entry) {
-  return entry?.isBackendImage !== false && entry?.tag === "latest";
-}
-
-function isReadyEntry(entry) {
-  return entry?.isBackendImage !== false && entry?.tag === "ready";
-}
-
 function isChannelVersionChoice(entry = {}) {
   return isLatestEntry(entry) || isReadyEntry(entry);
-}
-
-function isTestingEntry(entry) {
-  return entry?.isBackendImage !== false && entry?.tag === "testing";
 }
 
 function isInstalledRunEntry(entry) {
@@ -241,10 +185,6 @@ function installedVersionChoices(state = {}) {
   }
 
   return choices.sort(installedVersionSort);
-}
-
-function progressPresentedAsToast(progress = null) {
-  return typeof progress?.presentation === "string" && progress.presentation.trim() === "toast";
 }
 
 function createLocalInstanceButtonModel(state = {}) {

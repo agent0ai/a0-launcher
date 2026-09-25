@@ -19,6 +19,8 @@ import {
   makeError,
   pathExists,
   run,
+  sleep,
+  tail,
   sha256FromSumText
 } from '../RuntimeProvisioner.mjs';
 
@@ -499,12 +501,4 @@ async function canConnectSocket(socketPath) {
     socket.once('timeout', () => finish(false));
     socket.once('error', () => finish(false));
   });
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function tail(value, limit = 1200) {
-  return String(value || '').slice(-limit);
 }

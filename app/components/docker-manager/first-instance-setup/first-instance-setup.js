@@ -9,6 +9,7 @@ import {
   readInstanceDefaultsFromForm
 } from "../instance-defaults.js";
 import { shouldShowSetupShowcase } from "../setup-showcase/setup-showcase.js";
+import { asText } from "../component-utils.js";
 
 const FIRST_INSTANCE_SETUP_CLASS = "dm-first-instance-setup";
 const FIRST_INSTANCE_SETUP_PREFIX = "firstSetup";
@@ -20,21 +21,11 @@ const STORAGE_MODE_EPHEMERAL = "ephemeral";
 
 const acknowledgedOps = new Set();
 
-function asText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
 function createEl(tagName, className = "", text = "") {
   const el = document.createElement(tagName);
   if (className) el.className = className;
   if (text) el.textContent = text;
   return el;
-}
-
-function clearChildren(element) {
-  if (!element) return;
-  while (element.firstChild) element.removeChild(element.firstChild);
-  while (element.children && element.children.length) element.removeChild(element.children[0]);
 }
 
 function slotFieldId(slotId, field) {

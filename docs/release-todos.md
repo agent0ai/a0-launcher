@@ -4,8 +4,7 @@ Use this checklist before cutting the next launcher release.
 
 ## Next Release
 
-- Restore and verify Windows ARM release artifacts. The build workflow must
-  produce both:
+- Restore and verify Windows ARM release artifacts. The build workflow must produce both:
   - `a0-launcher-<version>-windows-arm-setup.exe`
   - `a0-launcher-<version>-windows-arm.nupkg`
 - Keep Windows x86 artifacts. The build workflow must also produce:
@@ -14,8 +13,7 @@ Use this checklist before cutting the next launcher release.
 - Keep Linux DEB artifacts only:
   - `a0-launcher-<version>-linux-arm.deb`
   - `a0-launcher-<version>-linux-x86.deb`
-- Do not publish Linux RPM artifacts unless there is an explicit product
-  decision to support RPM again.
+- Do not publish Linux RPM artifacts unless there is an explicit product decision to support RPM again.
 - Keep macOS artifacts unchanged:
   - `a0-launcher-<version>-macos-arm.dmg`
   - `a0-launcher-<version>-macos-arm.zip`
@@ -37,21 +35,16 @@ gh release view <tag> --repo agent0ai/a0-launcher --json assets \
 
 ## CLI Connector
 
-- The bottom A0 CLI Connector must use the launcher-managed active instance
-  when one is running.
-- If no launcher-managed active instance exists, it must fall back to a running
-  local Agent Zero container from the Instances inventory when that container has
-  a local UI URL.
-- The CLI connector must never pass remote, credentialed, or non-HTTP URLs to
-  the shell terminal launcher.
+- The bottom A0 CLI Connector must use the launcher-managed active instance when one is running.
+- If no launcher-managed active instance exists, it must fall back to a running local Agent Zero container from the Instances inventory when that container has a local UI URL.
+- The CLI connector must never pass remote, credentialed, or non-HTTP URLs to the shell terminal launcher.
 - Validate against a generic running Agent Zero container such as:
 
 ```bash
 docker ps --filter ancestor=agent0ai/agent-zero:latest
 ```
 
-- For the known local smoke-test case, a container mapped as
-  `127.0.0.1:32080` or `0.0.0.0:32080->80/tcp` should make the dock show:
+- For the known local smoke-test case, a container mapped as `127.0.0.1:32080` or `0.0.0.0:32080->80/tcp` should make the dock show:
   - `Instance socket ready`
   - `a0 --host http://127.0.0.1:32080/`
 
