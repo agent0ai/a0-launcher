@@ -5,8 +5,8 @@ import {
   createLocalInstanceButtonModel,
   openCreateLocalInstanceDialog
 } from "../run-instance-dialog.js";
-
-function byId(id) { return document.getElementById(id); }
+import { byId, closeDialog, escapeHtml } from "../component-utils.js";
+import { progressPresentedAsToast } from "../progress-eta.js";
 
 let logsRequestSeq = 0;
 let lastInstanceCardDiagnosticsKey = "";
@@ -235,10 +235,6 @@ function backgroundOperationCanStop(operation) {
   return operation?.status === "running" && (operation.type === "start" || operation.type === "restart");
 }
 
-function progressPresentedAsToast(progress = null) {
-  return typeof progress?.presentation === "string" && progress.presentation.trim() === "toast";
-}
-
 function isBlockingOperationRunning(state = {}) {
   const progress = state?.progress || null;
   return progress?.status === "running" && !progressPresentedAsToast(progress);
@@ -464,15 +460,6 @@ const CLONE_WORKSPACE_OPTIONS = Object.freeze([
   }
 ]);
 
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function remoteInstanceVisualSeed(remote) {
   return remote?.url || remote?.name || remote?.id || "remote";
 }
@@ -519,10 +506,6 @@ function remoteCliMenuConfig(remote, state = {}) {
       if (!cliInstalling) window.dockerManagerActions?.openCliTerminal?.({ kind: "remote", instanceId });
     }
   };
-}
-
-function closeDialog(dialog) {
-  if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
 }
 
 function clamp(value, min, max) {

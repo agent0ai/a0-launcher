@@ -5,19 +5,7 @@ import {
   scopeFieldsHtml as hostAccessScopeFieldsHtml,
   switchLineHtml as hostAccessSwitchLineHtml
 } from "./host-access-dialog.js";
-
-function closeDialog(dialog) {
-  if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+import { closeDialog, escapeHtml } from "./component-utils.js";
 
 function normalizeUrlInput(value) {
   let raw = String(value || "").trim();

@@ -85,7 +85,7 @@ function decodeInlineAuth(auth) {
   }
 }
 
-export function dockerAuthConfigFromEntry(entry, serveraddress) {
+function dockerAuthConfigFromEntry(entry, serveraddress) {
   if (!entry || typeof entry !== 'object') return null;
   const server = safeTrim(serveraddress);
   if (!server) return null;
@@ -204,7 +204,7 @@ async function defaultRunCredentialHelper(helperName, serveraddress, options = {
   });
 }
 
-export async function readDockerConfigJson(options = {}) {
+async function readDockerConfigJson(options = {}) {
   const env = options.env || process.env;
   const homeDir = safeTrim(options.homeDir) || os.homedir();
   const dockerConfigDir = safeTrim(env.DOCKER_CONFIG) || path.join(homeDir, '.docker');

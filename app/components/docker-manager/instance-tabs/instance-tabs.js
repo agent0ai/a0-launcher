@@ -1,6 +1,7 @@
 import { instanceColorTone, createInstanceIcon } from "../card-visuals.js";
 import { openHostAccessDialog } from "../host-access-dialog.js";
 import { openInstanceAppearanceDialog } from "../instance-appearance-dialog.js";
+import { byId } from "../component-utils.js";
 
 let namesCollapsed = false;
 let tabDrag = null;
@@ -115,10 +116,6 @@ function moveTabDrag(event) {
     tabDrag.marker.style.height = `${Math.max(0, stripBounds.height - 12)}px`;
     tabDrag.marker.style.transform = `translate3d(${Math.round(destination - 2)}px, ${Math.round(stripBounds.top + 6)}px, 0)`;
   }
-}
-
-function byId(id) {
-  return document.getElementById(id);
 }
 
 function activeTab(snapshot) {

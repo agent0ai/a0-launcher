@@ -18,6 +18,7 @@ import {
   scopeFieldsHtml as hostAccessScopeFieldsHtml,
   switchLineHtml as hostAccessSwitchLineHtml
 } from "../host-access-dialog.js";
+import { byId, compactText } from "../component-utils.js";
 
 const SETTINGS_TAB_KEY = "dm-settings-active-tab";
 const SETTINGS_TABS = ["ports", "workspace", "defaults", "a0-tag"];
@@ -25,8 +26,6 @@ const HOST_ACCESS_SCOPE_KEYS = ["files", "file_write", "code_execution", "browse
 let settingsSaveInProgress = false;
 let syncHostAccessDefaults = null;
 let a0TagProfilesKey = "";
-
-function byId(id) { return document.getElementById(id); }
 
 function validSettingsTab(tab) {
   return SETTINGS_TABS.includes(tab) ? tab : "ports";
@@ -92,11 +91,6 @@ function parseOptionalInt(value) {
   if (!raw) return undefined;
   const parsed = parseInt(raw, 10);
   return Number.isNaN(parsed) ? undefined : parsed;
-}
-
-function compactText(value, fallback = "") {
-  const text = String(value || "").trim();
-  return text || fallback;
 }
 
 function currentStoragePreferences(state) {

@@ -1,5 +1,4 @@
-function byId(id) { return document.getElementById(id); }
-
+import { byId } from "../component-utils.js";
 function hasLauncherUpdate(state) {
   const meta = state?.meta || {};
   return meta.launcherUpdateAvailable === true ||

@@ -75,14 +75,11 @@ npm install
 A0_LAUNCHER_LOCAL_REPO=/home/eclypso/a0/a0-launcher npm start
 ```
 
-This loads `app/index.html` directly from the working tree and is the right
-path for UI iteration.
+This loads `app/index.html` directly from the working tree and is the right path for UI iteration.
 
 ### Release content smoke test
 
-Plain `npm start` exercises the GitHub Release content path. It checks the
-configured repository's latest release, downloads `content.json` when the remote
-bundle is newer, and serves the unpacked cache from Electron `userData`.
+Plain `npm start` exercises the GitHub Release content path. It checks the configured repository's latest release, downloads `content.json` when the remote bundle is newer, and serves the unpacked cache from Electron `userData`.
 
 ```bash
 npm start
@@ -95,8 +92,7 @@ rm -rf /home/eclypso/.config/a0-launcher/app_content \
   /home/eclypso/.config/a0-launcher/content_meta.json
 ```
 
-Do not seed cache metadata with future-dated timestamps. Local development
-should use `A0_LAUNCHER_LOCAL_REPO` or `A0_LAUNCHER_USE_LOCAL_CONTENT=1`.
+Do not seed cache metadata with future-dated timestamps. Local development should use `A0_LAUNCHER_LOCAL_REPO` or `A0_LAUNCHER_USE_LOCAL_CONTENT=1`.
 
 ## UI smoke tests
 

@@ -1,4 +1,5 @@
 import { defaultInstanceName } from "../instance-defaults.js";
+import { byId, compactText } from "../component-utils.js";
 
 const DEFAULT_IMAGE = "agent0ai/agent-zero";
 const DEFAULT_TAG = "latest";
@@ -14,8 +15,6 @@ let activeFileName = "";
 let lastDeveloperProgressKey = "";
 let project = { token: "", name: "", files: [], warnings: [] };
 
-function byId(id) { return document.getElementById(id); }
-
 function fmtBytes(bytes) {
   if (bytes === null || bytes === undefined || bytes === "" || !Number.isFinite(Number(bytes))) return "Unknown";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -26,11 +25,6 @@ function fmtBytes(bytes) {
     unit += 1;
   }
   return `${value.toFixed(unit > 1 ? 1 : 0)} ${units[unit]}`;
-}
-
-function compactText(value, fallback = "") {
-  const text = String(value || "").trim();
-  return text || fallback;
 }
 
 function splitImageTag(imageValue, tagValue) {

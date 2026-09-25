@@ -2,29 +2,20 @@
 
 ## Purpose
 
-`packaging/` owns the updater-capable desktop packaging toolchain. It mirrors
-the Space Agent release shape: electron-builder creates platform artifacts and
-update metadata, then release staging rewrites those artifacts into canonical
-GitHub Release asset names.
+`packaging/` owns the updater-capable desktop packaging toolchain. It mirrors the Space Agent release shape: electron-builder creates platform artifacts and update metadata, then release staging rewrites those artifacts into canonical GitHub Release asset names.
 
 ## Ownership
 
 This scope owns:
 
-- `package.json` and `package-lock.json`: packaging-only Electron and
-  electron-builder dependencies.
+- `package.json` and `package-lock.json`: packaging-only Electron and electron-builder dependencies.
 - `release-asset-filters.yaml`: public installer asset selection before upload.
-- `platforms/windows/installer.nsh`: Windows NSIS installer diagnostics,
-  running-app shutdown hardening, and first-run launch behavior.
-- `scripts/desktop-builder.js`: platform/arch packaging orchestration and
-  electron-builder config shaping.
-- `scripts/*-package.js` and `scripts/host-package.js`: local platform entry
-  points for desktop packaging.
+- `platforms/windows/installer.nsh`: Windows NSIS installer diagnostics, running-app shutdown hardening, and first-run launch behavior.
+- `scripts/desktop-builder.js`: platform/arch packaging orchestration and electron-builder config shaping.
+- `scripts/*-package.js` and `scripts/host-package.js`: local platform entry points for desktop packaging.
 - `scripts/release-version.js`: `v*` tag parsing and semver normalization.
-- `scripts/release-metadata*.js`: updater metadata parsing, merging, and
-  serialization.
-- `scripts/release-assets-stage.js`: canonical release asset naming, stale
-  asset manifest generation, and updater metadata rewriting.
+- `scripts/release-metadata*.js`: updater metadata parsing, merging, and serialization.
+- `scripts/release-assets-stage.js`: canonical release asset naming, stale asset manifest generation, and updater metadata rewriting.
 
 ## Local Contracts
 
@@ -34,21 +25,11 @@ This scope owns:
 npm install --prefix packaging
 ```
 
-- The root package owns product metadata. Packaging scripts read the root
-  `package.json` `build` config and do not carry a second product identity.
-- Packaging scripts must not publish directly. GitHub Release upload is owned
-  by `.github/workflows/build.yml`.
-- Keep electron-builder at 26.15.6 or newer within v26. Earlier releases can
-  produce NSIS app archives whose executable filters the install-time extractor
-  silently skips, leaving Windows installs without the launcher executable and
-  Electron runtime DLLs.
-- The NSIS uninstaller removes the Launcher-owned `%APPDATA%\\a0-launcher`
-  directory, including saved preferences, remote Instances, credentials, and
-  cached content.
-- Use `A0_LAUNCHER_APP_VERSION` and `A0_LAUNCHER_RELEASE_TAG` for CI-provided
-  release versions. Two-segment tags such as `v1.8` are the public release
-  shape; build them as semver `1.8.0` where tooling requires it, but stage
-  public assets with release version `1.8`.
+- The root package owns product metadata. Packaging scripts read the root `package.json` `build` config and do not carry a second product identity.
+- Packaging scripts must not publish directly. GitHub Release upload is owned by `.github/workflows/build.yml`.
+- Keep electron-builder at 26.15.6 or newer within v26. Earlier releases can produce NSIS app archives whose executable filters the install-time extractor silently skips, leaving Windows installs without the launcher executable and Electron runtime DLLs.
+- The NSIS uninstaller removes the Launcher-owned `%APPDATA%\\a0-launcher` directory, including saved preferences, remote Instances, credentials, and cached content.
+- Use `A0_LAUNCHER_APP_VERSION` and `A0_LAUNCHER_RELEASE_TAG` for CI-provided release versions. Two-segment tags such as `v1.8` are the public release shape; build them as semver `1.8.0` where tooling requires it, but stage public assets with release version `1.8`.
 - Canonical public/updater asset names are:
 
 ```text
@@ -70,12 +51,9 @@ metadata-latest-linux-arm64.yml
 ## Work Guidance
 
 - Prefer small, deterministic Node scripts over shell-heavy release logic.
-- Keep staging idempotent: generated manifests should list stale source names
-  and exact upload files.
-- Do not add signing secrets or credentials to scripts, logs, or generated
-  metadata.
-- Keep output under `dist/desktop/` or explicit caller-provided staging
-  directories.
+- Keep staging idempotent: generated manifests should list stale source names and exact upload files.
+- Do not add signing secrets or credentials to scripts, logs, or generated metadata.
+- Keep output under `dist/desktop/` or explicit caller-provided staging directories.
 
 ## Verification
 

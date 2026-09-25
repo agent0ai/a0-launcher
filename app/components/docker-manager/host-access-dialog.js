@@ -1,3 +1,5 @@
+import { escapeHtml } from "./component-utils.js";
+
 const SCOPE_FIELDS = Object.freeze([
   { key: "files", icon: "folder_open", label: "Files read", hint: "Open files in the folder below." },
   { key: "file_write", icon: "edit_document", label: "Files write", hint: "Create and change files there." },
@@ -28,15 +30,6 @@ const ARMABLE_COMPUTER_USE_STATUSES = new Set([
   "restart required",
   "error"
 ]);
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function normalizeScopes(value = {}) {
   const scopes = {

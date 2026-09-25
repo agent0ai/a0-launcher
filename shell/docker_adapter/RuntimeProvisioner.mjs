@@ -177,6 +177,14 @@ export function run(cmd, args, options = {}) {
   });
 }
 
+export function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function tail(value, limit = 1200) {
+  return String(value || '').slice(-limit);
+}
+
 export async function pathExists(filePath) {
   try {
     await fsp.access(filePath);
