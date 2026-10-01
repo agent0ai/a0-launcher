@@ -2133,6 +2133,11 @@ window.dockerManagerActions = {
   chooseHostAccessFolder,
   retryHostGateway,
   hostGatewayCommand,
+  async hostSetup(tabId, action, payload = {}) {
+    const result = await window.dockerManagerAPI?.hostSetup?.(tabId, action, payload);
+    if (!result || isErrorResponse(result)) throw new Error(result?.message || "Shared setup is unavailable. Update Launcher and Agent Zero.");
+    return result;
+  },
   getA0TagProfiles,
   async setPortPreferences(prefs, options = {}) {
     const api = window.dockerManagerAPI;
@@ -2271,6 +2276,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   const refreshStartedAt = Date.now();
   const initialState = await refresh({ forceRefresh: false });
+  const openSetupLink = async () => {
+    if (!await window.computerSetupLink?.take?.()) return;
+    const state = snapshot();
+    const tab = state.instanceTabs?.tabs?.find(item => item.id === state.instanceTabs.activeTabId);
+    if (tab) openHostAccessDialog(tab, state);
+    showToast('info', 'Choose the same Agent Zero Instance as your other device. Sign in, open its computer icon, then enter the setup code.', 'Continue computer setup', 12);
+  };
+  window.computerSetupLink?.subscribe?.(openSetupLink);
+  await openSetupLink();
   const initialSyncMs = Date.parse(initialState?.lastSyncedAt || "");
   if (!Number.isFinite(initialSyncMs) || initialSyncMs < refreshStartedAt) {
     window.setTimeout(() => {

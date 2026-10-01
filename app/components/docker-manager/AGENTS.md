@@ -93,6 +93,26 @@ This scope owns:
 
 ## Work Guidance
 
+- Browser preparation guidance must distinguish A0-controlled profiles (automatic
+  Playwright connection) from personal profiles (explicit remote-debugging
+  approval). Never ask controlled profiles to enable the inspect-page switch.
+  An unrelated browser's endpoint must not suppress selected-profile guidance;
+  preparation failures must preserve the actual runtime reason.
+  Unsaved browser choices show Not applied and Save and connect; preparation
+  and Retry stay disabled until saved. Runtime refresh must not label the draft
+  choice with the previous browser's failure or readiness.
+  Connection tests retain a visible outcome from their correlated verified
+  evidence even when shared readiness is unavailable. This receipt describes
+  the completed test, not a durable permission or future-readiness guarantee.
+- Existing-browser connections may use the explicit local HTTP(S) address shown
+  by the browser when profile discovery is unavailable. The manual field is
+  prefilled from saved configuration, participates in pending-selection state,
+  and requires Save before setup. Never launch a separate profile as fallback.
+- Guided `Connect and check` saves the selected scopes, waits for the replacement
+  gateway connection, then verifies browser input/capture and any ready computer
+  capture automatically. Cancel/close and timeout remove the waiting listener.
+  Saved access and preparation alone are never a completed verification.
+
 - Keep component scripts pure enough to rerender repeatedly from state without accumulating duplicate event listeners.
 - Use stable element ids inside a component only within that component's loaded fragment; do not rely on ids owned by sibling components.
 - Prefer short task-oriented copy. Avoid explanatory paragraphs when a label, status, or action name will do.
@@ -100,6 +120,15 @@ This scope owns:
 - If a component's contract becomes large enough to need its own doc, add a child `AGENTS.md` and update this file plus the root index in the same session.
 
 ## Verification
+
+- The instance Host access entry opens `computer-setup.js`; Advanced settings
+  retains the full scope/profile controls. Fresh guided setup starts all scopes
+  off, enables only explicit Browser/Computer selections and preserves saved
+  file/command permissions. Shared help/readiness is accepted only for this
+  gateway ID. Setup codes require original-device confirmation before local
+  access review. Permission prompts and verification require explicit buttons.
+  Protocol handoff only opens this guidance; it cannot select a remote address,
+  redeem a code, alter scopes or resume host actions.
 
 After component changes, run:
 

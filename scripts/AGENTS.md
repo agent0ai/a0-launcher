@@ -12,6 +12,7 @@ This scope owns:
 
 - `write-build-info.js`: writes `shell/build-info.json` so the shell knows which GitHub repository to use for launcher content when no runtime override is set.
 - `bootstrap-macos.sh`: macOS bootstrap helper for local development.
+- `package-preview.js`: opt-in local preview packaging using the installed Forge packager. Run `node scripts/package-preview.js`; output is `dist/preview/`. It keeps package name/userData, labels the executable Preview, sets `a0BundledPreview`, and bundles its renderer. Quit the released Launcher first. On macOS, `A0_PREVIEW_SIGN_IDENTITY` optionally selects an existing signing identity. This neither publishes nor notarizes.
 
 ## Local Contracts
 

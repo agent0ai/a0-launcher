@@ -30,6 +30,15 @@ This scope owns:
 
 ## Local Contracts
 
+- Only explicit `a0BundledPreview: true` package metadata selects the installed bundle's own renderer and disables executable auto-update. Missing preview content fails visibly instead of fetching an older release. Normal releases retain remote content and updater behavior. Preview and release share the existing Launcher userData; run only one at a time.
+
+- Manual browser connection addresses are validated in the shell before saving:
+  local HTTP(S), an explicit port, no credentials/query/fragment, and only the
+  root or `/json/version` path. Persist the stable origin, never a transient
+  DevTools WebSocket GUID. Invalid input must leave existing settings intact.
+- Browser verification requests allow 100 seconds for the connector's bounded
+  native approval and input/capture check; computer verification allows 50 seconds.
+
 - Keep renderer windows on `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true` unless an exception is documented here.
 - Do not expose `ipcRenderer`, raw channels, filesystem paths, shell execution, or Docker objects directly to the renderer.
 - The preload bridge exposes named methods only. New IPC must be added to both `shell/preload.js` and `shell/main.js` deliberately.
@@ -106,6 +115,20 @@ This scope owns:
 - Avoid platform-specific assumptions unless the code explicitly checks `process.platform`.
 
 ## Verification
+
+- `host_setup.js` issues bounded fixed-path authenticated setup requests through
+  the selected instance session, preserving its base path and refusing redirects.
+  Use the configured gateway base URL, not the current login or in-page URL;
+  claim identity must remain stable across navigation and Launcher relaunch.
+  Only Launcher chrome can call the setup IPC. Claim identity comes from the
+  shell; credentials never enter the renderer. `verify_host_setup` is capability
+  gated and carries only an allowlisted Browser/Computer selector over the
+  existing tab-leased gateway. Setup never opens a host listener.
+- `setup_link.js` accepts only `a0-launcher://setup` with an optional trailing
+  slash. It opens guidance, carries no payload and grants no access. Packaged
+  apps register the protocol; development runs do not take over registration.
+  Cold/warm launches queue one shell-owned intent until main chrome is ready.
+  The renderer must still ask the user to select and sign in to the same server.
 
 After shell changes, run:
 

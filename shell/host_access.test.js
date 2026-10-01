@@ -7,11 +7,36 @@ const {
   hostAccessInstanceKey,
   hostAccessMatchesGateway,
   normalizeBrowserSelection,
+  validateBrowserEndpoint,
   normalizeHostFolder,
   normalizeHostAccessScopes,
   normalizeHostAccessSettings,
   resolveInstanceHostAccess
 } = require('./host_access');
+
+test('manual browser addresses accept explicit local ports and normalize the version URL', () => {
+  for (const [input, expected] of [
+    ['http://127.0.0.1:9222', 'http://127.0.0.1:9222'],
+    ['http://localhost:9333/json/version', 'http://localhost:9333'],
+    ['http://[::1]:65535/', 'http://[::1]:65535'],
+    ['http://localhost:80', 'http://localhost:80'],
+    ['https://localhost:9443/', 'https://localhost:9443'],
+  ]) {
+    assert.equal(validateBrowserEndpoint(input), expected);
+    assert.equal(validateBrowserEndpoint(expected), expected);
+  }
+});
+
+test('manual browser addresses reject remote hosts, credentials, transient sockets and invalid ports', () => {
+  for (const input of [
+    '', 'http://localhost', 'http://localhost:0', 'http://localhost:65536',
+    'http://example.com:9222', 'http://localhost.example.com:9222',
+    'http://user:secret@localhost:9222', 'http://localhost:9222?token=secret',
+    'http://localhost:9222/#fragment', 'file:///tmp/browser',
+    'ws://localhost:9222/devtools/browser/guid', 'http://localhost:9222/other',
+    'http://local\nhost:9222', 'http://127.1:9222',
+  ]) assert.throws(() => validateBrowserEndpoint(input), /local HTTP address/);
+});
 
 test('Host access defaults local Instances off with browser and Computer Use opt-in', () => {
   const settings = normalizeHostAccessSettings({});

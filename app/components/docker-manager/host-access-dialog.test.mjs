@@ -7,6 +7,7 @@ const {
   bindScopeDependency,
   browserSetupAvailable,
   browserSetupHint,
+  browserSelectionPresentation,
   browserSupportDetail,
   browserSupportMessage,
   capabilityReadinessLabel,
@@ -356,7 +357,42 @@ test('Browser setup explains how to enable remote debugging when no endpoint is 
   }), /Safari > Settings > Advanced.*Show features for web developers.*Developer.*Allow remote automation/);
 });
 
-test('Browser setup keeps an actionable fallback after the gateway command fails', () => {
+test('Controlled profiles use automatic setup independently of personal Chrome debugging', () => {
+  for (const browser of [
+    { browser_family: 'chrome-a0' },
+    { browser_id: 'edge-a0:default' },
+    { available_browsers: [{ family: 'brave-a0' }] },
+    { browser_family: 'chrome-a0', available_browsers: [{ cdp_endpoint: 'ws://localhost:9222/devtools/browser/personal' }] }
+  ]) {
+    const hint = browserSetupHint(browser);
+    assert.match(hint, /separate browser profile and connects automatically/);
+    assert.doesNotMatch(hint, /Turn on|chrome:\/\/inspect/);
+  }
+  assert.match(browserSetupHint({
+    browser_family: 'edge',
+    available_browsers: [{ cdp_endpoint: 'ws://localhost:9222/devtools/browser/personal' }]
+  }), /Allow remote debugging/);
+});
+
+test('A changed browser never inherits the saved profiles failure or readiness', () => {
+  const failed = { status: 'unsupported', support_reason: 'Default profile blocked' };
+  const pending = browserSelectionPresentation('chrome:default', 'chrome-a0:default', failed, true);
+  assert.equal(pending.pending, true);
+  assert.equal(pending.readiness, 'Not applied');
+  assert.equal(pending.saveLabel, 'Save and connect');
+  assert.doesNotMatch(pending.detail, /Default profile blocked/);
+  assert.match(pending.detail, /previous selection/);
+  const refreshed = browserSelectionPresentation('chrome:default', 'chrome-a0:default', { status: 'ready' }, true);
+  assert.equal(refreshed.readiness, 'Not applied');
+  const saved = browserSelectionPresentation('chrome-a0:default', 'chrome-a0:default', { status: 'ready' }, true);
+  assert.equal(saved.pending, false);
+  assert.equal(saved.readiness, 'Allowed · Ready');
+  const reverted = browserSelectionPresentation('chrome:default', 'chrome:default', failed, true);
+  assert.equal(reverted.pending, false);
+  assert.equal(reverted.detail, 'Default profile blocked');
+});
+
+test('Browser setup preserves the actual failure for a controlled profile', () => {
   let stateListener;
   let toast;
   let removed = false;
@@ -374,11 +410,13 @@ test('Browser setup keeps an actionable fallback after the gateway command fails
   };
 
   try {
-    watchBrowserSetupFailure('instance-tab-1');
+    watchBrowserSetupFailure('instance-tab-1', { browser_family: 'chrome-a0' });
     stateListener({
       detail: {
         instanceTabs: {
-          tabs: [{ id: 'instance-tab-1', hostAccess: { code: 'GATEWAY_COMMAND_FAILED' } }]
+          tabs: [{ id: 'instance-tab-1', hostAccess: {
+            code: 'GATEWAY_COMMAND_FAILED', message: 'The selected profile is still locked.'
+          } }]
         }
       }
     });
@@ -387,7 +425,7 @@ test('Browser setup keeps an actionable fallback after the gateway command fails
     else globalThis.window = originalWindow;
   }
 
-  assert.match(toast[0], /Install Chrome, Chromium, Edge, Brave, Opera, or Vivaldi/);
+  assert.equal(toast[0], 'The selected profile is still locked.');
   assert.deepEqual(toast.slice(1), ['Set up browser', 12, 'dm-host-browser-setup']);
   assert.equal(removed, true);
 });

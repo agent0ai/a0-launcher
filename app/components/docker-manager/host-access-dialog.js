@@ -1,4 +1,5 @@
 import { escapeHtml } from "./component-utils.js";
+import { openComputerSetup } from "./computer-setup.js";
 
 const SCOPE_FIELDS = Object.freeze([
   { key: "files", icon: "folder_open", label: "Files read", hint: "Open files in the folder below." },
@@ -338,6 +339,7 @@ function hostAccessActionMessage(config = {}, runtime = {}) {
 }
 
 function browserOptions(browser = {}, selected = "") {
+  const manual = /^https?:\/\//i.test(selected);
   const options = [{ value: "", label: "Automatic detection" }];
   for (const candidate of Array.isArray(browser?.available_browsers) ? browser.available_browsers : []) {
     const value = String(candidate?.browser_id || candidate?.id || candidate?.cdp_endpoint || "");
@@ -345,21 +347,25 @@ function browserOptions(browser = {}, selected = "") {
     const label = String(candidate?.browser_label || candidate?.label || candidate?.profile_label || candidate?.browser_family || value);
     options.push({ value, label });
   }
-  if (selected && !options.some((entry) => entry.value === selected)) {
+  if (selected && !manual && !options.some((entry) => entry.value === selected)) {
     options.push({ value: selected, label: selected });
   }
-  return options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === selected ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
+  options.push({value:'manual-browser-endpoint', label:'My existing browser — enter connection address'});
+  return options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === (manual ? 'manual-browser-endpoint' : selected) ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
 }
 
 function browserSetupHint(browser = {}) {
   const available = Array.isArray(browser?.available_browsers) ? browser.available_browsers : [];
   const selected = browser?.browser_family || browser?.browser_id
     || (available.length === 1 ? available[0]?.family || available[0]?.browser_family || available[0]?.id || available[0]?.browser_id : "");
+  if (/-a0(?::|$)/i.test(String(selected || ""))) {
+    return "A0 opens a separate browser profile and connects automatically. Your everyday browser stays separate. No remote-debugging switch is needed for this profile.";
+  }
   if (/^safari(?::|$)/i.test(String(selected || ""))) {
     return "In Safari > Settings > Advanced, turn on ‘Show features for web developers’. Then open Developer, turn on ‘Allow remote automation’, and click Set up browser again.";
   }
   const hasDebuggingEndpoint = Boolean(String(browser?.cdp_endpoint || "").trim())
-    || available.some((candidate) => Boolean(String(candidate?.cdp_endpoint || "").trim()));
+    || (!selected && available.length === 1 && Boolean(String(available[0]?.cdp_endpoint || "").trim()));
   if (!hasDebuggingEndpoint && available.length === 0) {
     return "Install Chrome, Chromium, Edge, Brave, Opera, or Vivaldi on this computer, then click Set up browser again.";
   }
@@ -368,7 +374,17 @@ function browserSetupHint(browser = {}) {
     : "Open Chrome or Chromium at chrome://inspect/#remote-debugging, Edge at edge://inspect/#remote-debugging, or Opera at opera://inspect/#remote-debugging. Brave and Vivaldi are supported too. Turn on ‘Allow remote debugging for this browser instance,’ then click Set up browser again.";
 }
 
-function watchBrowserSetupFailure(tabId) {
+function browserSelectionPresentation(applied, selected, browser, allowed) {
+  const pending = String(selected || "") !== String(applied || "");
+  return {
+    pending,
+    detail: pending ? "Save and connect to use this browser. The current connection still uses your previous selection." : browserSupportDetail(allowed, browser),
+    readiness: pending ? "Not applied" : capabilityReadinessLabel(allowed, browser),
+    saveLabel: pending ? "Save and connect" : "Save"
+  };
+}
+
+function watchBrowserSetupFailure(tabId, browser = {}) {
   let timeoutId = 0;
   const stop = () => {
     window.clearTimeout(timeoutId);
@@ -377,7 +393,10 @@ function watchBrowserSetupFailure(tabId) {
   const onState = (event) => {
     const tab = event?.detail?.instanceTabs?.tabs?.find((candidate) => candidate?.id === tabId);
     if (tab?.hostAccess?.code !== "GATEWAY_COMMAND_FAILED") return;
-    window.toastFrontendInfo?.(browserSetupHint(), "Set up browser", 12, "dm-host-browser-setup");
+    const currentBrowser = tab.hostAccess?.gateway?.status?.browser || browser;
+    const message = browserSupportMessage(currentBrowser) || String(tab.hostAccess?.message || "").trim()
+      || "Browser setup did not finish. Check the selected profile and try Set up browser again.";
+    window.toastFrontendInfo?.(message, "Set up browser", 12, "dm-host-browser-setup");
     stop();
   };
   window.addEventListener("dm:state", onState);
@@ -391,6 +410,10 @@ function closeDialog(dialog) {
 }
 
 function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
+  return openComputerSetup(tab, state, openHostAccessSettings, configForTarget);
+}
+
+function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
   if (!instanceKey(tab)) return false;
   closeDialog(document.getElementById("hostAccessDialog"));
   const config = configForTarget(state, tab);
@@ -470,6 +493,11 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
             <div class="dm-field">
               <label for="hostAccessBrowser">Browser to use</label>
               <select id="hostAccessBrowser" class="dm-select" data-host-config-control>${browserOptions(browser, config.browserSelection)}</select>
+              <div class="dm-field" data-browser-endpoint-field hidden>
+                <label for="hostBrowserEndpoint">Browser connection address</label>
+                <input id="hostBrowserEndpoint" class="dm-text-input" type="url" maxlength="512" placeholder="http://127.0.0.1:9222" value="${escapeHtml(/^https?:\/\//i.test(config.browserSelection) ? config.browserSelection : '')}" data-host-config-control>
+                <div class="dm-field-hint">Use the local address and port shown on your browser’s remote-debugging page. Chrome may ask you to approve the connection. This attaches to your existing browser; it does not launch a separate profile.</div>
+              </div>
               <div class="dm-field-hint" data-browser-support-message${browserDetail ? "" : " hidden"}>${escapeHtml(browserDetail)}</div>
             </div>
             <div class="dm-host-access-diagnostics">
@@ -479,6 +507,7 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
             </div>
           </div>
         </details>
+        <p class="dm-field-hint" role="alert" data-save-error hidden></p>
       </div>
       <div class="dm-dialog-footer dm-host-access-footer">
         <div class="dm-dialog-footer-group">
@@ -504,19 +533,42 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
   const browserLabel = dialog.querySelector("[data-browser-readiness]");
   const browserSupport = dialog.querySelector("[data-browser-support-message]");
   const browserSetupButton = dialog.querySelector("[data-prepare-browser]");
+  const browserSelectionInput = dialog.querySelector("#hostAccessBrowser");
+  const browserEndpointInput = dialog.querySelector('#hostBrowserEndpoint');
+  const selectedBrowserValue = () => browserSelectionInput?.value === 'manual-browser-endpoint'
+    ? browserEndpointInput.value.trim() : browserSelectionInput?.value;
+  let appliedBrowserSelection = config.browserSelection;
+  let currentActionMessage = actionMessage;
   const browserAllowedInForm = () => configuredInput?.checked === true && browserInput?.checked === true;
   const syncBrowserPresentation = () => {
     const allowed = browserAllowedInForm();
-    const detail = browserSupportDetail(allowed, browser);
-    if (browserLabel) browserLabel.textContent = capabilityReadinessLabel(allowed, browser);
+    const manual = browserSelectionInput?.value === 'manual-browser-endpoint';
+    dialog.querySelector('[data-browser-endpoint-field]').hidden = !manual;
+    browserEndpointInput.disabled = !manual || configuredInput?.checked !== true;
+    browserEndpointInput.required = manual && configuredInput?.checked === true;
+    const presentation = browserSelectionPresentation(appliedBrowserSelection, selectedBrowserValue(), browser, allowed);
+    const detail = presentation.detail;
+    if (browserLabel) browserLabel.textContent = presentation.readiness;
     if (browserSupport) {
       browserSupport.textContent = detail;
       browserSupport.hidden = !detail;
     }
     if (browserSetupButton) {
       browserSetupButton.hidden = !(allowed && browserSetupAvailable(browser));
+      browserSetupButton.disabled = presentation.pending;
+    }
+    const retry = dialog.querySelector("[data-retry]");
+    if (retry) retry.disabled = presentation.pending;
+    const save = dialog.querySelector('button[type="submit"]');
+    if (save) save.textContent = presentation.saveLabel;
+    const notice = dialog.querySelector("[data-host-action-notice]");
+    if (notice) {
+      notice.textContent = presentation.pending ? detail : currentActionMessage;
+      notice.hidden = !notice.textContent;
     }
   };
+  browserSelectionInput?.addEventListener("change", syncBrowserPresentation);
+  browserEndpointInput?.addEventListener('input', syncBrowserPresentation);
   configuredInput?.addEventListener("change", syncBrowserPresentation);
   browserInput?.addEventListener("change", syncBrowserPresentation);
   syncBrowserPresentation();
@@ -547,7 +599,7 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
     const button = event.currentTarget;
     const hint = browserSetupHint(browser);
     if (hint) window.toastFrontendInfo?.(hint, "Set up browser", 12, "dm-host-browser-setup");
-    else watchBrowserSetupFailure(tab.id);
+    watchBrowserSetupFailure(tab.id, browser);
     const repairing = browserSupportNeedsRepair(browser);
     if (repairing) {
       button.disabled = true;
@@ -593,9 +645,17 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
       masterEnabled: enabled,
       folder: folder?.value || "",
       scopes: readScopes(dialog),
-      browserSelection: dialog.querySelector("#hostAccessBrowser")?.value || ""
+      browserSelection: selectedBrowserValue() || "",
+      ...(browserSelectionInput?.value === 'manual-browser-endpoint' ? {browserEndpoint: browserEndpointInput.value} : {})
     });
     if (saved !== false) closeDialog(dialog);
+    else {
+      const error = dialog.querySelector('[data-save-error]');
+      error.textContent = browserSelectionInput?.value === 'manual-browser-endpoint'
+        ? 'Settings were not saved. Check the local address and port shown in your browser, then try again. Launcher’s error notice has more details.'
+        : 'Settings were not saved. Check Launcher’s error notice and try again.';
+      error.hidden = false;
+    }
   });
   document.body.appendChild(dialog);
   const onState = (event) => {
@@ -611,6 +671,8 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
     const nextComputerSetup = computerUseSetupState(nextConfig, nextRuntime);
     computerSetup = nextComputerSetup;
     const nextActionMessage = hostAccessActionMessage(nextConfig, nextRuntime);
+    appliedBrowserSelection = nextConfig.browserSelection;
+    currentActionMessage = nextActionMessage;
     const nextStateName = String(nextRuntime.state || "disconnected");
     const computerLabel = dialog.querySelector("[data-computer-use-readiness]");
     const connectionLabelElement = dialog.querySelector("[data-host-connection-label]");
@@ -625,7 +687,6 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
       connectionDetailElement.textContent = nextRuntime.hostLabel || nextGateway.host_label || "This computer";
     }
     if (statusDot) statusDot.className = `dm-host-status-dot ${nextStateName}`;
-    syncBrowserPresentation();
     if (notice) {
       notice.textContent = nextActionMessage;
       notice.hidden = !nextActionMessage;
@@ -637,6 +698,7 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
       setupButton.disabled = nextComputerSetup.setupState === "checking";
     }
     if (restartButton) restartButton.hidden = !nextComputerSetup.restartRequired;
+    syncBrowserPresentation();
   };
   window.addEventListener("dm:state", onState);
   dialog.__hostAccessCleanup = () => window.removeEventListener("dm:state", onState);
@@ -664,6 +726,7 @@ export {
   bindScopeDependency,
   bindHostAccessState,
   browserSetupHint,
+  browserSelectionPresentation,
   watchBrowserSetupFailure,
   switchLineHtml
 };
