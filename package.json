@@ -46,6 +46,7 @@
     "yauzl": "^2.10.0"
   },
   "build": {
+    "protocols": [{ "name": "Agent Zero computer setup", "schemes": ["a0-launcher"] }],
     "appId": "ai.agent0.launcher",
     "artifactName": "a0-launcher-${version}.${ext}",
     "productName": "Agent Zero Launcher",

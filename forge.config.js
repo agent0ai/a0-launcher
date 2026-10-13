@@ -32,6 +32,7 @@ const shouldNotarize = (() => {
 
 module.exports = {
   packagerConfig: {
+    protocols: [{ name: "Agent Zero computer setup", schemes: ["a0-launcher"] }],
     name: "Agent Zero Launcher",
     executableName: "a0-launcher",
     appBundleId: "ai.agent0.launcher",
@@ -94,6 +95,7 @@ module.exports = {
           homepage: "https://github.com/agent0ai/a0-launcher",
           icon: path.join(__dirname, "shell", "assets", "icon.png"),
           categories: ["Development", "Utility"],
+          mimeType: ["x-scheme-handler/a0-launcher"],
         },
       },
     },

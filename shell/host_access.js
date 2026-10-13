@@ -51,6 +51,21 @@ function normalizeBrowserSelection(value) {
   return selection;
 }
 
+function validateBrowserEndpoint(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  const message = 'Enter the local HTTP address shown by your browser, including its port. Do not include credentials or a DevTools WebSocket link.';
+  if (!raw || raw.length > 512 || /[\s\\\u0000]/.test(raw)) throw new Error(message);
+  let endpoint;
+  try { endpoint = new URL(raw); } catch { throw new Error(message); }
+  const port = raw.match(/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]{1,5})(?:\/|$)/i)?.[1];
+  if (!['http:', 'https:'].includes(endpoint.protocol)
+      || !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)
+      || !port || Number(port) < 1 || Number(port) > 65535
+      || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+      || !['', '/', '/json/version'].includes(endpoint.pathname)) throw new Error(message);
+  return `${endpoint.protocol}//${endpoint.hostname}:${Number(port)}`;
+}
+
 function normalizeInstallationId(value) {
   const id = String(value || '').trim().slice(0, 128);
   return /^[A-Za-z0-9._:-]+$/.test(id) ? id : '';
@@ -148,6 +163,7 @@ function hostAccessMatchesGateway(config = {}, gateway = {}) {
 }
 
 module.exports = {
+  validateBrowserEndpoint,
   DEFAULT_HOST_ACCESS_SCOPES,
   normalizeHostAccessScopes,
   normalizeHostFolder,

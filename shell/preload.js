@@ -1,5 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+contextBridge.exposeInMainWorld('computerSetupLink', {
+  take: () => ipcRenderer.invoke('docker-manager:takeSetupLink'),
+  subscribe: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('computer-setup-link', listener);
+    return () => ipcRenderer.removeListener('computer-setup-link', listener);
+  }
+});
+
 // Store listener references for cleanup
 let statusListener = null;
 let errorListener = null;
@@ -224,9 +233,11 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
     return ipcRenderer.invoke('docker-manager:hostGatewayCommand', {
       tabId,
       action,
-      prompt: value.prompt === true
+      prompt: value.prompt === true,
+      capability: ['browser', 'computer_use'].includes(value.capability) ? value.capability : ''
     });
   },
+  hostSetup: (tabId, action, payload = {}) => ipcRenderer.invoke('docker-manager:hostSetup', { tabId, action, payload }),
   provisionRuntime: () => ipcRenderer.invoke('docker-manager:provisionRuntime'),
   beginLocalSetup: () => ipcRenderer.invoke('docker-manager:beginLocalSetup'),
   selectRuntimeEndpoint: (id) => ipcRenderer.invoke('docker-manager:selectRuntimeEndpoint', {
