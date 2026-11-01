@@ -11,6 +11,7 @@ These docs explain the product and workflows. Durable implementation contracts b
 This scope owns:
 
 - `running-ui.md`: notes for running and validating the launcher UI.
+- `res/launcher-installation.png`: installation screenshot displayed below the root README title.
 - `faq-integration.md`: integration-oriented FAQ and user guidance.
 - `runtime-troubleshooting.md`: user-facing runtime detection and repair notes for Docker-compatible endpoints, Docker contexts, and setup fallback paths.
 - `release-todos.md`: current artifact, Windows runtime matrix, installer/updater, Instance-surface, and CLI release checks, with dated verification results. Keep observed verification limits explicit, especially simulated host absence and ARM64 packaging versus native execution.
@@ -27,7 +28,7 @@ This scope owns:
 
 - Prefer short sections with concrete commands and expected outcomes.
 - Avoid duplicating long code or architecture descriptions that belong in root or scoped AGENTS docs.
-- If screenshots or generated artifacts are added later, document the capture and regeneration path here.
+- Refresh the README screenshot from a real Launcher window during an Agent Zero image download, with the installation walkthrough visible and no private data. Preserve the full supplied scene; optimize the PNG before replacing `res/launcher-installation.png`.
 
 ## Verification
 

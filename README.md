@@ -1,5 +1,9 @@
 # Agent Zero Launcher
 
+<p align="center">
+<img src="docs/res/launcher-installation.png" alt="Agent Zero Launcher downloading Agent Zero with the installation walkthrough" width="100%" />
+</p>
+
 Agent Zero Launcher is an Electron desktop app for installing, running, switching, inspecting, and opening Dockerized Agent Zero instances without making Docker the first thing a user has to understand.
 
 It is intentionally small at the shell boundary: renderer code expresses user intent, the Electron shell owns privileged IPC, and the Docker manager owns image, container, release, storage-volume, and remote-instance orchestration.

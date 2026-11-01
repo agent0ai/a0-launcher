@@ -15,7 +15,7 @@ This scope owns top-level project policy, product language, release/version expe
 Root-owned files and folders:
 
 - `AGENTS.md`: repo-wide DOX rail and Child DOX Index.
-- `README.md`: public product overview and user/developer quick start.
+- `README.md`: public product overview and user/developer quick start, with its installation screenshot in `docs/res/launcher-installation.png`.
 - `package.json` and `package-lock.json`: Electron app version, dependencies, npm scripts, and local-dev fallback metadata.
 - `forge.config.js`: legacy Electron Forge makers for local/manual executable packaging.
 - `.gitignore`, `LICENSE`: repository metadata.
