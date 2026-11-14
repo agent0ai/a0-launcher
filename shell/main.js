@@ -34,6 +34,7 @@ const {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  instanceTabZoomDelta,
   instanceTabShortcutTarget,
   embeddedInstanceContentBounds,
   detachedInstanceContentBounds
@@ -5815,6 +5816,16 @@ app.on('web-contents-created', (_event, webContents) => {
       : findInstanceTabByWebContents(instanceTabs, webContents);
     const attachedSurface = webContents === mainWindow?.webContents
       || (tab && !tab.detached && tab.id === activeInstanceTabId);
+    const zoomDelta = instanceTabZoomDelta(input);
+    const instanceVisible = tab && !(tab.loading && !tab.canReload) && (tab.detached
+      ? tab.detachedContentVisible !== false
+      : tab.id === activeInstanceTabId && instanceTabBounds);
+    if (zoomDelta !== null && instanceVisible && !tab.view.webContents.isDestroyed()) {
+      event.preventDefault();
+      const contents = tab.view.webContents;
+      contents.setZoomLevel(zoomDelta === 0 ? 0 : contents.getZoomLevel() + zoomDelta);
+      return;
+    }
     if (attachedSurface && (!activeInstanceTabId || instanceTabBounds)) {
       const target = instanceTabShortcutTarget(input, instanceTabs, activeInstanceTabId);
       if (target !== null) {

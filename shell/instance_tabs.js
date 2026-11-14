@@ -416,6 +416,18 @@ function isInstanceTabReloadShortcut(input) {
   return input?.type === 'keyDown' && input.key === 'F5';
 }
 
+function instanceTabZoomDelta(input, platform = process.platform) {
+  if (input?.type !== 'keyDown' || input.alt) return null;
+  const modifier = platform === 'darwin'
+    ? input.meta && !input.control
+    : input.control && !input.meta;
+  if (!modifier) return null;
+  if (input.key === '+' || input.key === '=' || input.code === 'NumpadAdd') return 0.5;
+  if (input.key === '-' || input.code === 'NumpadSubtract') return -0.5;
+  if (input.key === '0' && !input.shift) return 0;
+  return null;
+}
+
 function instanceTabShortcutTarget(input, tabs, activeTabId, platform = process.platform) {
   if (input?.type !== 'keyDown' || input.alt) return null;
   const cycle = input.key === 'Tab' && input.control && !input.meta;
@@ -476,6 +488,7 @@ module.exports = {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  instanceTabZoomDelta,
   instanceTabShortcutTarget,
   embeddedInstanceContentBounds,
   detachedInstanceContentBounds

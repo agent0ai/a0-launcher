@@ -29,6 +29,7 @@ const {
   instanceContextMenuActions,
   reloadInstanceWebContents,
   isInstanceTabReloadShortcut,
+  instanceTabZoomDelta,
   instanceTabShortcutTarget,
   embeddedInstanceContentBounds,
   detachedInstanceContentBounds
@@ -627,6 +628,92 @@ test('Instance F5 shortcut accepts only key down', () => {
   assert.equal(isInstanceTabReloadShortcut({ type: 'keyDown', key: 'F5' }), true);
   assert.equal(isInstanceTabReloadShortcut({ type: 'keyUp', key: 'F5' }), false);
   assert.equal(isInstanceTabReloadShortcut({ type: 'keyDown', key: 'r' }), false);
+});
+
+test('Instance zoom shortcuts support platform modifiers, plus, minus, numpad, and reset', () => {
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const modifier = platform === 'darwin' ? { meta: true } : { control: true };
+    const input = (key, extra = {}) => ({ type: 'keyDown', key, ...modifier, ...extra });
+    for (const key of ['+', '=']) assert.equal(instanceTabZoomDelta(input(key), platform), 0.5);
+    assert.equal(instanceTabZoomDelta(input('+', { shift: true }), platform), 0.5);
+    assert.equal(instanceTabZoomDelta(input('-'), platform), -0.5);
+    assert.equal(instanceTabZoomDelta(input('Add', { code: 'NumpadAdd' }), platform), 0.5);
+    assert.equal(instanceTabZoomDelta(input('Subtract', { code: 'NumpadSubtract' }), platform), -0.5);
+    assert.equal(instanceTabZoomDelta(input('0'), platform), 0);
+    for (const value of [
+      input('+', { type: 'keyUp' }), input('+', { alt: true }), input('0', { shift: true }),
+      input('+', { control: true, meta: true }), input('x'),
+      input('+', { control: false, meta: false }),
+      input('+', platform === 'darwin' ? { control: true, meta: false } : { control: false, meta: true })
+    ]) assert.equal(instanceTabZoomDelta(value, platform), null);
+  }
+});
+
+test('zoom input targets the visible Instance from its page or shell and leaves other surfaces alone', () => {
+  const contents = () => Object.assign(new EventEmitter(), {
+    zoom: 0,
+    isDestroyed: () => false,
+    getZoomLevel() { return this.zoom; },
+    setZoomLevel(value) { this.zoom = value; }
+  });
+  const main = contents();
+  const active = { id: 'active', view: { webContents: contents() } };
+  const inactive = { id: 'inactive', view: { webContents: contents() } };
+  const detached = {
+    id: 'detached', detached: true, view: { webContents: contents() },
+    detachedWindow: { webContents: contents() }
+  };
+  const unrelated = contents();
+  const app = new EventEmitter();
+  const context = vm.createContext({
+    app, mainWindow: { webContents: main }, activeInstanceTabId: active.id,
+    instanceTabs: new Map([active, inactive, detached].map(tab => [tab.id, tab])),
+    instanceTabBounds: { x: 0, y: 47 }, findInstanceTabByWebContents,
+    instanceTabZoomDelta, instanceTabShortcutTarget, isInstanceTabReloadShortcut
+  });
+  const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+  vm.runInContext(source.slice(source.indexOf("app.on('web-contents-created'"),
+    source.indexOf('// App lifecycle')), context);
+  for (const wc of [main, active.view.webContents, inactive.view.webContents,
+    detached.view.webContents, detached.detachedWindow.webContents, unrelated]) {
+    app.emit('web-contents-created', {}, wc);
+  }
+  const zoom = (wc, key) => {
+    let prevented = false;
+    wc.emit('before-input-event', { preventDefault: () => { prevented = true; } }, {
+      type: 'keyDown', key, control: process.platform !== 'darwin', meta: process.platform === 'darwin'
+    });
+    return prevented;
+  };
+  assert.equal(zoom(main, '+'), true);
+  assert.equal(active.view.webContents.zoom, 0.5);
+  assert.equal(zoom(active.view.webContents, '-'), true);
+  assert.equal(active.view.webContents.zoom, 0);
+  zoom(main, '+');
+  assert.equal(zoom(main, '0'), true);
+  assert.equal(active.view.webContents.zoom, 0);
+  assert.equal(zoom(detached.detachedWindow.webContents, '+'), true);
+  assert.equal(detached.view.webContents.zoom, 0.5);
+  assert.equal(zoom(detached.view.webContents, '-'), true);
+  assert.equal(detached.view.webContents.zoom, 0);
+  assert.equal(main.zoom, 0);
+  assert.equal(detached.detachedWindow.webContents.zoom, 0);
+  assert.equal(zoom(inactive.view.webContents, '+'), false);
+  assert.equal(zoom(unrelated, '+'), false);
+  context.instanceTabBounds = null;
+  assert.equal(zoom(main, '+'), false);
+  assert.equal(zoom(active.view.webContents, '+'), false);
+  context.instanceTabBounds = { x: 0, y: 47 };
+  active.loading = true;
+  assert.equal(zoom(main, '+'), false);
+  active.canReload = true;
+  assert.equal(zoom(main, '+'), true);
+  active.view.webContents.isDestroyed = () => true;
+  assert.equal(zoom(main, '+'), false);
+  context.activeInstanceTabId = '';
+  assert.equal(zoom(main, '+'), false);
+  detached.detachedContentVisible = false;
+  assert.equal(zoom(detached.detachedWindow.webContents, '+'), false);
 });
 
 test('tab shortcuts follow visible order, wrap, and respect platform modifiers', () => {
