@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { EventEmitter } = require('node:events');
 const { test } = require('node:test');
 
 const {
@@ -496,9 +497,87 @@ test('detached Instance content stays below the Launcher header and can hide for
   });
 });
 
-test('main-window bounds updates leave detached Instance views to their detached window', () => {
-  const mainSource = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
-  assert.match(mainSource, /for \(const tab of instanceTabs\.values\(\)\) \{\s+if \(tab\.detached\) continue;/);
+test('foreground and restore repaint the attached page without reloading or revealing hidden tabs', async () => {
+  const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+  const updates = [];
+  const paints = [];
+  const makeTab = (id, extra = {}) => ({
+    id, canReload: true, ...extra,
+    view: {
+      setBounds: bounds => updates.push({ id, ...bounds }),
+      webContents: { invalidate: () => paints.push(id) }
+    }
+  });
+  const tabs = new Map([
+    ['active', makeTab('active')], ['inactive', makeTab('inactive')],
+    ['detached', makeTab('detached', { detached: true })]
+  ]);
+  class Window extends EventEmitter {
+    isDestroyed() { return false; }
+    getContentBounds() { return { width: 1280, height: 900 }; }
+    webContents = { getZoomFactor: () => 1 };
+  }
+  const context = vm.createContext({
+    BrowserWindow: Window, path, __dirname, process, attachWindowDiagnostics: () => {},
+    instanceTabs: tabs, activeInstanceTabId: 'active', instanceTabBounds: { x: 0, y: 47 },
+    embeddedInstanceContentBounds
+  });
+  vm.runInContext(
+    source.slice(source.indexOf('function createWindow('), source.indexOf('async function playSplashExitAnimation('))
+    + source.slice(source.indexOf('function hideInstanceTabView('), source.indexOf('function destroyInstanceTab(')), context
+  );
+  await context.createWindow('app');
+  for (const event of ['focus', 'restore', 'resize']) {
+    updates.length = paints.length = 0;
+    context.mainWindow.emit(event);
+    assert.deepEqual(paints, ['active']);
+    assert.deepEqual(updates, [
+      { id: 'active', x: 0, y: 47, width: 1280, height: 853 },
+      { id: 'inactive', x: 0, y: 0, width: 0, height: 0 }
+    ]);
+  }
+  for (const hiddenState of [
+    { instanceTabBounds: null },
+    { instanceTabBounds: { x: 0, y: 47 }, activeInstanceTabId: '' }
+  ]) {
+    Object.assign(context, hiddenState);
+    paints.length = 0;
+    context.mainWindow.emit('focus');
+    assert.deepEqual(paints, []);
+  }
+});
+
+test('detached windows repaint on focus and restore while respecting modal visibility', async () => {
+  const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+  let bounds;
+  let paints = 0;
+  class Window extends EventEmitter {
+    isDestroyed() { return false; }
+    getContentBounds() { return { width: 1280, height: 900 }; }
+    webContents = new EventEmitter();
+    async loadURL() {}
+    setTitle() {}
+  }
+  const context = vm.createContext({
+    BrowserWindow: Window, path, __dirname, process, attachWindowDiagnostics: () => {},
+    detachedInstanceContentBounds
+  });
+  vm.runInContext(source.slice(source.indexOf('function applyDetachedInstanceBounds('),
+    source.indexOf('const INSTANCE_CONTEXT_MENU_ITEMS')), context);
+  const tab = {
+    id: 'detached', title: 'Instance', canReload: true,
+    view: { setBounds: value => { bounds = value; }, webContents: { invalidate: () => { paints += 1; } } }
+  };
+  tab.detachedWindow = await context.openDetachedInstanceWindow(tab);
+  for (const event of ['focus', 'restore', 'resize']) {
+    const previousPaints = paints;
+    tab.detachedWindow.emit(event);
+    assert.equal(paints, previousPaints + 1);
+    assert.deepEqual(bounds, { x: 0, y: 47, width: 1280, height: 853 });
+  }
+  tab.detachedContentVisible = false;
+  tab.detachedWindow.emit('focus');
+  assert.deepEqual(bounds, { x: 0, y: 0, width: 0, height: 0 });
 });
 
 test('instance context menu exposes copy for selected page text', () => {

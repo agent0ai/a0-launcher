@@ -1422,7 +1422,9 @@ function createWindow(mode = 'splash') {
   mainWindowMode = mode;
   mainWindowCreatedAt = Date.now();
   attachWindowDiagnostics(windowRef);
-  if (!isSplash) windowRef.on('resize', applyActiveInstanceTabBounds);
+  if (!isSplash) {
+    for (const event of ['resize', 'focus', 'restore']) windowRef.on(event, applyActiveInstanceTabBounds);
+  }
 
   const loadPromise = isSplash
     ? windowRef.loadFile(path.join(__dirname, 'loading.html')).catch((error) => {
@@ -2160,6 +2162,7 @@ function applyDetachedInstanceBounds(tab) {
       detachedWindow.getContentBounds(),
       tab.detachedContentVisible !== false && !(tab.loading && !tab.canReload)
     ));
+    tab.view.webContents.invalidate();
   } catch {
     // The window or view may be closing.
   }
@@ -2187,7 +2190,9 @@ async function openDetachedInstanceWindow(tab) {
   });
   attachWindowDiagnostics(detachedWindow);
   detachedWindow.webContents.on('page-title-updated', (event) => event.preventDefault());
-  detachedWindow.on('resize', () => applyDetachedInstanceBounds(tab));
+  for (const event of ['resize', 'focus', 'restore']) {
+    detachedWindow.on(event, () => applyDetachedInstanceBounds(tab));
+  }
   await detachedWindow.loadURL(
     `a0app://content/components/docker-manager/instance-tabs/detached.html?tabId=${encodeURIComponent(tab.id)}`
   );
@@ -2493,6 +2498,8 @@ function applyActiveInstanceTabBounds() {
         instanceTabBounds,
         mainWindow.webContents.getZoomFactor()
       ));
+      // Repaint the existing page when its native surface returns from occlusion.
+      tab.view.webContents.invalidate();
     } catch {
       hideInstanceTabView(tab);
     }
