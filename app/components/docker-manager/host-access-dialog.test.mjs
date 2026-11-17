@@ -69,7 +69,7 @@ test('scope binding keeps the permission summary current', () => {
   assert.equal(summary.textContent, 'On: Read, Write, Code, Browser · Off: Computer Use');
 });
 
-test('local Host access inherits defaults while remote Host access stays off with a folder prefill', () => {
+test('existing unconfigured Instances stay off while creation defaults provide a folder prefill', () => {
   const state = {
     hostAccess: {
       defaults: {
@@ -82,7 +82,10 @@ test('local Host access inherits defaults while remote Host access stays off wit
     }
   };
 
-  assert.equal(configForTarget(state, { kind: 'local', containerId: 'abc' }).configured, true);
+  assert.equal(configForTarget(state, { kind: 'local', containerId: 'abc' }).configured, false);
+  assert.equal(configForTarget(state, { kind: 'local', containerId: 'abc' }).scopes.computer_use, false);
+  state.hostAccess.instances['local:legacy'] = { configured: true };
+  assert.equal(configForTarget(state, { kind: 'local', containerId: 'legacy' }).scopes.computer_use, false);
   assert.equal(configForTarget(state, { kind: 'remote', instanceId: 'vps' }).configured, false);
   assert.equal(configForTarget(state, { kind: 'remote', instanceId: 'vps' }).folder, '/home/user/agent-zero');
 });
@@ -396,11 +399,12 @@ test('Host access UI uses five friendly permissions and visible action reasons',
   const source = await readFile(new URL('./host-access-dialog.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /Host access works only while the current Instance is open/i);
   assert.match(source, /data-host-action-notice/);
-  assert.match(source, /Files read/);
-  assert.match(source, /Files write/);
-  assert.match(source, /Use my Browser/);
+  assert.match(source, /Read files/);
+  assert.match(source, /Edit files/);
+  assert.match(source, /Run commands/);
+  assert.match(source, /Use my browser/);
   assert.match(source, /Commands start here but can reach other folders/i);
-  assert.match(source, /Folder for files and commands/);
+  assert.match(source, /Local folder for files and commands/);
   assert.match(source, /Launcher setup needs attention/);
   assert.match(source, /data-browser-readiness/);
   assert.match(source, /data-computer-use-readiness/);

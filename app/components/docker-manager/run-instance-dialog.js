@@ -259,7 +259,7 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
   }
 
   const instanceDefaults = normalizeInstanceDefaults(state?.instanceDefaults);
-  const hostAccessDefaults = normalizeHostAccessConfig(state?.hostAccess?.defaults, {}, "local");
+  const hostAccessDefaults = normalizeHostAccessConfig(state?.hostAccess?.defaults, { configured: true, scopes: { computer_use: true } }, "local");
   const dialog = document.createElement("div");
   dialog.id = "activateInstanceDialog";
   dialog.className = "dm-dialog-backdrop";
@@ -267,14 +267,13 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
 
   const versionField = includeVersionPicker ? `
         <div class="dm-field">
-          <label for="activateInstanceVersion">Select version</label>
+          <label for="activateInstanceVersion">Version</label>
           <select id="activateInstanceVersion" class="dm-select">
             ${versionOptionsHtml(choices, initialTag)}
           </select>
-          <div class="dm-field-hint">Choose a channel tag or an installed version.</div>
           <label id="activateChannelPullField" class="dm-checkbox-line dm-channel-pull-field hidden">
             <input id="activatePullChannel" type="checkbox">
-            <span id="activatePullChannelLabel">Pull updates</span>
+            <span id="activatePullChannelLabel">Check for updates before creating</span>
           </label>
           <div id="activateChannelPullHint" class="dm-field-hint hidden"></div>
         </div>
@@ -287,55 +286,51 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
         <button class="button dm-dialog-close" type="button" data-dialog-close aria-label="Close">×</button>
       </div>
       <div class="dm-dialog-body dm-run-instance-body">
-        ${versionField}
         <div class="dm-field">
           <label for="activateInstanceName">Instance name</label>
           <input id="activateInstanceName" class="dm-text-input" type="text" maxlength="64" autocomplete="off">
-          <div class="dm-field-hint">A friendly name shown in the launcher. The managed Docker name stays stable so rollback keeps working.</div>
         </div>
+        ${versionField}
         <div class="dm-field">
-          <div class="dm-field-label">Login</div>
+          <div class="dm-field-label">Set Instance login <span class="dm-field-hint">(optional)</span></div>
           <div class="dm-inline-field-grid">
-            <input id="activateAuthLogin" class="dm-text-input" type="text" autocomplete="username" placeholder="Username">
-            <input id="activateAuthPassword" class="dm-text-input" type="password" autocomplete="new-password" placeholder="Password">
+            <input id="activateAuthLogin" class="dm-text-input" type="text" autocomplete="username" placeholder="Username" aria-label="Instance login username">
+            <input id="activateAuthPassword" class="dm-text-input" type="password" autocomplete="new-password" placeholder="Password" aria-label="Instance login password">
           </div>
-          <div class="dm-field-hint">Optional. Leave blank to use Agent Zero defaults or finish login setup in the Web UI.</div>
+          <div class="dm-field-hint">Protect this Instance with a login, or set it up later in Agent Zero.</div>
           <label class="dm-checkbox-line">
             <input id="activateRememberCredentials" type="checkbox">
-            <span>Save credentials</span>
+            <span>Remember in Launcher for automatic sign-in</span>
           </label>
         </div>
         <div class="dm-field dm-host-access-setup">
-          <div class="dm-field-label">Host access</div>
           ${hostAccessSwitchLineHtml(
             "activateHostAccessConfigured",
             "Allow this Instance to use this computer",
-            "Access stays on with the Launcher while this Instance is open, either in a tab or detached window.",
+            "Access outside the container. Only while open in Launcher.",
             hostAccessDefaults.configured && hostAccessDefaults.masterEnabled
           )}
           <div data-launcher-host-options>
-            ${hostAccessScopeFieldsHtml("activateHostAccess", hostAccessDefaults.scopes, {
-              compact: true,
-              detailsContent: `<div class="dm-field">
-                <label for="activateHostAccessFolder">Folder for files and commands</label>
-                <div class="dm-host-folder-row">
-                  <input id="activateHostAccessFolder" class="dm-text-input" type="text" readonly value="${escapeAttribute(hostAccessDefaults.folder)}" placeholder="Choose a folder on this computer" data-host-config-control>
-                  <button class="button" type="button" data-host-folder data-host-config-control>Choose</button>
-                </div>
-                <div id="activateHostAccessFolderHint" class="dm-field-hint">Using this Instance's workspace. Agent Zero reads and writes files here. Commands start here but can reach other folders on this computer.</div>
-              </div>`
-            })}
+            <div class="dm-field">
+              <label for="activateHostAccessFolder">Local folder for files and commands</label>
+              <div class="dm-host-folder-row">
+                <input id="activateHostAccessFolder" class="dm-text-input" type="text" readonly value="${escapeAttribute(hostAccessDefaults.folder)}" placeholder="Choose a folder on this computer" data-host-config-control>
+                <button class="button" type="button" data-host-folder data-host-config-control>Choose folder</button>
+              </div>
+              <div id="activateHostAccessFolderHint" class="dm-field-hint"></div>
+            </div>
+            ${hostAccessScopeFieldsHtml("activateHostAccess", hostAccessDefaults.scopes, { compact: true })}
           </div>
         </div>
         <details class="dm-advanced">
-          <summary>Advanced</summary>
+          <summary>Advanced <span class="dm-field-hint">Models, ports and storage</span></summary>
           <div class="dm-advanced-body">
             <div class="dm-field dm-model-defaults">
               <div class="dm-field-label">Choose your models</div>
               <div class="dm-model-grid">
                 ${instanceModelRowsHtml([...PRIMARY_INSTANCE_MODEL_SLOTS, ...ADVANCED_INSTANCE_MODEL_SLOTS], instanceDefaults, "activate")}
               </div>
-              <div class="dm-field-hint">Using a subscription-based provider? Leave the defaults and connect the subscription during onboarding in the Agent Zero Web UI.</div>
+              <div class="dm-field-hint">Optional; also saved as defaults for future Instances. Connect subscriptions in Agent Zero.</div>
             </div>
             <div class="dm-field">
               <label for="activatePortMappings">Port mapping</label>
@@ -404,8 +399,14 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
   hostAccessFolderButton?.addEventListener("click", async () => {
     const selected = await window.dockerManagerActions?.chooseHostAccessFolder?.(hostAccessFolderInput?.value || "");
     if (selected?.path && hostAccessFolderInput) {
-      hostAccessFallbackFolder = selected.path;
-      hostAccessFolderInput.value = selected.path;
+      if (storageModeInput?.value === "named_volume") {
+        hostAccessFallbackFolder = selected.path;
+      } else {
+        storageModeInput.value = "host_directory_exact";
+        storageHostRootInput.value = selected.path;
+        storageHostDirty = true;
+      }
+      syncStorageFields();
     }
   });
   if (nameInput) nameInput.value = defaultInstanceName(initialTag, state);
@@ -424,12 +425,13 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
       hostAccessFolderInput.disabled = !hostAccessEnabled;
     }
     if (hostAccessFolderButton) {
-      hostAccessFolderButton.disabled = usesWorkspace || !hostAccessEnabled;
+      hostAccessFolderButton.textContent = hostAccessFolderInput?.value ? "Change folder" : "Choose folder";
+      hostAccessFolderButton.disabled = !hostAccessEnabled;
     }
     if (hostAccessFolderHint) {
       hostAccessFolderHint.textContent = usesWorkspace
-        ? "Using this Instance's workspace. Agent Zero reads and writes files here. Commands start here but can reach other folders on this computer."
-        : "Agent Zero reads and writes files here. Commands start here but can reach other folders on this computer.";
+        ? "Using this Instance's workspace. Commands can also reach other folders."
+        : "Commands start here and can also reach other folders.";
     }
   };
   const syncStorageFields = () => {
@@ -454,17 +456,20 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
     const choice = selectedChoiceFromDialog(dialog, initialEntry, choices);
     const tag = choice?.tag || "";
     const isChannel = isChannelVersionChoice(choice);
-    if (channelPullField) channelPullField.classList.toggle("hidden", !isChannel);
+    const needsDownload = isChannel && !isInstalledRunEntry(choice);
+    if (channelPullField) channelPullField.classList.toggle("hidden", !isChannel || needsDownload);
     if (channelPullHint) channelPullHint.classList.toggle("hidden", !isChannel);
+    const submit = form?.querySelector('[type="submit"]');
+    if (submit) submit.textContent = needsDownload ? "Download & create" : submitLabel;
     if (!isChannel) {
       lastChannelPullTag = "";
       return;
     }
-    if (channelPullLabel) channelPullLabel.textContent = `Pull updates from ${tag}`;
+    if (channelPullLabel) channelPullLabel.textContent = `Check for updates to ${tag} before creating`;
     if (channelPullHint) {
       channelPullHint.textContent = isInstalledRunEntry(choice)
-        ? `Run the installed ${tag} image, or pull the channel tag before creating this Instance.`
-        : `The ${tag} image is not installed yet. Pull it before creating this Instance.`;
+        ? "Turn off to use the version already downloaded."
+        : "Agent Zero will download before this Instance is created.";
     }
     if (channelPullInput && lastChannelPullTag !== tag) {
       channelPullInput.checked = channelPullDefault(choice);
@@ -499,11 +504,8 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
       window.toastFrontendError?.("Choose an installed version before creating an Instance.", "Agent Zero");
       return;
     }
-    const shouldPullChannel = isChannelVersionChoice(selectedEntry) && channelPullInput?.checked === true;
-    if (isChannelVersionChoice(selectedEntry) && !shouldPullChannel && !isInstalledRunEntry(selectedEntry)) {
-      window.toastFrontendError?.(`Pull ${tag} before creating this Instance.`, "Agent Zero");
-      return;
-    }
+    const shouldPullChannel = isChannelVersionChoice(selectedEntry)
+      && (!isInstalledRunEntry(selectedEntry) || channelPullInput?.checked === true);
     const instanceDefaults = readInstanceDefaultsFromForm(dialog, "activate");
     const envResult = buildInstanceEnvText(instanceDefaults, envInput?.value || "");
     if (!envResult.ok) {
@@ -513,8 +515,9 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
     const username = cleanEnvValue(dialog.querySelector("#activateAuthLogin")?.value || "", 256);
     const password = cleanEnvValue(dialog.querySelector("#activateAuthPassword")?.value || "", 4096);
     const rememberCredentials = dialog.querySelector("#activateRememberCredentials")?.checked === true;
-    if (rememberCredentials && (!username || !password)) {
-      window.toastFrontendError?.("Enter both username and password to save credentials.", "Agent Zero");
+    if ((username || password || rememberCredentials) && (!username || !password)) {
+      window.toastFrontendError?.("Enter both username and password, or leave both blank to set up login later.", "Agent Zero");
+      (!username ? dialog.querySelector("#activateAuthLogin") : dialog.querySelector("#activateAuthPassword"))?.focus();
       return;
     }
     const envText = mergeGeneratedEnvText(authEnvLinesFromValues({ username, password }), envResult.value || "");
@@ -543,7 +546,8 @@ function openRunInstanceDialog({ entry, state, versionChoices = null, includeVer
       options.volumeName = storageModeInput?.value === "named_volume" ? storageVolumeNameInput?.value || "" : "";
     }
     if (options.hostAccess.configured && options.storageMode === "named_volume" && !options.hostAccess.folder) {
-      window.toastFrontendError?.("Choose a folder for files and commands.", "Agent Zero");
+      window.toastFrontendError?.("Choose a local folder for files and commands.", "Agent Zero");
+      hostAccessFolderButton?.focus();
       return;
     }
     const defaultsSaved = await window.dockerManagerActions?.setInstanceDefaults?.(instanceDefaults, { quiet: true });
@@ -584,7 +588,7 @@ function openCreateLocalInstanceDialog(state = {}, options = {}) {
     includeVersionPicker: true,
     selectedTag,
     title: "Create local Instance",
-    submitLabel: "Create"
+    submitLabel: "Create Instance"
   });
 }
 

@@ -235,11 +235,11 @@ function renderModelFields() {
 function renderHostAccessFields(state = window.__dmLastState || {}) {
   const root = byId("settingsHostAccessDefaults");
   if (!root || root.dataset.rendered) return;
-  const defaults = normalizeHostAccessConfig(state?.hostAccess?.defaults, {}, "local");
+  const defaults = normalizeHostAccessConfig(state?.hostAccess?.defaults, { scopes: { computer_use: true } }, "local");
   const enabled = defaults.configured && defaults.masterEnabled;
   root.innerHTML = `
     <div class="dm-field-label">Host access</div>
-    <div class="dm-field-hint">Used when you create a local Instance. You can still change Host access for each Instance.</div>
+    <div class="dm-field-hint">Default for new local Instances. Remote Instances require their own opt-in.</div>
     ${hostAccessSwitchLineHtml(
       "settingsHostAccessConfigured",
       "Allow new Instances to use this computer",
@@ -249,7 +249,7 @@ function renderHostAccessFields(state = window.__dmLastState || {}) {
     ${hostAccessScopeFieldsHtml("settingsHostAccess", defaults.scopes, {
       compact: true,
       detailsContent: `<div class="dm-field">
-        <label for="settingsHostAccessFolder">Default folder for files and commands <span class="dm-optional">optional</span></label>
+        <label for="settingsHostAccessFolder">Default local folder for files and commands <span class="dm-optional">optional</span></label>
         <div class="dm-host-folder-row">
           <input id="settingsHostAccessFolder" class="dm-text-input" type="text" readonly placeholder="Choose a fallback folder" data-host-config-control>
           <button class="button" type="button" data-host-folder data-host-config-control>Choose</button>
@@ -281,7 +281,7 @@ function populateHostAccessFields(state = {}) {
   renderHostAccessFields(state);
   const root = byId("settingsHostAccessDefaults");
   if (!root) return;
-  const defaults = normalizeHostAccessConfig(state?.hostAccess?.defaults, {}, "local");
+  const defaults = normalizeHostAccessConfig(state?.hostAccess?.defaults, { scopes: { computer_use: true } }, "local");
   const configured = byId("settingsHostAccessConfigured");
   const folder = byId("settingsHostAccessFolder");
   if (configured && !configured.dataset.dirty) {
@@ -327,7 +327,7 @@ function readStoragePreferences() {
 function readHostAccessDefaults() {
   const root = byId("settingsHostAccessDefaults");
   const enabled = byId("settingsHostAccessConfigured")?.checked === true;
-  const current = normalizeHostAccessConfig(window.__dmLastState?.hostAccess?.defaults, {}, "local");
+  const current = normalizeHostAccessConfig(window.__dmLastState?.hostAccess?.defaults, { scopes: { computer_use: true } }, "local");
   return {
     configured: enabled,
     masterEnabled: enabled,

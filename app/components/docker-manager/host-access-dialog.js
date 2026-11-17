@@ -1,11 +1,11 @@
 import { escapeHtml } from "./component-utils.js";
 
 const SCOPE_FIELDS = Object.freeze([
-  { key: "files", icon: "folder_open", label: "Files read", hint: "Open files in the folder below." },
-  { key: "file_write", icon: "edit_document", label: "Files write", hint: "Create and change files there." },
-  { key: "code_execution", icon: "terminal", label: "Code execution", hint: "Run terminal commands on this computer." },
-  { key: "browser", icon: "language", label: "Use my Browser", hint: "Work in a supported browser profile." },
-  { key: "computer_use", icon: "computer", label: "Computer Use", hint: "See and control apps on this computer." }
+  { key: "files", icon: "folder_open", label: "Read files", hint: "Open files in the selected folder." },
+  { key: "file_write", icon: "edit_document", label: "Edit files", hint: "Create and change files there." },
+  { key: "code_execution", icon: "terminal", label: "Run commands", hint: "Commands start in the selected folder and can reach other locations available to you." },
+  { key: "browser", icon: "language", label: "Use my browser", hint: "Work in your browser. May need one-time setup." },
+  { key: "computer_use", icon: "computer", label: "Computer Use", hint: "See and control your apps. May need one-time setup." }
 ]);
 
 const CAPABILITY_STATUS_LABELS = Object.freeze({
@@ -75,7 +75,8 @@ function configForTarget(state = {}, target = {}) {
   const key = instanceKey(target);
   const saved = key ? hostAccess?.instances?.[key] : null;
   const runtimeConfig = target?.hostAccess?.config;
-  const config = normalizeConfig(saved || runtimeConfig, defaults, target?.kind);
+  const config = normalizeConfig({ configured: false, ...(saved || runtimeConfig) }, defaults, target?.kind);
+  config.scopes.computer_use = (saved || runtimeConfig)?.scopes?.computer_use === true;
   if (target?.kind === "remote" && !config.folder) config.folder = defaults.folder;
   return config;
 }
@@ -456,7 +457,7 @@ function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
             configured
           ),
           detailsContent: `<div class="dm-field">
-            <label for="hostAccessFolder">Folder for files and commands</label>
+            <label for="hostAccessFolder">Local folder for files and commands</label>
             <div class="dm-host-folder-row">
               <input id="hostAccessFolder" class="dm-text-input" type="text" readonly value="${escapeHtml(config.folder)}" placeholder="Choose a folder on this computer" data-host-config-control data-host-locked="${folderLocked}">
               <button class="button" type="button" data-choose-folder data-host-config-control data-host-locked="${folderLocked}"${folderLocked ? " disabled" : ""}>Choose</button>

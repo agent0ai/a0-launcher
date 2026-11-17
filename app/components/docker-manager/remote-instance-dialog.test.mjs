@@ -42,13 +42,14 @@ test('remote dialog labels the friendly name as Instance name', async () => {
   assert.doesNotMatch(source, /<label for="remoteInstanceName">Display name<\/label>/);
 });
 
-test('remote setup stays on the remote machine unless Launcher host access is selected', async () => {
+test('remote setup starts host access off regardless of local defaults and preserves configured choices', async () => {
   const source = await readFile(new URL('./remote-instance-dialog.js', import.meta.url), 'utf8');
-  assert.match(source, /Allow this Instance to use this computer/);
-  assert.match(source, /Leave off for no access to this computer/);
+  assert.match(source, /Allow this remote Instance to use this computer/);
+  assert.match(source, /Only while open in Launcher/);
   assert.doesNotMatch(source, /name="remoteHostAccess" type="radio"/);
-  assert.match(source, /Folder for files and commands on this computer/);
-  assert.match(source, /Commands start here but can reach other folders/i);
+  assert.match(source, /Local folder for files and commands/);
+  assert.match(source, /On this computer, not the server/);
   assert.match(source, /masterEnabled: connectLauncher/);
-  assert.match(source, /"remoteHostAccessConfigured"[\s\S]*false/);
+  assert.match(source, /const hostConnected = editingHostAccess\?\.configured === true;/);
+  assert.doesNotMatch(source, /detailsContent:/);
 });

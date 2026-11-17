@@ -1,5 +1,6 @@
 import {
   bindScopeDependency,
+  bindHostAccessState,
   configForTarget as hostAccessConfigForTarget,
   normalizeConfig as normalizeHostAccessConfig,
   readScopes as readHostAccessScopes,
@@ -87,22 +88,18 @@ function remoteCredentialEditAction({ saved = false, mode = "keep", username, pa
 function loginFieldHtml(savedCredentials = null) {
   if (!savedCredentials) {
     return `<div class="dm-field">
-          <div class="dm-field-label">Login</div>
+          <div class="dm-field-label">Existing Instance login <span class="dm-field-hint">(optional)</span></div>
           <div class="dm-inline-field-grid">
-            <input id="remoteAuthLogin" class="dm-text-input" type="text" autocomplete="username" placeholder="Username">
-            <input id="remoteAuthPassword" class="dm-text-input" type="password" autocomplete="new-password" placeholder="Password">
+            <input id="remoteAuthLogin" class="dm-text-input" type="text" autocomplete="username" placeholder="Username" aria-label="Instance login username">
+            <input id="remoteAuthPassword" class="dm-text-input" type="password" autocomplete="current-password" placeholder="Password" aria-label="Instance login password">
           </div>
-          <div class="dm-field-hint">Optional. You can also save credentials later from the Instance menu.</div>
-          <label class="dm-checkbox-line">
-            <input id="remoteRememberCredentials" type="checkbox">
-            <span>Save credentials</span>
-          </label>
+          <div class="dm-field-hint">Saved in Launcher for automatic sign-in. Leave blank to sign in later.</div>
         </div>`;
   }
   const username = String(savedCredentials.username || "");
   const detail = username ? `<small>Username: <b>${escapeHtml(username)}</b></small>` : "";
   return `<div class="dm-field">
-          <div class="dm-field-label">Login</div>
+          <div class="dm-field-label">Existing Instance login</div>
           <div class="dm-saved-credentials" data-credentials-view="keep">
             <span class="material-symbols-outlined" aria-hidden="true">key</span>
             <div>
@@ -117,8 +114,8 @@ function loginFieldHtml(savedCredentials = null) {
           <div class="dm-field-hint" data-credentials-view="keep">No need to enter them again.</div>
           <div data-credentials-view="change" hidden>
             <div class="dm-inline-field-grid">
-              <input id="remoteAuthLogin" class="dm-text-input" type="text" autocomplete="username" placeholder="Username" value="${escapeHtml(username)}">
-              <input id="remoteAuthPassword" class="dm-text-input" type="password" autocomplete="new-password" placeholder="New password">
+              <input id="remoteAuthLogin" class="dm-text-input" type="text" autocomplete="username" placeholder="Username" aria-label="Instance login username" value="${escapeHtml(username)}">
+              <input id="remoteAuthPassword" class="dm-text-input" type="password" autocomplete="current-password" placeholder="Password" aria-label="Instance login password">
             </div>
             <div class="dm-saved-credentials-footer">
               <span class="dm-field-hint">Both fields are required.</span>
@@ -147,7 +144,7 @@ function remoteHostAccessEditPayload(current = {}, { connect, folder, scopes } =
   const nextConnected = connect === true;
   const nextFolder = nextConnected ? String(folder || "") : "";
   if (nextConnected && !nextFolder) {
-    return { ok: false, message: "Choose a folder for files and commands." };
+    return { ok: false, message: "Choose a local folder for files and commands." };
   }
   const unchanged = nextConnected === wasConnected && (
     !nextConnected
@@ -219,13 +216,13 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
   let completed = false;
   const title = optionText(options.title, editing ? "Configure Instance" : "Add remote Instance");
   const submitLabel = optionText(options.submitLabel, editing ? "Save" : "Add Instance");
-  const hostDefaults = normalizeHostAccessConfig(window.__dmLastState?.hostAccess?.defaults, {}, "remote");
+  const hostDefaults = normalizeHostAccessConfig(window.__dmLastState?.hostAccess?.defaults, {}, "local");
   const launcherDefaultFolder = String(window.__dmLastState?.hostAccess?.defaults?.folder || "");
   const editingCredentials = editing?.launcherCredentials?.saved === true ? editing.launcherCredentials : null;
   const editingHostAccess = editing
     ? hostAccessConfigForTarget(window.__dmLastState || {}, { kind: "remote", instanceId: editing.id })
     : null;
-  const hostScopes = editingHostAccess ? editingHostAccess.scopes : hostDefaults.scopes;
+  const hostScopes = editingHostAccess ? editingHostAccess.scopes : { ...hostDefaults.scopes, computer_use: false };
   const hostFolderValue = editingHostAccess?.folder || launcherDefaultFolder;
   const hostConnected = editingHostAccess?.configured === true;
   const dialog = document.createElement("div");
@@ -243,39 +240,38 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
         <div class="dm-field">
           <label for="remoteInstanceUrl">Instance URL</label>
           <input id="remoteInstanceUrl" class="dm-text-input" type="text" inputmode="url" autocomplete="url" placeholder="https://agent-zero.example.com">
-          <div class="dm-field-hint">Use the URL where this Agent Zero Instance is already running. If no protocol is entered, the launcher will use http://.</div>
-          <label class="dm-checkbox-line">
-            <input id="remoteAllowUntrustedCertificate" type="checkbox" disabled>
-            <span>Trust this Instance's certificate</span>
-          </label>
-          <div class="dm-field-hint">For a self-signed certificate, or one from your own CA. Works only with https. The certificate must still match this address.</div>
+          <div class="dm-field-hint">Address of an existing Agent Zero. Uses http:// if omitted.</div>
+          <details id="remoteCertificateOptions" class="dm-advanced" hidden${editing?.allowUntrustedCertificate ? " open" : ""}>
+            <summary>Certificate options</summary>
+            <label class="dm-checkbox-line">
+              <input id="remoteAllowUntrustedCertificate" type="checkbox" disabled>
+              <span>Trust this Instance's certificate</span>
+            </label>
+            <div class="dm-field-hint">For self-signed or private-CA certificates. Must still match this address.</div>
+          </details>
         </div>
         <div class="dm-field">
           <label for="remoteInstanceName">Instance name</label>
           <input id="remoteInstanceName" class="dm-text-input" type="text" maxlength="80" autocomplete="off" placeholder="Remote Instance">
-          <div class="dm-field-hint">Optional. This is only the friendly name shown in Instances.</div>
         </div>
         ${loginFieldHtml(editingCredentials)}
         <div class="dm-field dm-host-access-setup">
-          <div class="dm-field-label">Host access</div>
           ${hostAccessSwitchLineHtml(
             "remoteHostAccessConfigured",
-            "Allow this Instance to use this computer",
-            "Leave off for no access to this computer. Access works only while this Instance is open with the Launcher, either in a tab or detached window.",
+            "Allow this remote Instance to use this computer",
+            "Connects the remote agent to this computer. Only while open in Launcher.",
             hostConnected
           )}
           <div data-launcher-host-options hidden>
-            ${hostAccessScopeFieldsHtml("remoteHostAccess", hostScopes, {
-              compact: true,
-              detailsContent: `<div class="dm-field">
-                <label for="remoteHostAccessFolder">Folder for files and commands on this computer</label>
-                <div class="dm-host-folder-row">
-                  <input id="remoteHostAccessFolder" class="dm-text-input" type="text" readonly value="${escapeHtml(hostFolderValue)}" placeholder="Choose a folder on this computer">
-                  <button class="button" type="button" data-host-folder>Choose</button>
-                </div>
-                <div class="dm-field-hint">Agent Zero reads and writes files here. Commands start here but can reach other folders on this computer.</div>
-              </div>`
-            })}
+            <div class="dm-field">
+              <label for="remoteHostAccessFolder">Local folder for files and commands</label>
+              <div class="dm-host-folder-row">
+                <input id="remoteHostAccessFolder" class="dm-text-input" type="text" readonly value="${escapeHtml(hostFolderValue)}" placeholder="Choose a folder to allow access" data-host-config-control>
+                <button class="button" type="button" data-host-folder data-host-config-control>Choose folder</button>
+              </div>
+              <div class="dm-field-hint">On this computer, not the server. Commands can also reach other folders.</div>
+            </div>
+            ${hostAccessScopeFieldsHtml("remoteHostAccess", hostScopes, { compact: true })}
           </div>
         </div>
       </div>
@@ -291,7 +287,6 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
   const nameInput = dialog.querySelector("#remoteInstanceName");
   const usernameInput = dialog.querySelector("#remoteAuthLogin");
   const passwordInput = dialog.querySelector("#remoteAuthPassword");
-  const rememberInput = dialog.querySelector("#remoteRememberCredentials");
   const certificateTrustInput = dialog.querySelector("#remoteAllowUntrustedCertificate");
   const hostAccessInput = dialog.querySelector("#remoteHostAccessConfigured");
   const hostOptions = dialog.querySelector("[data-launcher-host-options]");
@@ -304,6 +299,8 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
 
   const syncCertificateTrust = () => {
     const https = isHttpsUrlInput(urlInput?.value || "");
+    const certificateOptions = dialog.querySelector("#remoteCertificateOptions");
+    if (certificateOptions) certificateOptions.hidden = !https;
     if (!certificateTrustInput) return;
     certificateTrustInput.disabled = !https;
     if (!https) certificateTrustInput.checked = false;
@@ -337,6 +334,9 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
     nameInput.dataset.dirty = "1";
   });
   bindScopeDependency(dialog.querySelector(".dm-host-access-setup"));
+  bindHostAccessState(dialog.querySelector(".dm-host-access-setup"), {
+    configuredSelector: "#remoteHostAccessConfigured"
+  });
   const syncHostChoice = () => {
     const connectLauncher = hostAccessInput?.checked === true;
     if (hostOptions) hostOptions.hidden = !connectLauncher;
@@ -368,10 +368,11 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
         mode: credentialMode,
         username: usernameInput?.value || "",
         password: passwordInput?.value || "",
-        remember: rememberInput?.checked === true
+        remember: !!(usernameInput?.value || passwordInput?.value)
       });
       if (!credentialAction.ok) {
         window.toastFrontendError?.(credentialAction.message, "Agent Zero");
+        (!usernameInput?.value.trim() ? usernameInput : passwordInput)?.focus();
         return;
       }
       const hostAccessEdit = remoteHostAccessEditPayload(editingHostAccess, {
@@ -415,15 +416,17 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
     const credentialResult = remoteCredentialPayload({
       username: usernameInput?.value || "",
       password: passwordInput?.value || "",
-      remember: rememberInput?.checked === true
+      remember: !!(usernameInput?.value || passwordInput?.value)
     });
     if (!credentialResult.ok) {
       window.toastFrontendError?.(credentialResult.message, "Agent Zero");
+      (!usernameInput?.value.trim() ? usernameInput : passwordInput)?.focus();
       return;
     }
     const connectLauncher = hostAccessInput?.checked === true;
     if (connectLauncher && !hostFolder?.value) {
-      window.toastFrontendError?.("Choose a folder for files and commands.", "Agent Zero");
+      window.toastFrontendError?.("Choose a local folder for files and commands.", "Agent Zero");
+      dialog.querySelector("[data-host-folder]")?.focus();
       return;
     }
     const result = await window.dockerManagerActions?.addRemoteInstance?.({
@@ -448,7 +451,7 @@ function openRemoteInstanceDialog(options = {}, editing = null) {
       masterEnabled: connectLauncher,
       folder: connectLauncher ? hostFolder?.value || "" : "",
       scopes: readHostAccessScopes(dialog.querySelector(".dm-host-access-setup")),
-      browserSelection: ""
+      browserSelection: hostDefaults.browserSelection
     });
     if (hostAccessSaved === false) return;
     completed = true;

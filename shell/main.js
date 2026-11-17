@@ -1926,7 +1926,7 @@ async function startHostGatewayForTab(tab, { force = false } = {}) {
   if (!workspace.path) {
     setTabHostAccess(tab, hostAccessStatus('needs_action', {
       code: 'HOST_FOLDER_REQUIRED',
-      message: 'Choose a folder for files and commands.'
+      message: 'Choose a local folder for files and commands.'
     }), config);
     return null;
   }

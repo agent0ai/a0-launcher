@@ -71,7 +71,8 @@ test('the saved username is escaped', () => {
 test('with nothing saved the Login block is the plain add form', () => {
   const html = loginFieldHtml(null);
   assert.match(html, /id="remoteAuthLogin"/);
-  assert.match(html, /id="remoteRememberCredentials"/);
+  assert.match(html, /Saved in Launcher for automatic sign-in/);
+  assert.doesNotMatch(html, /id="remoteRememberCredentials"/);
   assert.doesNotMatch(html, /Credentials saved/);
 });
 

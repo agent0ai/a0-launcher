@@ -13,8 +13,13 @@ const {
   resolveInstanceHostAccess
 } = require('./host_access');
 
-test('Host access defaults local Instances off with browser and Computer Use opt-in', () => {
+test('local creation defaults enable every scope except Browser without granting access to existing Instances', () => {
   const settings = normalizeHostAccessSettings({});
+  assert.equal(settings.defaults.configured, true);
+  assert.equal(settings.defaults.masterEnabled, true);
+  assert.deepEqual(settings.defaults.scopes, {
+    files: true, file_write: true, code_execution: true, computer_use: true, browser: false
+  });
   const local = resolveInstanceHostAccess(settings, { kind: 'local', id: 'abc123' });
 
   assert.equal(local.configured, false);
@@ -26,6 +31,43 @@ test('Host access defaults local Instances off with browser and Computer Use opt
     browser: false,
     computer_use: false
   });
+});
+
+test('Computer Use defaults preserve saved opt-outs and do not expand legacy Instance permissions', () => {
+  const settings = normalizeHostAccessSettings({
+    defaults: { scopes: { computer_use: false } },
+    instances: {
+      'local:legacy': { configured: true, scopes: { files: true } },
+      'local:enabled': { configured: true, scopes: { computer_use: true } }
+    }
+  });
+  assert.equal(settings.defaults.scopes.computer_use, false);
+  assert.equal(settings.instances['local:legacy'].scopes.computer_use, false);
+  assert.equal(settings.instances['local:enabled'].scopes.computer_use, true);
+  assert.equal(normalizeHostAccessSettings({ instances: {
+    'local:legacy': { configured: true }
+  } }).instances['local:legacy'].scopes.computer_use, false);
+});
+
+test('saved disabled defaults and per-Instance choices survive the new creation default', () => {
+  for (const defaults of [{ configured: false }, { masterEnabled: false }]) {
+    const settings = normalizeHostAccessSettings({ defaults });
+    assert.equal(settings.defaults.configured, false);
+    assert.equal(settings.defaults.masterEnabled, false);
+  }
+  const settings = normalizeHostAccessSettings({ instances: {
+    'local:off': { configured: false, masterEnabled: false },
+    'local:legacy': { scopes: { files: true } },
+    'remote:off': { configured: false, masterEnabled: false },
+    'remote:on': { configured: true, masterEnabled: true, folder: '/work' }
+  } });
+  for (const kind of ['local', 'remote']) {
+    assert.equal(resolveInstanceHostAccess(settings, { kind, id: 'off' }).configured, false);
+    assert.equal(resolveInstanceHostAccess(settings, { kind, id: 'unknown' }).configured, false);
+  }
+  assert.equal(resolveInstanceHostAccess(settings, { kind: 'remote', id: 'on' }).configured, true);
+  assert.equal(resolveInstanceHostAccess(settings, { kind: 'local', id: 'legacy' }).configured, false);
+  assert.equal(resolveInstanceHostAccess(settings, { kind: 'local', id: 'unknown' }, {}).configured, false);
 });
 
 test('gateway startup is not gated by legacy onboarding state', () => {

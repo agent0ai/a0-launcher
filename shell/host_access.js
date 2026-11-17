@@ -67,12 +67,12 @@ function normalizeHostAccessDefaults(value) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const configured = typeof source.configured === 'boolean'
     ? source.configured
-    : source.masterEnabled === true;
+    : source.masterEnabled !== false;
   return {
     configured,
     masterEnabled: typeof source.masterEnabled === 'boolean' ? source.masterEnabled : configured,
     folder: normalizeHostFolder(source.folder),
-    scopes: normalizeHostAccessScopes(source.scopes),
+    scopes: normalizeHostAccessScopes(source.scopes, { ...DEFAULT_HOST_ACCESS_SCOPES, computer_use: true }),
     browserSelection: normalizeBrowserSelection(source.browserSelection)
   };
 }
@@ -84,12 +84,12 @@ function normalizeHostAccessInstance(value, { kind = 'local', defaults = null } 
   return {
     configured: typeof source.configured === 'boolean'
       ? source.configured
-      : local && fallback.configured,
+      : false,
     masterEnabled: typeof source.masterEnabled === 'boolean'
       ? source.masterEnabled
       : fallback.masterEnabled,
     folder: normalizeHostFolder(source.folder || (local ? fallback.folder : '')),
-    scopes: normalizeHostAccessScopes(source.scopes, fallback.scopes),
+    scopes: normalizeHostAccessScopes(source.scopes, { ...fallback.scopes, computer_use: false }),
     browserSelection: normalizeBrowserSelection(
       source.browserSelection || (local ? fallback.browserSelection : '')
     )
@@ -130,7 +130,8 @@ function resolveInstanceHostAccess(settings, { kind = 'local', id = '', folder =
   const key = hostAccessInstanceKey(kind, id);
   const saved = key ? normalized.instances[key] : null;
   const currentConfig = current && typeof current === 'object' && !Array.isArray(current) ? current : null;
-  const config = normalizeHostAccessInstance(saved || currentConfig, { kind, defaults: normalized.defaults });
+  // Creation defaults must not grant access to an existing, unconfigured Instance.
+  const config = normalizeHostAccessInstance(saved || currentConfig || { configured: false, masterEnabled: false }, { kind, defaults: normalized.defaults });
   const resolvedFolder = normalizeHostFolder(folder) || config.folder;
   return {
     key,

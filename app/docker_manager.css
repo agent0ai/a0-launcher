@@ -2015,7 +2015,16 @@ body {
 }
 
 .dm-run-instance-body {
-  gap: 1.15rem;
+  gap: 1rem;
+}
+
+.dm-run-instance-body [data-launcher-host-options]:not([hidden]) {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.dm-run-instance-body .dm-field-label .dm-field-hint {
+  font-weight: 400;
 }
 
 .dm-appearance-dialog {

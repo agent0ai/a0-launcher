@@ -152,6 +152,8 @@ test('workspace storage choices expose only their relevant fields', () => {
 });
 
 test('direct workspace folder defaults to the instance name under the root', () => {
+  assert.equal(directWorkspaceFolder('', 'Personal'), '~/agent-zero/Personal');
+  assert.equal(directWorkspaceFolder('/mnt/workspaces', 'Personal'), '/mnt/workspaces/Personal');
   assert.equal(directWorkspaceFolder('~/agent-zero', 'personal2'), '~/agent-zero/personal2');
   assert.equal(directWorkspaceFolder('~/agent-zero/', 'Personal/Two'), '~/agent-zero/Personal-Two');
 });
@@ -168,9 +170,9 @@ test('local Instance setup inherits Host access defaults and hides its options w
   assert.match(source, /hostAccessDefaults\.configured && hostAccessDefaults\.masterEnabled/);
   assert.match(source, /data-launcher-host-options/);
   assert.match(source, /hostAccessOptions\.hidden = !hostAccessEnabled/);
-  assert.match(source, /Folder for files and commands/);
+  assert.match(source, /Local folder for files and commands/);
   assert.match(source, /Using this Instance's workspace/);
   assert.match(source, /syncHostAccessFolder/);
-  assert.match(source, /Commands start here but can reach other folders/i);
+  assert.match(source, /Commands can also reach other folders/i);
   assert.match(source, /masterEnabled: hostAccessConfiguredInput\?\.checked === true/);
 });
