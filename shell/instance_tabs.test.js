@@ -800,27 +800,46 @@ test('remote URL edits close attached and detached surfaces and their gateway le
   assert.deepEqual(closed, ['attached', 'window', 'detached']);
 });
 
+function instanceLoginContext(manager, outcome = request => {
+  request.emit('redirect', 302, 'GET', 'https://old.example.com/', {});
+  request.emit('error', new Error('Redirect was cancelled'));
+}) {
+  const requests = [];
+  const context = vm.createContext({
+    dockerManager: manager, webUiLoginRequestForTarget, isAllowedInstanceTabNavigationUrl,
+    cliCredentialsAllowedForTarget, instanceLoginRedirectSucceeded, setTimeout, clearTimeout,
+    normalizeContainerId: value => value,
+    credentialsErrorShouldBlockCli: () => true,
+    createTabTargetError: (code, message) => Object.assign(new Error(message), { code }),
+    net: { request: options => {
+      const request = Object.assign(new EventEmitter(), {
+        options, aborts: 0,
+        abort() { this.aborts += 1; },
+        end(body) { this.body = body; queueMicrotask(() => outcome(this)); }
+      });
+      requests.push(request);
+      return request;
+    } }
+  });
+  const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+  vm.runInContext(source.slice(source.indexOf('async function localInstanceCredentialsForCli('),
+    source.indexOf('function openA0CliTerminalWindows(')), context);
+  return { context, requests };
+}
+
 test('remote login rechecks the saved origin and view after awaiting credentials', async () => {
   let url = 'https://old.example.com/';
   let destroyed = false;
   const credentials = { username: 'user', password: 'test-password' };
-  const requests = [];
   const manager = {
     getRemoteInstanceCredentials: async () => credentials,
     getRemoteInstance: async () => ({ url })
   };
-  const context = vm.createContext({
-    dockerManager: manager, webUiLoginRequestForTarget, isAllowedInstanceTabNavigationUrl, cliCredentialsAllowedForTarget,
-    credentialsErrorShouldBlockCli: () => true,
-    createTabTargetError: (code, message) => Object.assign(new Error(message), { code })
-  });
-  const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
-  vm.runInContext(source.slice(source.indexOf('async function remoteInstanceCredentialsForCli('),
-    source.indexOf('function openA0CliTerminalWindows(')), context);
+  const { context, requests } = instanceLoginContext(manager);
   const target = { kind: 'remote', instanceId: 'remote-1', url };
   const wc = {
     isDestroyed: () => destroyed,
-    session: { fetch: async (url, options) => { requests.push({ url, options }); return { status: 302 }; } }
+    session: {}
   };
   assert.equal((await context.loginInstanceWebUiSession(target, wc)).succeeded, true);
   let releaseCredentials;
@@ -834,7 +853,59 @@ test('remote login rechecks the saved origin and view after awaiting credentials
   destroyed = true;
   assert.equal((await context.loginInstanceWebUiSession({ ...target, url }, wc)).attempted, false);
   assert.equal(requests.length, 1);
-  assert.equal(requests[0].url, 'https://old.example.com/login');
+  assert.equal(requests[0].options.url, 'https://old.example.com/login');
+});
+
+test('saved Web UI login recognizes redirects without following or forwarding credentials', async () => {
+  for (const target of [
+    { kind: 'local', containerId: 'container-1', url: 'http://127.0.0.1:32080/' },
+    { kind: 'remote', instanceId: 'remote-1', url: 'https://old.example.com/' }
+  ]) {
+    const credentials = { username: 'user', password: 'test-password' };
+    const manager = {
+      getLocalInstanceCredentials: async () => credentials,
+      getRemoteInstanceCredentials: async () => credentials,
+      getRemoteInstance: async () => ({ url: target.url })
+    };
+    for (const [event, args, succeeded] of [
+      ['redirect', [302, 'GET', target.url, {}], true],
+      ['redirect', [303, 'GET', target.url, {}], true],
+      ['redirect', [302, 'GET', new URL('/login', target.url).href, {}], false],
+      ['redirect', [302, 'GET', 'https://other.example.com/', {}], false],
+      ['redirect', [307, 'POST', target.url, {}], false],
+      ['response', [{ statusCode: 200 }], false],
+      ['response', [{ statusCode: 503 }], false],
+      ['error', [new Error('Connection refused')], false]
+    ]) {
+      const { context, requests } = instanceLoginContext(manager, request => request.emit(event, ...args));
+      const wc = { session: {}, isDestroyed: () => false };
+      const result = await context.loginInstanceWebUiSession(target, wc);
+      assert.equal(result.attempted, true);
+      assert.equal(result.succeeded, succeeded);
+      assert.equal(requests[0].options.session, wc.session);
+      assert.equal(requests[0].options.credentials, 'include');
+      assert.equal(requests[0].options.redirect, 'manual');
+      assert.equal(requests[0].aborts, 1);
+      assert.equal(new URLSearchParams(requests[0].body).get('password'), credentials.password);
+    }
+  }
+});
+
+test('saved Web UI login aborts a stalled request after its timeout', async () => {
+  const { context, requests } = instanceLoginContext({
+    getLocalInstanceCredentials: async () => ({ username: 'user', password: 'test-password' })
+  }, () => {});
+  context.setTimeout = (callback, delay) => {
+    assert.equal(delay, 15000);
+    queueMicrotask(callback);
+  };
+  const result = await context.loginInstanceWebUiSession(
+    { kind: 'local', containerId: 'container-1', url: 'http://127.0.0.1:32080/' },
+    { session: {}, isDestroyed: () => false }
+  );
+  assert.equal(result.attempted, true);
+  assert.equal(result.succeeded, false);
+  assert.equal(requests[0].aborts, 1);
 });
 
 test('a gateway cannot start after its tab closes while credentials are loading', async () => {

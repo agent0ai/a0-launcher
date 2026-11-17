@@ -3609,7 +3609,7 @@ async function instanceCredentialsForCliTarget(target) {
 }
 
 async function loginInstanceWebUiSession(target, webContents) {
-  if (!webContents?.session || typeof webContents.session.fetch !== 'function') {
+  if (!webContents?.session) {
     return { attempted: false };
   }
 
@@ -3624,17 +3624,34 @@ async function loginInstanceWebUiSession(target, webContents) {
   if (!request) return { attempted: false };
 
   try {
-    const response = await webContents.session.fetch(request.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: request.body,
-      redirect: 'manual',
-      credentials: 'include'
+    return await new Promise((resolve) => {
+      // Electron fetch rejects manual redirects, including successful logins.
+      const client = net.request({
+        url: request.url,
+        method: 'POST',
+        session: webContents.session,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        redirect: 'manual',
+        credentials: 'include'
+      });
+      let settled = false;
+      const finish = (succeeded = false) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ attempted: true, succeeded });
+        client.abort();
+      };
+      const timer = setTimeout(() => finish(), 15000);
+      client.once('redirect', (statusCode, method, redirectURL) => {
+        finish(method === 'GET' && instanceLoginRedirectSucceeded(target, {
+          method: 'POST', resourceType: 'mainFrame', url: request.url, statusCode, redirectURL
+        }));
+      });
+      client.once('response', () => finish());
+      client.once('error', () => finish());
+      client.end(request.body);
     });
-    return {
-      attempted: true,
-      succeeded: response.status === 0 || (response.status >= 300 && response.status < 400)
-    };
   } catch {
     return { attempted: true, succeeded: false };
   }
