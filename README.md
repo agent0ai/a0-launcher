@@ -186,7 +186,7 @@ GitHub Actions owns the release path:
 2. Push the tag. `build.yml` builds updater-capable executable artifacts, stages canonical release asset names, creates or updates the GitHub Release, and uploads installers plus updater metadata.
 3. `bundle-content.yml` checks out the tag, bundles `app/` into `content.json`, and uploads it to the release.
 
-Two-segment tags such as `v1.10` are the public release shape. Executable builds normalize them to full semver versions such as `1.10.0` only where packaging or updater tooling requires it, while public asset names keep `1.10`.
+Two-segment tags such as `v1.11` are the public release shape. Executable builds normalize them to full semver versions such as `1.11.0` only where packaging or updater tooling requires it, while public asset names keep `1.11`.
 
 After publishing, verify release assets with:
 

@@ -31,7 +31,7 @@ npm install --prefix packaging
 - Keep electron-builder at 26.15.6 or newer within v26. Earlier releases can produce NSIS app archives whose executable filters the install-time extractor silently skips, leaving Windows installs without the launcher executable and Electron runtime DLLs.
 - NSIS uses electron-builder's `deleteAppDataOnUninstall` option to remove the Launcher-owned `%APPDATA%\\a0-launcher` directory on ordinary uninstall, including saved preferences, remote Instances, credentials, and cached content. Upgrade/reinstall uninstalls must preserve that data; never delete it unconditionally from `customUnInstall`.
 - Released legacy uninstallers can still delete settings during an upgrade. After closing app processes and before invoking a registered prior uninstaller, rename user data to the same-volume `a0-launcher-installer-backup` sibling. Restore it before first launch, on installation failure, or on the next installer attempt after interruption. Remove only the old uninstaller's known log placeholder; never recursively remove conflicting profile data. If restoration conflicts, preserve both folders and stop with recovery guidance.
-- Use `A0_LAUNCHER_APP_VERSION` and `A0_LAUNCHER_RELEASE_TAG` for CI-provided release versions. Two-segment tags such as `v1.10` are the public release shape; build them as semver `1.10.0` where tooling requires it, but stage public assets with release version `1.10`.
+- Use `A0_LAUNCHER_APP_VERSION` and `A0_LAUNCHER_RELEASE_TAG` for CI-provided release versions. Two-segment tags such as `v1.11` are the public release shape; build them as semver `1.11.0` where tooling requires it, but stage public assets with release version `1.11`.
 - Canonical public/updater asset names are:
 
 ```text
