@@ -321,7 +321,7 @@ function renderEntryCard(entry, state, entries) {
   body.className = "dm-card-body";
   const title = document.createElement("div");
   title.className = "dm-card-title";
-  title.textContent = entry.title;
+  title.textContent = entry.tag === "v3" ? "v3 - testing" : entry.title;
   for (const badgeName of entry.badges || []) {
     const badge = document.createElement("span");
     badge.className = `badge badge-${badgeName}`;
