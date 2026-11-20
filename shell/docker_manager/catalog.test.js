@@ -49,15 +49,18 @@ test('release catalog works without Docker and preserves cached/offline and reac
     getRuntimeDiagnostics: async () => ({ reachable: scenario === 'diagnostic-ready' }),
     listLocalImages: async () => { localCalls.push('images'); return [{ tag: 'latest', imageId: 'local-image' }]; },
     listContainers: async () => { localCalls.push('containers'); return []; },
-    listRemoteTags: async () => ['latest', 'ready', 'testing', 'v2.0'],
+    listRemoteTags: async () => ['latest', 'ready', 'v3', 'testing', 'v2.0'],
     getRemoteDigest: async () => ({ exists: true, digest: 'sha256:published' }),
-    getRemoteTagMetadata: async () => ({ updatedAt: '2026-06-24T12:00:00Z' }),
+    getRemoteTagMetadata: async () => ({ exists: true, updatedAt: '2026-06-24T12:00:00Z' }),
     getRemoteLayerSizes: async () => { throw Object.assign(new Error('Stop warmup'), { code: 'REGISTRY_RATE_LIMIT' }); }
   };
   t.mock.method(adapter, 'getDocker', async () => docker);
   t.mock.method(console, 'error', () => {});
   delete require.cache[managerPath];
   const manager = require('./index');
+
+  assert.equal(manager.assertTagAllowedForInstall('v3'), 'v3');
+  assert.throws(() => manager.assertTagAllowedForInstall('v4'), { code: 'TAG_NOT_ALLOWED' });
 
   for (scenario of ['missing', 'offline-cached', 'offline-empty', 'ready', 'diagnostic-ready']) {
     for (const forceRefresh of [false, true]) {
@@ -69,6 +72,10 @@ test('release catalog works without Docker and preserves cached/offline and reac
       assert.equal(state.offline, scenario.startsWith('offline'));
       assert.equal(state.lastSyncedAt, scenario === 'offline-empty' ? null : '2026-06-24T12:00:00Z');
       assert.equal(state.versions.find((entry) => entry.id === 'latest').availability, available ? 'installed' : 'available');
+      const v3 = state.versions.find((entry) => entry.id === 'v3');
+      assert.equal(v3?.category, 'official_release');
+      assert.equal(v3?.installability, 'installable');
+      assert.equal(v3?.updatedAt, '2026-06-24T12:00:00.000Z');
       assert.deepEqual(localCalls, available ? ['images', 'containers'] : []);
       assert.equal(state.runtime.state, available ? 'ready' : 'not_provisioned');
       assert.equal(state.remoteInstances[0].launcherCredentials.username, 'alice');

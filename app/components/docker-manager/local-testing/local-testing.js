@@ -7,6 +7,7 @@ import {
 } from "../run-instance-dialog.js";
 import { byId, closeDialog, escapeHtml } from "../component-utils.js";
 import { progressPresentedAsToast } from "../progress-eta.js";
+import { isVisibleChannelEntry } from "../release-entries.js";
 
 let logsRequestSeq = 0;
 let lastInstanceCardDiagnosticsKey = "";
@@ -126,7 +127,7 @@ function instanceCurrentReleaseTag(c) {
 
   const imageTag = imageTagForContainer(c);
   const matchedReleaseTag = String(c?.matchedReleaseTag || "").trim();
-  if ((imageTag === "latest" || imageTag === "ready") && isReleaseTag(matchedReleaseTag)) {
+  if (isVisibleChannelEntry({ tag: imageTag, isBackendImage: c?.isBackendImage }) && isReleaseTag(matchedReleaseTag)) {
     return matchedReleaseTag;
   }
   if (isReleaseTag(imageTag)) return imageTag;
@@ -157,7 +158,7 @@ function instanceVisualBadge(c) {
 
   const imageTag = imageTagForContainer(c);
   const matchedReleaseTag = releaseTagLabel(c?.matchedReleaseTag);
-  if ((imageTag === "latest" || imageTag === "ready") && matchedReleaseTag) {
+  if (isVisibleChannelEntry({ tag: imageTag, isBackendImage: c?.isBackendImage }) && matchedReleaseTag) {
     return matchedReleaseTag;
   }
   if (isReleaseTag(imageTag)) return releaseTagLabel(imageTag);

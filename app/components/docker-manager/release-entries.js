@@ -1,3 +1,5 @@
+const VISIBLE_CHANNEL_TAGS = ["latest", "ready", "v3"];
+
 function parseReleaseTagParts(tag) {
   const normalized = String(tag || "").trim().replace(/^v/, "");
   const match = normalized.match(/^(\d+)\.(\d+)(?:\.(\d+))?$/);
@@ -13,8 +15,17 @@ function isLatestEntry(entry) {
   return entry?.isBackendImage !== false && entry?.tag === "latest";
 }
 
-function isReadyEntry(entry) {
-  return entry?.isBackendImage !== false && entry?.tag === "ready";
+function channelOrder(entry) {
+  const index = entry?.isBackendImage === false ? -1 : VISIBLE_CHANNEL_TAGS.indexOf(entry?.tag);
+  return index < 0 ? VISIBLE_CHANNEL_TAGS.length : index;
+}
+
+function isVisibleChannelEntry(entry) {
+  return channelOrder(entry) < VISIBLE_CHANNEL_TAGS.length;
+}
+
+function compareVisibleChannels(left, right) {
+  return channelOrder(left) - channelOrder(right);
 }
 
 function isTestingEntry(entry) {
@@ -41,7 +52,8 @@ function normalizeDate(value) {
 export {
   parseReleaseTagParts,
   isLatestEntry,
-  isReadyEntry,
+  isVisibleChannelEntry,
+  compareVisibleChannels,
   isTestingEntry,
   compareReleaseTags,
   normalizeDate

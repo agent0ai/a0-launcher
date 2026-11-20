@@ -21,6 +21,7 @@ test('version choices pin channels, include installed versions and hide testing'
       { id: 'ready', displayVersion: 'ready', availability: 'available', installability: 'installable' },
       { id: 'latest', displayVersion: 'latest', availability: 'installed' },
       { id: 'v2.0', displayVersion: '2.0', availability: 'available' },
+      { id: 'v3', displayVersion: 'v3', availability: 'available', installability: 'installable' },
       { id: 'v1.20', displayVersion: '1.20', availability: 'available', differsFromPublished: true },
       { id: 'v1.19', displayVersion: '1.19', availability: 'installing' },
       { id: 'testing', displayVersion: 'testing', availability: 'installed' },
@@ -38,6 +39,7 @@ test('version choices pin channels, include installed versions and hide testing'
   assert.deepEqual(choices.map((choice) => choice.tag), [
     'latest',
     'ready',
+    'v3',
     'v1.20',
     'local',
     'main'
@@ -48,6 +50,8 @@ test('version choices pin channels, include installed versions and hide testing'
 test('channel pull defaults on for every channel choice', () => {
   assert.equal(isChannelVersionChoice({ tag: 'latest' }), true);
   assert.equal(isChannelVersionChoice({ tag: 'v2.0' }), false);
+  assert.equal(channelPullDefault({ tag: 'v3', availability: 'available' }), true);
+  assert.equal(channelPullDefault({ tag: 'v3', isBackendImage: false }), false);
   assert.equal(channelPullDefault({ tag: 'v2.0', availability: 'installed' }), false);
   assert.equal(channelPullDefault({ tag: 'latest', availability: 'available' }), true);
   assert.equal(channelPullDefault({ tag: 'ready', availability: 'installed', differsFromPublished: true }), true);

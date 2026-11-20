@@ -168,7 +168,7 @@ const CLONE_SETTINGS_FIELDS = Object.freeze({
   ])
 });
 
-const CHANNEL_TAGS = Object.freeze(['latest', 'ready', 'testing']);
+const CHANNEL_TAGS = Object.freeze(['latest', 'ready', 'v3', 'testing']);
 const CANONICAL_LOCAL_TAGS = Object.freeze(['local', 'development', 'main']);
 const instanceHealthCache = new Map();
 const instanceHealthPending = new Map();
@@ -346,16 +346,12 @@ function isLatestTag(tag) {
   return (tag || '').trim() === 'latest';
 }
 
-function isReadyTag(tag) {
-  return (tag || '').trim() === 'ready';
-}
-
 function isChannelTag(tag) {
-  return isLatestTag(tag) || isReadyTag(tag) || isTestingTag(tag);
+  return CHANNEL_TAGS.includes((tag || '').trim());
 }
 
 function isVisibleChannelTag(tag) {
-  return isLatestTag(tag) || isReadyTag(tag);
+  return isChannelTag(tag) && !isTestingTag(tag);
 }
 
 function isCanonicalLocalTag(tag) {

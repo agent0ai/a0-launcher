@@ -24,7 +24,7 @@ This scope owns:
 - Backend image repo defaults to `agent0ai/agent-zero` and may be overridden by `A0_BACKEND_IMAGE_REPO`.
 - Backend GitHub repo defaults to `agent0ai/agent-zero` and may be overridden by `A0_BACKEND_GITHUB_REPO`.
 - Build the release catalog with the same GitHub and registry paths whether Docker is reachable or not; unavailable Docker supplies empty local image/container inventories. A first offline launch without a release cache still publishes local preferences and Remote Instances, with `offline: true` and no invented numbered releases.
-- Installable tags must be safe tags and limited to semver-like release tags (`vX.Y` or `vX.Y.Z`), channel tags (`latest`, `ready`, `testing`), or canonical local tags (`local`, `development`, `main`).
+- Installable tags must be safe tags and limited to semver-like release tags (`vX.Y` or `vX.Y.Z`), channel tags (`latest`, `ready`, `v3`, `testing`), or canonical local tags (`local`, `development`, `main`).
 - Activation can target installed local builds, but still must reject unsafe tag strings.
 - Once an image inventory is scoped to its repository, activation must identify the local image by tag, not Docker's presentation-specific image reference.
 - Developer custom-image runs may target safe arbitrary Docker image repositories and tags. Validate image names, tags, environment variables, port mappings, and mounts before Dockerode sees them; label created containers with `a0.launcher.role=developer` so the Instances tab can manage them.
@@ -66,7 +66,7 @@ This scope owns:
 - A host repository bind at `/a0` exposes its nested `/a0/usr` as persistent custom storage for folder opening, but it is not launcher-owned storage and must never be offered for deletion with the Instance.
 - Long-running operations return an operation id and emit progress.
 - Concurrent state refreshes are newest-wins. Before publishing a refreshed state, reapply the latest cached local and remote runtime identity so an older Docker/image snapshot cannot make an Instance disappear or replace a health-confirmed version with image provenance.
-- Image installs may target Docker channel tags (`latest`, `ready`, `testing`) in addition to semver releases and local development tags, because first-run setup uses `latest` as the default image choice.
+- Image installs may target Docker channel tags (`latest`, `ready`, `v3`, `testing`) in addition to semver releases and local development tags, because first-run setup uses `latest` as the default image choice.
 - Successful Agent Zero image pulls may clean up the previous local image id for the same tag, but only through non-forced Docker image removal. If Docker says the old image is still referenced by any container or another tag, keep it.
 - Image removal from Versions must validate the tag, target a locally installed Agent Zero image, and call Docker image removal without force. If Docker reports the image is still used by a container, return a stable UI error instead of deleting related Instances or storage.
 - Progress payloads may include `headline`, `detail`, `phase`, `steps`, and `indeterminate` in addition to the legacy `message` and numeric progress fields. Runtime setup progress uses those fields for the blocking startup modal.

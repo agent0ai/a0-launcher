@@ -111,7 +111,7 @@ function versionVisualLabel(value, fallback = "Version") {
   const raw = String(value || "").trim();
   if (!raw) return fallback;
   const tag = raw.includes(":") ? raw.slice(raw.lastIndexOf(":") + 1) : raw;
-  return tag.replace(/^v(?=\d)/i, "") || fallback;
+  return tag.replace(/^v(?=\d+\.)/i, "") || fallback;
 }
 
 function createVersionVisual(value, options = {}) {

@@ -2,7 +2,7 @@ import { createVersionVisual } from "../card-visuals.js";
 import { defaultInstanceName } from "../instance-defaults.js";
 import { openRunInstanceDialog } from "../run-instance-dialog.js";
 import { byId } from "../component-utils.js";
-import { compareReleaseTags, isLatestEntry, isReadyEntry, isTestingEntry, normalizeDate, parseReleaseTagParts } from "../release-entries.js";
+import { compareReleaseTags, compareVisibleChannels, isLatestEntry, isVisibleChannelEntry, isTestingEntry, normalizeDate, parseReleaseTagParts } from "../release-entries.js";
 
 function fmtDate(v) {
   if (!v) return "";
@@ -18,10 +18,6 @@ function fmtSize(bytes) {
   let val = Number(bytes);
   while (val >= 1024 && i < units.length - 1) { val /= 1024; i++; }
   return `${val.toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
-}
-
-function isPinnedChannelEntry(entry) {
-  return isLatestEntry(entry) || isReadyEntry(entry);
 }
 
 function isHiddenEntry(entry) {
@@ -57,15 +53,8 @@ function isReleaseTag(entry) {
 
 function orderedEntries(entries) {
   return [...entries].sort((left, right) => {
-    const leftLatest = isLatestEntry(left);
-    const rightLatest = isLatestEntry(right);
-    if (leftLatest && !rightLatest) return -1;
-    if (!leftLatest && rightLatest) return 1;
-
-    const leftReady = isReadyEntry(left);
-    const rightReady = isReadyEntry(right);
-    if (leftReady && !rightReady) return -1;
-    if (!leftReady && rightReady) return 1;
+    const channelCompare = compareVisibleChannels(left, right);
+    if (channelCompare !== 0) return channelCompare;
 
     const leftTesting = isTestingEntry(left);
     const rightTesting = isTestingEntry(right);
@@ -104,7 +93,7 @@ function latestReleaseEntry(entries) {
 
 function displayDateForEntry(entry, entries = []) {
   if (!entry) return null;
-  if (isPinnedChannelEntry(entry)) {
+  if (isVisibleChannelEntry(entry)) {
     if (entry.updatedAt) return { label: "Updated", value: entry.updatedAt };
 
     const releaseTag = entry.matchedReleaseTag || (isLatestEntry(entry) ? latestReleaseEntry(entries)?.tag : "");
@@ -127,10 +116,9 @@ function metaPartsForEntry(entry, entries = []) {
   if (date?.value) parts.push(`${date.label} ${fmtDate(date.value)}`);
   if (entry?.sizeBytes) parts.push(fmtSize(entry.sizeBytes));
 
-  if (isPinnedChannelEntry(entry)) return parts;
+  if (isVisibleChannelEntry(entry)) return parts;
 
   if (entry?.imageRef) parts.unshift(entry.imageRef);
-  if (isReadyEntry(entry)) parts.push("Development image with alpha features under test");
   if (entry?.matchHint) parts.push(entry.matchHint);
   if (entry?.digestHint) parts.push(entry.digestHint);
   return parts;
@@ -143,7 +131,7 @@ function buildInstallCatalogModel(entries) {
   const majorGroups = new Map();
 
   for (const entry of ordered) {
-    if (isPinnedChannelEntry(entry)) {
+    if (isVisibleChannelEntry(entry)) {
       channels.push(entry);
       continue;
     }
@@ -325,7 +313,7 @@ function bindInstallFilterControls() {
 
 function renderEntryCard(entry, state, entries) {
   const card = document.createElement("div");
-  card.className = isPinnedChannelEntry(entry) ? "dm-card dm-card-highlight" : "dm-card";
+  card.className = isVisibleChannelEntry(entry) ? "dm-card dm-card-highlight" : "dm-card";
 
   const visual = createVersionVisual(entry.title || entry.tag, { seed: entry.tag || entry.title });
 
@@ -346,7 +334,7 @@ function renderEntryCard(entry, state, entries) {
     badge.textContent = "local";
     title.appendChild(badge);
   }
-  if (isPinnedChannelEntry(entry) && entry.matchedReleaseTag) {
+  if (isVisibleChannelEntry(entry) && entry.matchedReleaseTag) {
     const badge = document.createElement("span");
     badge.className = "badge badge-release-match";
     badge.textContent = releaseMatchBadgeLabel(entry.matchedReleaseTag);

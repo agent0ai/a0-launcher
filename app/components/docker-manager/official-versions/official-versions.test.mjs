@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { versionVisualLabel } from '../card-visuals.js';
 
 globalThis.document = {
   getElementById: () => null
@@ -206,9 +207,10 @@ test('channel version card meta keeps only date and size', () => {
   ]);
 });
 
-test('version catalog collapses numbered version groups by default', () => {
+test('version catalog pins v3 and collapses numbered version groups by default', () => {
   const model = buildInstallCatalogModel([
     { tag: 'v1.20', title: '1.20' },
+    { tag: 'v3', title: 'v3', availability: 'available' },
     { tag: 'ready', title: 'ready' },
     { tag: 'v0.9', title: '0.9' },
     { tag: 'v2.0', title: '2.0' },
@@ -216,7 +218,10 @@ test('version catalog collapses numbered version groups by default', () => {
     { tag: 'v1.19', title: '1.19' }
   ]);
 
-  assert.deepEqual(model.channels.map((entry) => entry.tag), ['latest', 'ready']);
+  assert.deepEqual(model.channels.map((entry) => entry.tag), ['latest', 'ready', 'v3']);
+  assert.equal(actionForEntry(model.channels[2], { dockerAvailable: true }).label, 'Install');
+  assert.equal(versionVisualLabel(model.channels[2].title), 'v3');
+  assert.equal(versionVisualLabel('v3.1'), '3.1');
   assert.deepEqual(model.groups.map((group) => group.major), [2, 1, 0]);
   assert.deepEqual(model.groups.map((group) => group.defaultOpen), [false, false, false]);
   assert.deepEqual(model.groups[1].entries.map((entry) => entry.tag), ['v1.20', 'v1.19']);

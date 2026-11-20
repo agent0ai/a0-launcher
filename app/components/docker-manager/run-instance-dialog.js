@@ -19,7 +19,7 @@ import {
 } from "./host-access-dialog.js";
 import { closeDialog, escapeHtml } from "./component-utils.js";
 import { progressPresentedAsToast } from "./progress-eta.js";
-import { compareReleaseTags, isLatestEntry, isReadyEntry, isTestingEntry, normalizeDate } from "./release-entries.js";
+import { compareReleaseTags, compareVisibleChannels, isVisibleChannelEntry, isTestingEntry, normalizeDate } from "./release-entries.js";
 
 function escapeAttribute(value) {
   return escapeHtml(value);
@@ -90,7 +90,7 @@ function directWorkspaceFolder(root, instanceName) {
 }
 
 function isChannelVersionChoice(entry = {}) {
-  return isLatestEntry(entry) || isReadyEntry(entry);
+  return isVisibleChannelEntry(entry);
 }
 
 function isInstalledRunEntry(entry) {
@@ -103,15 +103,8 @@ function isInstalledRunEntry(entry) {
 }
 
 function installedVersionSort(left, right) {
-  const leftLatest = isLatestEntry(left);
-  const rightLatest = isLatestEntry(right);
-  if (leftLatest && !rightLatest) return -1;
-  if (!leftLatest && rightLatest) return 1;
-
-  const leftReady = isReadyEntry(left);
-  const rightReady = isReadyEntry(right);
-  if (leftReady && !rightReady) return -1;
-  if (!leftReady && rightReady) return 1;
+  const channelCompare = compareVisibleChannels(left, right);
+  if (channelCompare !== 0) return channelCompare;
 
   const tagCompare = compareReleaseTags(left?.tag, right?.tag);
   if (tagCompare !== 0) return tagCompare;
